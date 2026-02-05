@@ -103,3 +103,4 @@ docs:
 
 docker:
 	./deploy/docker/run-docker-ubuntu.sh
+The file /Users/mac/BriechGCS-QGC/build/Debug/QGroundControl does not exist.
