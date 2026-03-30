@@ -35,7 +35,8 @@ CPMAddPackage(
     GIT_REPOSITORY ${QGC_MAVLINK_GIT_REPO}
     GIT_TAG ${QGC_MAVLINK_GIT_TAG}
     OPTIONS
-        "MAVLINK_DIALECT ${QGC_MAVLINK_DIALECT}"
+        # "MAVLINK_DIALECT ${QGC_MAVLINK_DIALECT}"
+        "MAVLINK_DIALECT encr_dialect"              # Sets MAVLink to use only encr_dialect
         "MAVLINK_VERSION ${QGC_MAVLINK_VERSION}"
 )
 
@@ -44,7 +45,9 @@ if(mavlink_ADDED)
     target_include_directories(${CMAKE_PROJECT_NAME}
         PRIVATE
             ${mavlink_BINARY_DIR}/include/mavlink
-            ${mavlink_BINARY_DIR}/include/mavlink/${QGC_MAVLINK_DIALECT}
+            # ${mavlink_BINARY_DIR}/include/mavlink/${QGC_MAVLINK_DIALECT}
+            ${mavlink_BINARY_DIR}/include/mavlink/common
+            ${CMAKE_CURRENT_SOURCE_DIR}/encr_dialect
     )
 endif()
 
