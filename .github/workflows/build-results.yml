@@ -34,7 +34,7 @@ jobs:
 
       - name: Get PR number
         id: pr
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const run = context.payload.workflow_run;
@@ -54,7 +54,7 @@ jobs:
       - name: Collect build status
         if: steps.pr.outputs.result != 'null'
         id: builds
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const headSha = context.payload.workflow_run.head_sha;
