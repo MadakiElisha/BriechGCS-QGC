@@ -4,6 +4,7 @@
         <file alias="opensans-demibold">resources/fonts/OpenSans-Semibold.ttf</file>
         <file alias="NanumGothic-Regular">resources/fonts/NanumGothic-Regular.ttf</file>
         <file alias="NanumGothic-Bold">resources/fonts/NanumGothic-Bold.ttf</file>
+        <file alias="Geo-Regular">resources/fonts/Geo-Regular.ttf</file>
     </qresource>
     <qresource prefix="/res">
         <file alias="action.svg">resources/action.svg</file>
@@ -36,6 +37,7 @@
         <file alias="layout-right.svg">resources/layout-right.svg</file>
         <file alias="LockClosed.svg">resources/LockClosed.svg</file>
         <file alias="LockOpen.svg">resources/LockOpen.svg</file>
+        <file alias="logoBlack.png">resources/logoBlack.png</file>
         <file alias="notile.png">resources/notile.png</file>
         <file alias="NoVideoBackground.jpg">resources/NoVideoBackground.jpg</file>
         <file alias="OpenDoor.svg">resources/OpenDoor.svg</file>
