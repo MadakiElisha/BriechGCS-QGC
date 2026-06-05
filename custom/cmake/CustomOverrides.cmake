@@ -6,20 +6,20 @@
 # ----------------------------------------------------------------------------
 # Application Branding
 # ----------------------------------------------------------------------------
-set(QGC_APP_NAME "Custom-QGroundControl" CACHE STRING "App Name" FORCE)
+set(QGC_APP_NAME "BriechGroundControl" CACHE STRING "App Name" FORCE)
 
 # ----------------------------------------------------------------------------
 # Custom Icons and Graphics
 # ----------------------------------------------------------------------------
 
 # macOS Icon
-if(EXISTS "${CMAKE_SOURCE_DIR}/custom/res/icons/custom_qgroundcontrol.icns")
-    set(QGC_MACOS_ICON_PATH "${CMAKE_SOURCE_DIR}/custom/res/icons/custom_qgroundcontrol.icns" CACHE FILEPATH "MacOS Icon Path" FORCE)
+if(EXISTS "${CMAKE_SOURCE_DIR}/custom/res/icons/briechgroundcontrol.icns")
+    set(QGC_MACOS_ICON_PATH "${CMAKE_SOURCE_DIR}/custom/res/icons/briechgroundcontrol.icns" CACHE FILEPATH "MacOS Icon Path" FORCE)
 endif()
 
 # Linux AppImage Icon
-if(EXISTS "${CMAKE_SOURCE_DIR}/custom/res/icons/custom_qgroundcontrol.svg")
-    set(QGC_APPIMAGE_ICON_SCALABLE_PATH "${CMAKE_SOURCE_DIR}/custom/res/icons/custom_qgroundcontrol.svg" CACHE FILEPATH "AppImage Icon SVG Path" FORCE)
+if(EXISTS "${CMAKE_SOURCE_DIR}/custom/res/icons/briechgroundcontrol.svg")
+    set(QGC_APPIMAGE_ICON_SCALABLE_PATH "${CMAKE_SOURCE_DIR}/custom/res/icons/briechgroundcontrol.svg" CACHE FILEPATH "AppImage Icon SVG Path" FORCE)
 endif()
 
 # Windows Installer Header

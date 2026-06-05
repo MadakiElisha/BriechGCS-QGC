@@ -77,7 +77,7 @@
         <file alias="Gripper.svg">resources/Gripper.svg</file>
         <file alias="GripperRelease.svg">resources/GripperRelease.svg</file>
         <file alias="GripperGrab.svg">resources/GripperGrab.svg</file>
-        <file alias="qgroundcontrol.ico">resources/icons/qgroundcontrol.ico</file>
+        <file alias="qgroundcontrol.ico">resources/icons/qqgroundcontrol.ico</file>
     </qresource>
     <qresource prefix="/res/firmware">
         <file alias="3drradio.png">resources/firmware/3drradio.png</file>
@@ -103,7 +103,7 @@
         <file alias="gcscontrol_gcs.svg">resources/gcscontrolIndicator/gcscontrol_gcs.svg</file>
         <file alias="gcscontrol_line.svg">resources/gcscontrolIndicator/gcscontrol_line.svg</file>
     </qresource>
-        <qresource prefix="/qml">
+    <qresource prefix="/qml">
         <file alias="QGroundControl/AppSettings/NTRIPSettings.qml">src/UI/AppSettings/NTRIPSettings.qml</file>
         <file alias="NTRIPSettings.qml">src/UI/AppSettings/NTRIPSettings.qml</file>
     </qresource>

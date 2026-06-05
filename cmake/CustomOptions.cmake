@@ -1,4 +1,4 @@
-# ============================================================================
+   # ============================================================================
 # QGroundControl Build Configuration Options
 # All options can be overridden by custom builds via CustomOverrides.cmake
 # ============================================================================
@@ -14,7 +14,7 @@ include(BuildConfig)
 
 set(QGC_APP_NAME "BriechGroundControl" CACHE STRING "Application name")
 set(QGC_APP_COPYRIGHT "Copyright (c) 2025 BriechGroundControl. All rights reserved." CACHE STRING "Copyright notice")
-set(QGC_APP_DESCRIPTION "Open Source Ground Control App" CACHE STRING "Application description")
+set(QGC_APP_DESCRIPTION "BriechUAS Ground Control App" CACHE STRING "Application description")
 set(QGC_ORG_NAME "BriechGroundControl" CACHE STRING "Organization name")
 set(QGC_ORG_DOMAIN "briechuas.com" CACHE STRING "Organization domain")
 set(QGC_PACKAGE_NAME "org.mavlink.qgroundcontrol" CACHE STRING "Package identifier")
@@ -117,7 +117,7 @@ option(QT_USE_TARGET_ANDROID_BUILD_DIR "Use target-specific Android build direct
 # ----------------------------------------------------------------------------
 set(QGC_MACOS_PLIST_PATH "${CMAKE_SOURCE_DIR}/deploy/macos/MacOSXBundleInfo.plist.in" CACHE FILEPATH "macOS Info.plist template path")
 set(QGC_MACOS_BUNDLE_ID "${QGC_PACKAGE_NAME}" CACHE STRING "macOS bundle identifier")
-set(QGC_MACOS_ICON_PATH "${CMAKE_SOURCE_DIR}/deploy/macos/qgroundcontrol.icns" CACHE FILEPATH "macOS application icon path")
+set(QGC_MACOS_ICON_PATH "${CMAKE_SOURCE_DIR}/deploy/macos/briechgroundcontrol.icns" CACHE FILEPATH "macOS application icon path")
 set(QGC_MACOS_ENTITLEMENTS_PATH "${CMAKE_SOURCE_DIR}/deploy/macos/qgroundcontrol.entitlements" CACHE FILEPATH "macOS entitlements file path")
 option(QGC_MACOS_UNIVERSAL_BUILD "Build macOS universal binary (x86_64h + arm64)" ON)
 
