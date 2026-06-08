@@ -24,7 +24,19 @@
         <file alias="QGroundControl/FlyView/FlyViewToolStripActionList.qml">src/FlyViewToolStripActionList.qml</file>
     </qresource>
     <qresource prefix="/Custom/res">
-        <file alias="QGCLogoFull.svg">res/Images/QGCLogoFull.svg</file>
+        <file alias="QGCLogoFull.svg">res/Briech/Logos/QGCLogoFull.svg</file>
+        <file alias="QGCLogoWhite.svg">res/Briech/Logos/QGCLogoWhite.svg</file>
+        <file alias="QGCLogoBlack.svg">res/Briech/Logos/QGCLogoBlack.svg</file>
+        <file alias="QGCLogoArrow.svg">res/Briech/Logos/QGCLogoArrow.svg</file>
         <file alias="qgroundcontrol.ico">res/icons/custom_qgroundcontrol.ico</file>
+    </qresource>
+    <qresource prefix="/Briech/qml">
+        <file alias="Modern/BriechModernView.qml">qml/Briech/Modern/BriechModernView.qml</file>
+    </qresource>
+    <qresource prefix="/Briech/res">
+        <file alias="QGCLogoFull.svg">res/Briech/Logos/QGCLogoFull.svg</file>
+        <file alias="QGCLogoWhite.svg">res/Briech/Logos/QGCLogoWhite.svg</file>
+        <file alias="QGCLogoBlack.svg">res/Briech/Logos/QGCLogoBlack.svg</file>
+        <file alias="QGCLogoArrow.svg">res/Briech/Logos/QGCLogoArrow.svg</file>
     </qresource>
 </RCC>

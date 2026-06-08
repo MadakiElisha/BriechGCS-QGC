@@ -4,9 +4,14 @@
 # ============================================================================
 
 # ----------------------------------------------------------------------------
-# Application Branding
+# Briech UAS application branding
 # ----------------------------------------------------------------------------
-set(QGC_APP_NAME "Custom-QGroundControl" CACHE STRING "App Name" FORCE)
+set(QGC_APP_NAME "BriechUAS" CACHE STRING "Application name" FORCE)
+set(QGC_APP_COPYRIGHT "Copyright (c) 2025 Briech UAS. All rights reserved." CACHE STRING "Copyright notice" FORCE)
+set(QGC_APP_DESCRIPTION "Ground Control Station" CACHE STRING "Application description" FORCE)
+set(QGC_ORG_NAME "Briech UAS" CACHE STRING "Organization name" FORCE)
+set(QGC_ORG_DOMAIN "briechuas.com" CACHE STRING "Organization domain" FORCE)
+set(QGC_PACKAGE_NAME "com.briechuas.groundcontrol" CACHE STRING "Package identifier" FORCE)
 
 # ----------------------------------------------------------------------------
 # Custom Icons and Graphics

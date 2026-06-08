@@ -20,7 +20,6 @@ ApplicationWindow {
     flags:      Qt.Window | (ScreenTools.isAndroid ? Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint : 0)
 
     property bool   _utmspSendActTrigger
-
     Component.onCompleted: {
         // Start the sequence of first run prompt(s)
         firstRunPromptManager.nextPrompt()
@@ -107,17 +106,30 @@ ApplicationWindow {
     function showPlanView() {
         flyView.visible = false
         planView.visible = true
+        briechModernView.visible = false
         toolDrawer.visible = false
     }
 
     function showFlyView() {
         flyView.visible = true
         planView.visible = false
+        briechModernView.visible = false
+        toolDrawer.visible = false
+    }
+
+    function showBriechModernView() {
+        flyView.visible = false
+        planView.visible = false
+        briechModernView.visible = true
         toolDrawer.visible = false
     }
 
     function showTool(toolTitle, toolSource, toolIcon) {
-        toolDrawer.backIcon     = flyView.visible ? "/qmlimages/PaperPlane.svg" : "/qmlimages/Plan.svg"
+        let wasFlyView = flyView.visible
+        flyView.visible = false
+        planView.visible = false
+        briechModernView.visible = false
+        toolDrawer.backIcon     = wasFlyView ? "/qmlimages/PaperPlane.svg" : "/qmlimages/Plan.svg"
         toolDrawer.toolTitle    = toolTitle
         toolDrawer.toolSource   = toolSource
         toolDrawer.toolIcon     = toolIcon
@@ -263,6 +275,14 @@ ApplicationWindow {
         id:             planView
         anchors.fill:   parent
         visible:        false
+    }
+
+    Loader {
+        id:             briechModernView
+        anchors.fill:   parent
+        visible:        false
+        active:         visible
+        source:         "qrc:/Briech/qml/Modern/BriechModernView.qml"
     }
 
     footer: LogReplayStatusBar {

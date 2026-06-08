@@ -45,6 +45,19 @@ ToolIndicatorPage {
             SubMenuButton {
                 implicitHeight: root._toolButtonHeight
                 Layout.fillWidth: true
+                text: qsTr("Briech Modern")
+                imageResource: "/res/QGCLogoWhite.svg"
+                onClicked: {
+                    if (mainWindow.allowViewSwitch()) {
+                        mainWindow.closeIndicatorDrawer()
+                        mainWindow.showBriechModernView()
+                    }
+                }
+            }
+
+            SubMenuButton {
+                implicitHeight: root._toolButtonHeight
+                Layout.fillWidth: true
                 text: qsTr("Analyze")
                 imageResource: "/qmlimages/Analyze.svg"
                 visible: QGroundControl.corePlugin.showAdvancedUI

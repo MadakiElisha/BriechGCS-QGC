@@ -15,10 +15,9 @@
   <summary>@QGC_APP_DESCRIPTION@</summary>
   <description>
     <p>
-      QGroundControl (QGC) is a highly intuitive and powerful Ground Control Station (GCS) designed for UAVs.
-      Whether you're a first-time pilot or an experienced professional,
-      QGC provides a seamless user experience for flight control and mission planning,
-      making it the go-to solution for any MAVLink-enabled drone.
+      Briech UAS is a modern Ground Control Station for MAVLink-enabled unmanned aircraft.
+      It provides mission planning, flight monitoring, vehicle setup, telemetry, maps,
+      and operational tools in a Briech-branded command interface.
     </p>
   </description>
   <icon type="stock">@QGC_APP_NAME@</icon>
@@ -43,9 +42,9 @@
   </screenshots>
 
   <url type="homepage">https://@QGC_ORG_DOMAIN@</url>
-  <url type="help">https://docs.qgroundcontrol.com/master/en/index.html</url>
-  <url type="bugtracker">https://github.com/mavlink/qgroundcontrol/issues</url>
-  <url type="contact">https://docs.qgroundcontrol.com/master/en/qgc-user-guide/support/support.html</url>
+  <url type="help">https://@QGC_ORG_DOMAIN@</url>
+  <url type="bugtracker">https://@QGC_ORG_DOMAIN@</url>
+  <url type="contact">https://@QGC_ORG_DOMAIN@</url>
   <!-- <url type="contribute">https://github.com/mavlink/qgroundcontrol/blob/master/.github/CONTRIBUTING.md</url> -->
 
   <requires>
