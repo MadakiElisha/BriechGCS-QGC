@@ -3,17 +3,17 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>QGroundControl</string>
+	<string>Briech UAS</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>Open Source Flight Systems GmbH</string>
+	<string>Copyright (c) 2025 Briech UAS. All rights reserved.</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>NSCameraUsageDescription</key>
-	<string>QGC uses UVC devices for video streaming.</string>
+	<string>Briech UAS uses UVC devices for video streaming.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Qt Multimedia for iOS uses the camera and microphone.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
@@ -25,7 +25,7 @@
 		<string>armv7</string>
 	</array>
 	<key>CFBundleIdentifier</key>
-	<string>org.QGroundControl.qgc</string>
+	<string>com.briechuas.groundcontrol</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -51,7 +51,7 @@
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>Ground Station Location</string>
     <key>NSBluetoothPeripheralUsageDescription</key>
-    <string>QGroundControl would like to use bluetooth.</string>
+    <string>Briech UAS would like to use bluetooth.</string>
 	<key>UIRequiresFullScreen</key>
 	<true/>
 	<key>UISupportedInterfaceOrientations</key>

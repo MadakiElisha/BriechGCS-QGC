@@ -3,19 +3,19 @@
 <plist version="1.0">
 <dict>
 	<key>NSCameraUsageDescription</key>
-	<string>QGC uses UVC devices for video streaming.</string>
+	<string>Briech UAS uses UVC devices for video streaming.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Qt Multimedia for iOS uses the camera and microphone.</string>
 	<key>CFBundleDisplayName</key>
-	<string>QGroundControl</string>
+	<string>Briech UAS</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>Open Source Flight Systems GmbH - Internal Build</string>
+	<string>Copyright (c) 2025 Briech UAS. All rights reserved.</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
-	<string>org.QGroundControl.qgc</string>
+	<string>com.briechuas.groundcontrol</string>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
