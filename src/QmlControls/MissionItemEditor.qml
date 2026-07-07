@@ -12,7 +12,7 @@ import QGroundControl.FactControls
 Rectangle {
     id:             _root
     height:         _currentItem ? (editorLoader.y + editorLoader.height + _innerMargin) : (topRowLayout.y + topRowLayout.height + _margin)
-    color:          _currentItem ? qgcPal.buttonHighlight : qgcPal.windowShade
+    color:          _currentItem ? activeHighlightColor : qgcPal.windowShade
     radius:         _radius
     opacity:        _currentItem ? 1.0 : 0.7
     border.width:   _readyForSave ? 0 : 2
@@ -22,6 +22,7 @@ Rectangle {
     property var    masterController
     property var    missionItem         ///< MissionItem associated with this editor
     property bool   readOnly            ///< true: read only view, false: full editing view
+    property color  activeHighlightColor: qgcPal.buttonHighlight
 
     signal clicked
     signal remove
