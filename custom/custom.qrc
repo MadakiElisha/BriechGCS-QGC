@@ -34,6 +34,7 @@
     </qresource>
     <qresource prefix="/Briech/qml">
         <file alias="Modern/BriechModernView.qml">qml/Briech/Modern/BriechModernView.qml</file>
+        <file alias="Modern/PlanViewModern.qml">qml/Briech/Modern/PlanViewModern.qml</file>
     </qresource>
     <qresource prefix="/Briech/res">
         <file alias="QGCLogoFull.svg">res/Briech/Logos/QGCLogoFull.svg</file>

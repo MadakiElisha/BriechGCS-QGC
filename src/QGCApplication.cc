@@ -224,6 +224,20 @@ void QGCApplication::init()
         qCWarning(QGCApplicationLog) << "Could not load /fonts/opensans-demibold font";
     }
 
+    // Try to load the Geo family if provided (used by custom themes).
+    // This will be a no-op if the resource is not present; log for visibility.
+    {
+        const int fontId = QFontDatabase::addApplicationFont(":/fonts/Geo-Regular");
+        if (fontId < 0) {
+            qCWarning(QGCApplicationLog) << "Geo-Regular font resource not found or could not be loaded";
+                _geoFontFamily.clear();
+        } else {
+            const QStringList families = QFontDatabase::applicationFontFamilies(fontId);
+            qCDebug(QGCApplicationLog) << "Geo-Regular font registered (id:" << fontId << ") families:" << families;
+                _geoFontFamily = families.isEmpty() ? QString() : families.first();
+        }
+    }
+
     if (_simpleBootTest) {
         // Since GStream builds are so problematic we initialize video during the simple boot test
         // to make sure it works and verfies plugin availability.
@@ -255,6 +269,9 @@ void QGCApplication::_initForNormalAppBoot()
     MultiVehicleManager::instance()->init();
     _qmlAppEngine = QGCCorePlugin::instance()->createQmlApplicationEngine(this);
     QObject::connect(_qmlAppEngine, &QQmlApplicationEngine::objectCreationFailed, this, QCoreApplication::quit, Qt::QueuedConnection);
+        if (_qmlAppEngine) {
+            _qmlAppEngine->rootContext()->setContextProperty("geoFontFamily", _geoFontFamily);
+        }
     QGCCorePlugin::instance()->createRootWindow(_qmlAppEngine);
 
     AudioOutput::instance()->init(SettingsManager::instance()->appSettings()->audioMuted());

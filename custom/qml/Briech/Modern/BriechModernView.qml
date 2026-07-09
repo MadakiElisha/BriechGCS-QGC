@@ -168,6 +168,11 @@ Item {
         return missionCoordinates[index]
     }
 
+    Component {
+        id: planViewComponent
+        Loader { anchors.fill: parent; source: "qrc:/Briech/qml/Modern/PlanViewModern.qml" }
+    }
+
     function offsetCoordinate(latitudeOffset, longitudeOffset) {
         return QtPositioning.coordinate(overlayCenter.latitude + latitudeOffset, overlayCenter.longitude + longitudeOffset)
     }
@@ -503,6 +508,7 @@ Item {
                     font.bold: true
                     font.pixelSize: 14
                     font.letterSpacing: 2
+                    font.family: "Geo-Regular"
                 }
 
                 Text {
@@ -510,6 +516,7 @@ Item {
                     color: root.gold
                     font.pixelSize: 9
                     font.letterSpacing: 2
+                    font.family: "Geo-Regular"
                 }
 
                 Item { Layout.fillWidth: true }
@@ -518,7 +525,7 @@ Item {
                     text: activeVehicle ? ("BRCH-" + activeVehicle.id) : "STANDBY"
                     color: root.dim
                     font.pixelSize: 10
-                    font.family: "monospace"
+                    font.family: "Geo-Regular"
                 }
             }
         }
@@ -559,6 +566,7 @@ Item {
                             elide: Text.ElideRight
                             font.pixelSize: 12
                             font.bold: true
+                            font.family: "Geo-Regular"
                         }
                     }
                 }
@@ -589,7 +597,7 @@ Item {
                                 text: modelData.k
                                 color: root.dim
                                 font.pixelSize: 9
-                                font.family: "monospace"
+                                font.family: "Geo-Regular"
                             }
 
                             Text {
@@ -598,7 +606,7 @@ Item {
                                 color: modelData.k === "BATT" || modelData.k === "MODE" ? root.ok : root.text
                                 font.pixelSize: 11
                                 font.bold: true
-                                font.family: "monospace"
+                                font.family: "Geo-Regular"
                             }
 
                             Text {
@@ -606,7 +614,7 @@ Item {
                                 text: modelData.u
                                 color: root.dim
                                 font.pixelSize: 9
-                                font.family: "monospace"
+                                font.family: "Geo-Regular"
                             }
                         }
                     }
@@ -1172,7 +1180,7 @@ Item {
                                 c.fillRect(x + zw * .43, y + zh * .45, tw, 20)
                                 c.strokeRect(x + zw * .43, y + zh * .45, tw, 20)
                                 c.fillStyle = stroke
-                                c.font = "10px monospace"
+                                c.font = "10px \"Geo-Regular\""
                                 c.fillText(label, x + zw * .43 + 9, y + zh * .45 + 13)
                             }
 
@@ -1200,7 +1208,7 @@ Item {
                                 c.fill()
                                 c.stroke()
                                 c.fillStyle = "white"
-                                c.font = "bold 10px monospace"
+                                c.font = "bold 10px \"Geo-Regular\""
                                 c.textAlign = "center"
                                 c.fillText(String(i + 1), p[0], p[1] + 4)
                             })
@@ -1232,7 +1240,7 @@ Item {
                             text: "WIND SHEAR DETECTED - MONITOR"
                             color: root.warn
                             font.pixelSize: 10
-                            font.family: "monospace"
+                            font.family: "Geo-Regular"
                             font.letterSpacing: 1
                         }
                     }
@@ -1266,6 +1274,7 @@ Item {
                                     font.pixelSize: 10
                                     font.bold: true
                                     font.letterSpacing: 1
+                                    font.family: "Geo-Regular"
                                 }
 
                                 MouseArea {
@@ -1421,7 +1430,7 @@ Item {
                                         text: modelData
                                         color: index === 2 ? root.gold : root.text
                                         font.pixelSize: 10
-                                        font.family: "monospace"
+                                        font.family: "Geo-Regular"
                                     }
                                 }
                             }
@@ -1475,6 +1484,7 @@ Item {
             ModernWorkspacePage {
                 anchors.fill: parent
                 visible: root.activeModernSection === "plan"
+                contentComponent: planViewComponent
                 sectionLabel: "PLAN"
                 title: "Mission Planning"
                 subtitle: "Modern Briech mission design workspace"
@@ -1543,20 +1553,21 @@ Item {
                     color: activeVehicle ? root.gold : root.dim
                     font.bold: true
                     font.pixelSize: 11
+                    font.family: "Geo-Regular"
                 }
 
                 Text {
                     text: "ALT " + (activeVehicle ? activeVehicle.altitudeRelative.valueString : "0.0") + " m"
                     color: root.text
                     font.pixelSize: 10
-                    font.family: "monospace"
+                    font.family: "Geo-Regular"
                 }
 
                 Text {
                     text: "GS " + (activeVehicle ? activeVehicle.groundSpeed.valueString : "0.0") + " m/s"
                     color: root.text
                     font.pixelSize: 10
-                    font.family: "monospace"
+                    font.family: "Geo-Regular"
                 }
 
                 Item { Layout.fillWidth: true }
@@ -1567,6 +1578,7 @@ Item {
                     font.bold: true
                     font.pixelSize: 10
                     font.letterSpacing: 1
+                    font.family: "Geo-Regular"
                 }
             }
         }
@@ -1590,7 +1602,7 @@ Item {
             color: textColor
             font.pixelSize: 9
             font.bold: true
-            font.family: "monospace"
+            font.family: "Geo-Regular"
             font.letterSpacing: 1
         }
     }
@@ -1612,7 +1624,7 @@ Item {
             color: "white"
             font.pixelSize: highlight ? 11 : 10
             font.bold: true
-            font.family: "monospace"
+            font.family: "Geo-Regular"
         }
     }
 
@@ -2616,24 +2628,37 @@ Item {
         property string subtitle: ""
         property color accentColor: root.gold
         property var metrics: []
+        property Component contentComponent: null
 
         color: root.bg
+
+        // If a contentComponent is provided, show it full-bleed and hide the built-in header/metrics.
+        Loader {
+            id: fullContentLoader
+            anchors.fill: parent
+            sourceComponent: contentComponent
+            visible: contentComponent !== null
+            z: 999
+        }
 
         Rectangle {
             anchors.fill: parent
             color: "#05070a"
+            visible: contentComponent === null
         }
 
         Rectangle {
             anchors.fill: parent
             color: accentColor
             opacity: 0.025
+            visible: contentComponent === null
         }
 
         ColumnLayout {
             anchors.fill: parent
             anchors.margins: 28
             spacing: 22
+            visible: contentComponent === null
 
             RowLayout {
                 Layout.fillWidth: true
@@ -2655,7 +2680,7 @@ Item {
                         color: accentColor
                         font.pixelSize: 10
                         font.bold: true
-                        font.family: "monospace"
+                        font.family: "Geo-Regular"
                         font.letterSpacing: 2
                     }
 
@@ -2664,12 +2689,14 @@ Item {
                         color: "#f8fafc"
                         font.pixelSize: 24
                         font.bold: true
+                        font.family: "Geo-Regular"
                     }
 
                     Text {
                         text: subtitle
                         color: root.dim
                         font.pixelSize: 12
+                        font.family: "Geo-Regular"
                     }
                 }
             }
@@ -2701,7 +2728,7 @@ Item {
                                 text: modelData.label
                                 color: root.dim
                                 font.pixelSize: 9
-                                font.family: "monospace"
+                                font.family: "Geo-Regular"
                                 font.letterSpacing: 1
                             }
 
@@ -2710,7 +2737,7 @@ Item {
                                 color: accentColor
                                 font.pixelSize: 16
                                 font.bold: true
-                                font.family: "monospace"
+                                font.family: "Geo-Regular"
                             }
                         }
                     }
@@ -2725,41 +2752,55 @@ Item {
                 border.width: 1
                 radius: 6
 
-                Column {
-                    anchors.centerIn: parent
-                    spacing: 12
+                Loader {
+                    id: contentLoader
+                    anchors.fill: parent
+                    sourceComponent: contentComponent
+                    visible: contentComponent !== null
+                }
 
-                    Rectangle {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        width: 44
-                        height: 44
-                        radius: 22
-                        color: "#101722"
-                        border.color: accentColor
+                Item {
+                    anchors.fill: parent
+                    visible: contentComponent === null
+
+                    Column {
+                        anchors.centerIn: parent
+                        spacing: 12
+
+                        Rectangle {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: 44
+                            height: 44
+                            radius: 22
+                            color: "#101722"
+                            border.color: accentColor
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: sectionLabel.length > 0 ? sectionLabel.charAt(0) : "-"
+                                color: accentColor
+                                font.pixelSize: 20
+                                font.bold: true
+                                font.family: "Geo-Regular"
+                            }
+                        }
 
                         Text {
-                            anchors.centerIn: parent
-                            text: sectionLabel.length > 0 ? sectionLabel.charAt(0) : "-"
-                            color: accentColor
-                            font.pixelSize: 20
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: title + " page slot"
+                            color: root.text
+                            font.pixelSize: 15
                             font.bold: true
-                            font.family: "monospace"
+                            font.family: "Geo-Regular"
                         }
-                    }
 
-                    Text {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text: title + " page slot"
-                        color: root.text
-                        font.pixelSize: 15
-                        font.bold: true
-                    }
-
-                    Text {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text: "Ready for the dedicated Modern " + sectionLabel.toLowerCase() + " QML page."
-                        color: root.dim
-                        font.pixelSize: 11
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: "Ready for the dedicated Modern " + sectionLabel.toLowerCase() + " QML page."
+                            color: root.dim
+                            font.pixelSize: 11
+                            font.family: "Geo-Regular"
+                        }
                     }
                 }
             }
@@ -2806,7 +2847,7 @@ Item {
                 color: active ? "#ffffff" : root.dim
                 font.pixelSize: 11
                 font.bold: true
-                font.family: "monospace"
+                font.family: "Geo-Regular"
                 font.letterSpacing: 1
             }
         }
