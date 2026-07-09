@@ -41,8 +41,8 @@ Item {
     Rectangle {
         id:             rightPanelBackground
         anchors.fill:   parent
-        color:          qgcPal.window
-        opacity:        0.85
+        color:          "#0f1113"
+        opacity:        1.0
     }
 
 
@@ -62,14 +62,16 @@ Item {
             width:          ScreenTools.defaultFontPixelWidth * 2.25
             height:         width * 3
             radius:         ScreenTools.defaultBorderRadius
-            color:          rightPanelBackground.color
-            opacity:        rightPanelBackground.opacity
+            color:          "#0f1113"
+            border.color:   "#252c38"
+            border.width:   1
 
             QGCLabel {
                 id:                 toggleButtonLabel
                 anchors.centerIn:   parent
                 text:               panelOpenCloseButton._expanded ? ">" : "<"
-                color:              qgcPal.buttonText
+                color:              "#C9A84C"
+                font.bold:          true
             }
 
         }
@@ -101,33 +103,64 @@ Item {
         }
 
         ColumnLayout {
-            anchors.fill:   parent
-            spacing:        ScreenTools.defaultFontPixelHeight * 0.5
+            anchors.fill:        parent
+            anchors.topMargin:   ScreenTools.defaultFontPixelHeight * 0.4
+            spacing:             ScreenTools.defaultFontPixelHeight * 0.6
 
-            QGCTabBar {
-                Layout.fillWidth: true
+            Row {
+                Layout.fillWidth:  true
+                Layout.leftMargin: 0
+                height: ScreenTools.defaultFontPixelHeight * 2.4
+                spacing: 0
 
-                QGCTabButton {
-                    text:       qsTr("Mission")
-                    onClicked:  { root._editingTool = root._editingToolMission; _editingLayer = _layerMission }
-                }
+                Repeater {
+                    model: [qsTr("MISSION"), qsTr("FENCE"), qsTr("RALLY")]
 
-                QGCTabButton {
-                    text:       qsTr("Fence")
-                    onClicked:  { root._editingTool = root._editingToolFence; _editingLayer = _layerFence }
-                }
+                    delegate: Rectangle {
+                        property bool _active: root._editingTool === index
+                        width: parent.width / 3
+                        height: parent.height
+                        color: _active ? "#211c10" : "transparent"
 
-                QGCTabButton {
-                    text:       qsTr("Rally")
-                    onClicked:  { root._editingTool = root._editingToolRally; _editingLayer = _layerRally }
+                        Rectangle {
+                            anchors.bottom: parent.bottom
+                            anchors.left:   parent.left
+                            anchors.right:  parent.right
+                            height: 2
+                            color: _active ? "#C9A84C" : "#252c38"
+                        }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: modelData
+                            color: _active ? "#C9A84C" : "#6a7585"
+                            font.pixelSize: 11
+                            font.bold: true
+                            font.family: "Geo-Regular"
+                            font.letterSpacing: 1
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                root._editingTool = index
+                                if (index === 0) _editingLayer = _layerMission
+                                else if (index === 1) _editingLayer = _layerFence
+                                else _editingLayer = _layerRally
+                            }
+                        }
+                    }
                 }
             }
 
             Loader {
-                id:                 editingToolLoader
-                Layout.fillWidth:   true
-                Layout.fillHeight:  true
-                sourceComponent:    root._editingToolComponents[root._editingTool]
+                id:                  editingToolLoader
+                Layout.fillWidth:    true
+                Layout.fillHeight:   true
+                Layout.leftMargin:   ScreenTools.defaultFontPixelWidth * 0.75
+                Layout.rightMargin:  ScreenTools.defaultFontPixelWidth * 0.75
+                Layout.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.4
+                sourceComponent:     root._editingToolComponents[root._editingTool]
             }
         }
 
@@ -141,7 +174,9 @@ Item {
                     id:                 missionItemEditorListView
                     Layout.fillWidth:   true
                     Layout.fillHeight:  true
-                    spacing:            ScreenTools.defaultFontPixelHeight / 4
+                    spacing:            ScreenTools.defaultFontPixelHeight * 0.4
+                    topMargin:          ScreenTools.defaultFontPixelHeight * 0.25
+                    bottomMargin:       ScreenTools.defaultFontPixelHeight * 0.25
                     orientation:        ListView.Vertical
                     model:              _missionController.visualItems
                     cacheBuffer:        Math.max(height * 2, 0)
@@ -150,11 +185,12 @@ Item {
                     highlightMoveDuration: 250
 
                     delegate: MissionItemEditor {
-                        map:                editorMap
-                        masterController:   planMasterController
-                        missionItem:        object
-                        width:              missionItemEditorListView.width
-                        readOnly:           false
+                        map:                  editorMap
+                        masterController:     planMasterController
+                        missionItem:          object
+                        width:                missionItemEditorListView.width
+                        readOnly:             false
+                        activeHighlightColor: "#211c10"
 
                         onClicked: _missionController.setCurrentPlanViewSeqNum(object.sequenceNumber, false)
 

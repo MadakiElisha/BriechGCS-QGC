@@ -149,6 +149,7 @@ private:
     int _minorVersion = 0;
     int _buildVersion = 0;
     QQuickWindow *_mainRootWindow = nullptr;
+    QString _geoFontFamily;
     QTranslator _qgcTranslatorSourceCode;           ///< translations for source code C++/Qml
     QTranslator _qgcTranslatorQtLibs;               ///< tranlsations for Qt libraries
     QLocale _locale;

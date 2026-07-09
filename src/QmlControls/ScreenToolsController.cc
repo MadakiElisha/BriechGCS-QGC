@@ -6,6 +6,7 @@
 
 #include <QtGui/QCursor>
 #include <QtGui/QFontDatabase>
+#include <QtGui/QFont>
 #include <QtGui/QFontMetrics>
 #include <QtGui/QInputDevice>
 
@@ -70,7 +71,22 @@ QString ScreenToolsController::normalFontFamily()
         return QStringLiteral("NanumGothic");
     }
 
-    return QStringLiteral("Open Sans");
+    // Prefer a Geo family if available (either system or application-registered).
+    const QStringList fams = QFontDatabase::families();
+    for (const QString &f : fams) {
+        if (f.contains(QLatin1String("Geo"), Qt::CaseInsensitive) ||
+            f.compare(QLatin1String("Geo-Regular"), Qt::CaseInsensitive) == 0) {
+            return f;
+        }
+    }
+
+    // Fall back to Open Sans if present
+    if (fams.contains(QStringLiteral("Open Sans"))) {
+        return QStringLiteral("Open Sans");
+    }
+
+    // Final fallback: system default application font
+    return QFont().family();
 }
 
 double ScreenToolsController::defaultFontDescent(int pointSize)
