@@ -22,6 +22,8 @@
         <file alias="QGroundControl/FlyView/CustomGuidedActionsController.qml">src/CustomGuidedActionsController.qml</file>
         <file alias="QGroundControl/FlyView/FlyViewCustomLayer.qml">src/FlyViewCustomLayer.qml</file>
         <file alias="QGroundControl/FlyView/FlyViewToolStripActionList.qml">src/FlyViewToolStripActionList.qml</file>
+        <file alias="QGroundControl/FlyView/FlyViewToolBar.qml">src/QGroundControl/FlyView/FlyViewToolBar.qml</file>
+        <file alias="QGroundControl/Controls/PlanViewToolBar.qml">src/QGroundControl/Controls/PlanViewToolBar.qml</file>
     </qresource>
     <qresource prefix="/Custom/res">
         <file alias="QGCLogoFull.svg">res/Briech/Logos/QGCLogoFull.svg</file>

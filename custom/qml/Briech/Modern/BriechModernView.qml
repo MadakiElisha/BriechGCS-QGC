@@ -7,42 +7,165 @@ import QtPositioning
 import QGroundControl
 import QGroundControl.Controls
 import QGroundControl.FlightMap
+import QGroundControl.Viewer3D
+import Custom.Widgets 1.0
 
 Item {
     id: root
+    anchors.fill: parent
+    clip: true
 
     property var activeVehicle: QGroundControl.multiVehicleManager.activeVehicle
-    property color gold: "#C9A84C"
-    property color bg: "#080a0e"
-    property color panel: "#0f1218"
-    property color panel2: "#141820"
-    property color border: "#252c38"
-    property color dim: "#6a7585"
-    property color text: "#d8dde6"
-    property color ok: "#22c55e"
-    property color warn: "#f59e0b"
-    property color err: "#ef4444"
-    property color blue: "#3b82f6"
+    property color gold: BriechTheme.goldAccent
+    property color bg: BriechTheme.bgPrimary
+    property color panel: BriechTheme.panelBg
+    property color panel2: BriechTheme.panelBg2
+    property color border: BriechTheme.borderColor
+    property color dim: BriechTheme.mutedColor
+    property color text: BriechTheme.textColor
+    property color ok: BriechTheme.okColor
+    property color warn: BriechTheme.warnColor
+    property color err: BriechTheme.errColor
+    property color blue: BriechTheme.blueColor
     property string activeModernSection: "fly"
     property string selectedMapKind: "satellite"
+    property string selectedRiskZone: ""
     property bool _mapTypeInitialized: false
+    property int missionScrubIndex: 0
+    property bool payloadPanelOpen: false
+    property string payloadView: "video"
+    property string payloadVideoMode: "EO"
+    property int payloadZoomIndex: 0
+    property real payloadZoomLevel: 1
+    property real batteryPercent: 82
+    property real riskPulse: 0
     property var defaultCenter: QtPositioning.coordinate(9.0765, 7.3986)
     property var overlayCenter: activeVehicle && activeVehicle.coordinate.isValid ? activeVehicle.coordinate : (QGroundControl.flightMapPosition.isValid ? QGroundControl.flightMapPosition : defaultCenter)
+    property var speedHistory: [12, 13, 12.4, 13.2, 14.1, 15.0, 16.2, 16.8, 17.3, 17.1, 17.7, 18.2, 18.0]
+    property var altitudeHistory: [110, 112, 113, 114, 115, 118, 121, 123, 124, 124, 123, 124, 124]
+    property var batteryHistory: [82, 82, 82, 81, 81, 81, 80, 80, 80, 80, 79, 79, 78]
 
-    property var missionCoordinates: [
-        offsetCoordinate(-0.155, -0.255),
-        offsetCoordinate(-0.112, -0.205),
-        offsetCoordinate(-0.071, -0.151),
-        offsetCoordinate(-0.028, -0.092),
-        offsetCoordinate(0.019, -0.031),
-        offsetCoordinate(0.058, 0.025),
-        offsetCoordinate(0.095, 0.083),
-        offsetCoordinate(0.046, 0.135),
-        offsetCoordinate(-0.032, 0.083)
-    ]
+    property var missionCoordinates: []
+
+    ListModel {
+        id: toastModel
+    }
 
     function telemetryValue(fact, fallback) {
         return fact ? fact.valueString : fallback
+    }
+
+    function numericFactValue(fact, fallback) {
+        if (!fact) {
+            return fallback
+        }
+        const value = Number(fact.rawValue)
+        return isNaN(value) ? fallback : value
+    }
+
+    function currentBatteryPercent() {
+        if (activeVehicle && activeVehicle.batteries && activeVehicle.batteries.count > 0) {
+            let lowest = NaN
+            for (let i = 0; i < activeVehicle.batteries.count; i++) {
+                const battery = activeVehicle.batteries.get(i)
+                const percent = battery && battery.percentRemaining ? Number(battery.percentRemaining.rawValue) : NaN
+                if (!isNaN(percent) && (isNaN(lowest) || percent < lowest)) {
+                    lowest = percent
+                }
+            }
+            if (!isNaN(lowest)) {
+                return lowest
+            }
+        }
+        return 82
+    }
+
+    function appendSample(series, sample, maxCount) {
+        const next = series.slice()
+        next.push(sample)
+        while (next.length > maxCount) {
+            next.shift()
+        }
+        return next
+    }
+
+    function refreshTelemetrySamples() {
+        const speed = activeVehicle ? numericFactValue(activeVehicle.groundSpeed, 0) : 0
+        const altitude = activeVehicle ? numericFactValue(activeVehicle.altitudeRelative, 0) : 0
+        const battery = currentBatteryPercent()
+
+        speedHistory = appendSample(speedHistory, speed, 40)
+        altitudeHistory = appendSample(altitudeHistory, altitude, 40)
+        batteryHistory = appendSample(batteryHistory, battery, 40)
+        batteryPercent = battery
+    }
+
+    function pushToast(title, message, tone, durationMs) {
+        toastModel.append({
+            title: title,
+            message: message,
+            tone: tone || "info",
+            expiresAt: Date.now() + (durationMs || 3500)
+        })
+        toastSweepTimer.start()
+    }
+
+    function updateMissionWaypoint(index, coordinate) {
+        const next = missionCoordinates.slice()
+        next[index] = coordinate
+        missionCoordinates = next
+        missionScrubIndex = index
+        pushToast(qsTr("Waypoint %1").arg(index + 1), qsTr("Waypoint repositioned."), "info", 2400)
+    }
+
+    function focusMissionWaypoint(index, announce) {
+        if (missionCoordinates.length === 0) {
+            return
+        }
+        const safeIndex = Math.max(0, Math.min(index, missionCoordinates.length - 1))
+        missionScrubIndex = safeIndex
+        const coordinate = missionCoordinateAt(safeIndex)
+        if (modernMap.mapReady && coordinate.isValid) {
+            modernMap.center = coordinate
+            modernMap.zoomLevel = Math.max(modernMap.zoomLevel, 15)
+        }
+        if (announce !== false) {
+            pushToast(qsTr("Mission"), qsTr("Waypoint %1 focused on the map.").arg(safeIndex + 1), "info", 2200)
+        }
+    }
+
+    function openPayload(view) {
+        payloadView = view
+        payloadPanelOpen = true
+        if (view === "3d") {
+            pushToast(qsTr("Payload"), qsTr("3D view opened."), "info", 2200)
+        } else {
+            pushToast(qsTr("Payload"), qsTr("Video feed opened."), "info", 2200)
+        }
+    }
+
+    function closePayload() {
+        payloadPanelOpen = false
+    }
+
+    function setPayloadMode(mode) {
+        payloadVideoMode = mode
+    }
+
+    function cyclePayloadZoom() {
+        const zoomLevels = [1, 2, 4, 8]
+        payloadZoomIndex = (payloadZoomIndex + 1) % zoomLevels.length
+        payloadZoomLevel = zoomLevels[payloadZoomIndex]
+    }
+
+    function missionCoordinateAt(index) {
+        if (index < 0) {
+            return missionCoordinates[0]
+        }
+        if (index >= missionCoordinates.length) {
+            return missionCoordinates[missionCoordinates.length - 1]
+        }
+        return missionCoordinates[index]
     }
 
     Component {
@@ -91,6 +214,7 @@ Item {
         if (candidate) {
             modernMap.activeMapType = candidate
             selectedMapKind = kind
+            pushToast(qsTr("Map"), qsTr("%1 map active").arg(kind.charAt(0).toUpperCase() + kind.slice(1)), "info", 2200)
         }
     }
 
@@ -125,11 +249,13 @@ Item {
         } else {
             updateSelectedMapKindFromActiveType()
         }
+        pushToast(qsTr("Modern GCS"), qsTr("Map and telemetry layers are ready."), "ok", 3200)
     }
 
     function fitModernMission() {
         if (modernMap.mapReady && missionCoordinates.length > 1) {
             modernMap.setVisibleRegion(QtPositioning.rectangle(offsetCoordinate(0.18, -0.31), offsetCoordinate(-0.20, 0.21)))
+            pushToast(qsTr("Mission"), qsTr("View fitted to the current mission envelope."), "info", 2400)
         }
     }
 
@@ -145,8 +271,100 @@ Item {
         }
     }
 
+    function riskZoneSpec(kind) {
+        switch (kind) {
+        case "nfz":
+            return {
+                center: offsetCoordinate(0.096, -0.037),
+                zoom: 13,
+                region: QtPositioning.rectangle(offsetCoordinate(0.145, -0.12), offsetCoordinate(0.055, 0.03)),
+                toast: qsTr("NFZ focused. Keep clear.")
+            }
+        case "restricted":
+            return {
+                center: offsetCoordinate(-0.070, 0.020),
+                zoom: 13,
+                region: QtPositioning.rectangle(offsetCoordinate(-0.020, -0.040), offsetCoordinate(-0.120, 0.085)),
+                toast: qsTr("Restricted airspace focused.")
+            }
+        case "advisory":
+            return {
+                center: offsetCoordinate(-0.014, 0.182),
+                zoom: 12,
+                region: QtPositioning.rectangle(offsetCoordinate(0.060, 0.115), offsetCoordinate(-0.080, 0.245)),
+                toast: qsTr("Advisory zone focused.")
+            }
+        case "radar":
+            return {
+                center: offsetCoordinate(-0.086, -0.140),
+                zoom: 13,
+                region: QtPositioning.rectangle(offsetCoordinate(-0.020, -0.075), offsetCoordinate(-0.150, -0.206)),
+                toast: qsTr("Radar coverage focused.")
+            }
+        case "fleet":
+            return {
+                center: activeVehicle && activeVehicle.coordinate.isValid ? activeVehicle.coordinate : offsetCoordinate(0.095, 0.083),
+                zoom: 14,
+                region: activeVehicle && activeVehicle.coordinate.isValid
+                    ? QtPositioning.rectangle(offsetCoordinate(0.030, 0.030), offsetCoordinate(-0.030, -0.030))
+                    : QtPositioning.rectangle(offsetCoordinate(0.150, 0.150), offsetCoordinate(0.025, 0.020)),
+                toast: qsTr("Fleet focus active.")
+            }
+        default:
+            return null
+        }
+    }
+
+    function riskZoneOpacity(kind) {
+        if (!selectedRiskZone || selectedRiskZone === kind) {
+            return 1.0
+        }
+        return 0.28
+    }
+
+    function riskZonePulseOpacity(kind) {
+        const pulse = 0.88 + 0.12 * ((Math.sin(riskPulse) + 1) / 2)
+        return riskZoneOpacity(kind) * pulse
+    }
+
+    function riskZoneBorderWidth(kind) {
+        return selectedRiskZone === kind ? 3 : 2
+    }
+
+    function selectRiskZone(kind) {
+        const spec = riskZoneSpec(kind)
+        if (!spec) {
+            return
+        }
+        selectedRiskZone = kind
+        if (kind === "fleet") {
+            centerOnVehicle()
+        } else {
+            if (modernMap.mapReady && spec.region) {
+                modernMap.setVisibleRegion(spec.region)
+            } else {
+                modernMap.center = spec.center
+                modernMap.zoomLevel = Math.max(modernMap.zoomLevel, spec.zoom)
+            }
+        }
+        pushToast(qsTr("Risk Zone"), spec.toast, "warn", 2600)
+    }
+
+    Timer {
+        interval: 60
+        running: true
+        repeat: true
+        onTriggered: root.riskPulse += 0.18
+    }
+
     function activateModernSection(section) {
         activeModernSection = section
+        if (section !== "fly") {
+            payloadPanelOpen = false
+        }
+        if (section !== "fly") {
+            pushToast(qsTr("Modern %1").arg(section.toUpperCase()), qsTr("Workspace opened."), "info", 2200)
+        }
     }
 
     function centerOnVehicle() {
@@ -196,14 +414,61 @@ Item {
     function connectMockVehicle() {
         if (activeVehicle) {
             activeVehicle.closeVehicle()
+            pushToast(qsTr("Vehicle"), qsTr("Connection closed."), "warn", 2200)
         } else {
             QGroundControl.startPX4MockLink(true)
+            pushToast(qsTr("Vehicle"), qsTr("Mock vehicle link started."), "ok", 2800)
+        }
+    }
+
+    Timer {
+        id: telemetryTimer
+        interval: 1000
+        repeat: true
+        running: true
+        onTriggered: root.refreshTelemetrySamples()
+    }
+
+    Timer {
+        id: toastSweepTimer
+        interval: 250
+        repeat: true
+        running: false
+        onTriggered: {
+            for (let i = toastModel.count - 1; i >= 0; i--) {
+                if (toastModel.get(i).expiresAt <= Date.now()) {
+                    toastModel.remove(i)
+                }
+            }
+            if (toastModel.count === 0) {
+                stop()
+            }
         }
     }
 
     Rectangle {
         anchors.fill: parent
         color: root.bg
+    }
+
+    Rectangle {
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.leftMargin: 16
+        anchors.topMargin: 10
+        width: modernBadge.implicitWidth + 24
+        height: 24
+        color: "#0b0f15"
+        border.color: root.gold
+        border.width: 1
+        radius: 3
+        z: 999
+
+       
+    }
+
+    Component.onCompleted: {
+        refreshTelemetrySamples()
     }
 
     ColumnLayout {
@@ -491,7 +756,8 @@ Item {
                             ]
                             color: "#16c9a84c"
                             border.color: "#77c9a84c"
-                            border.width: 2
+                            border.width: root.riskZoneBorderWidth("geofence")
+                            opacity: root.riskZonePulseOpacity("geofence")
                             z: QGroundControl.zOrderMapItems
                         }
 
@@ -500,6 +766,7 @@ Item {
                             anchorPoint.x: sourceItem.width / 2
                             anchorPoint.y: sourceItem.height / 2
                             z: QGroundControl.zOrderMapItems + 1
+                            opacity: root.riskZonePulseOpacity("geofence")
                             sourceItem: ModernZoneLabel { text: "GEOFENCE"; borderColor: root.gold; textColor: root.gold }
                         }
 
@@ -512,7 +779,8 @@ Item {
                             ]
                             color: "#33ef4444"
                             border.color: root.err
-                            border.width: 2
+                            border.width: root.riskZoneBorderWidth("nfz")
+                            opacity: root.riskZonePulseOpacity("nfz")
                             z: QGroundControl.zOrderMapItems + 1
                         }
 
@@ -521,6 +789,7 @@ Item {
                             anchorPoint.x: sourceItem.width / 2
                             anchorPoint.y: sourceItem.height / 2
                             z: QGroundControl.zOrderMapItems + 2
+                            opacity: root.riskZonePulseOpacity("nfz")
                             sourceItem: ModernZoneLabel { text: "NFZ - MILITARY"; borderColor: root.err; textColor: root.err }
                         }
 
@@ -533,7 +802,8 @@ Item {
                             ]
                             color: "#2bf59e0b"
                             border.color: root.warn
-                            border.width: 2
+                            border.width: root.riskZoneBorderWidth("restricted")
+                            opacity: root.riskZonePulseOpacity("restricted")
                             z: QGroundControl.zOrderMapItems + 1
                         }
 
@@ -542,6 +812,7 @@ Item {
                             anchorPoint.x: sourceItem.width / 2
                             anchorPoint.y: sourceItem.height / 2
                             z: QGroundControl.zOrderMapItems + 2
+                            opacity: root.riskZonePulseOpacity("restricted")
                             sourceItem: ModernZoneLabel { text: "RESTRICTED"; borderColor: root.warn; textColor: root.warn }
                         }
 
@@ -554,7 +825,8 @@ Item {
                             ]
                             color: "#24a855f7"
                             border.color: "#a855f7"
-                            border.width: 2
+                            border.width: root.riskZoneBorderWidth("radar")
+                            opacity: root.riskZonePulseOpacity("radar")
                             z: QGroundControl.zOrderMapItems + 1
                         }
 
@@ -563,6 +835,7 @@ Item {
                             anchorPoint.x: sourceItem.width / 2
                             anchorPoint.y: sourceItem.height / 2
                             z: QGroundControl.zOrderMapItems + 2
+                            opacity: root.riskZonePulseOpacity("radar")
                             sourceItem: ModernZoneLabel { text: "RADAR COVERAGE"; borderColor: "#a855f7"; textColor: "#c084fc" }
                         }
 
@@ -575,7 +848,8 @@ Item {
                             ]
                             color: "#203b82f6"
                             border.color: root.blue
-                            border.width: 2
+                            border.width: root.riskZoneBorderWidth("advisory")
+                            opacity: root.riskZonePulseOpacity("advisory")
                             z: QGroundControl.zOrderMapItems + 1
                         }
 
@@ -584,6 +858,7 @@ Item {
                             anchorPoint.x: sourceItem.width / 2
                             anchorPoint.y: sourceItem.height / 2
                             z: QGroundControl.zOrderMapItems + 2
+                            opacity: root.riskZonePulseOpacity("advisory")
                             sourceItem: ModernZoneLabel { text: "ADVISORY - HIGH TRAFFIC"; borderColor: root.blue; textColor: "#93c5fd" }
                         }
 
@@ -592,18 +867,62 @@ Item {
                             line.width: 3
                             line.color: root.blue
                             z: QGroundControl.zOrderWaypointLines
+                            visible: root.missionCoordinates.length > 0
                         }
 
                         MapItemView {
                             model: root.missionCoordinates
+                            visible: root.missionCoordinates.length > 0
                             delegate: MapQuickItem {
-                                coordinate: modelData
+                                id: waypointItem
+                                property var dragCoordinate: modelData
+                                coordinate: dragOverlay.itemCoordinate
                                 anchorPoint.x: sourceItem.width / 2
                                 anchorPoint.y: sourceItem.height / 2
                                 z: QGroundControl.zOrderWaypointLines + 1
                                 sourceItem: ModernWaypointMarker {
                                     number: index + 1
-                                    highlight: index === 3
+                                    highlight: index === root.missionScrubIndex
+                                }
+
+                                MissionItemIndicatorDrag {
+                                    id: dragOverlay
+                                    mapControl: modernMap
+                                    itemIndicator: waypointItem
+                                    itemCoordinate: waypointItem.dragCoordinate
+                                    onDragStop: root.updateMissionWaypoint(index, itemCoordinate)
+                                }
+                            }
+                        }
+
+                        MapQuickItem {
+                            coordinate: root.activeVehicle && root.activeVehicle.homePosition.isValid ? root.activeVehicle.homePosition : root.defaultCenter
+                            anchorPoint.x: sourceItem.width / 2
+                            anchorPoint.y: sourceItem.height / 2
+                            z: QGroundControl.zOrderMapItems + 4
+                            visible: root.activeVehicle && root.activeVehicle.homePosition.isValid
+                            sourceItem: Item {
+                                width: 22
+                                height: 28
+
+                                Image {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.top: parent.top
+                                    width: 20
+                                    height: 20
+                                    source: "qrc:/qmlimages/MapHome.svg"
+                                    fillMode: Image.PreserveAspectFit
+                                    smooth: true
+                                }
+
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.bottom: parent.bottom
+                                    text: "HOME"
+                                    color: root.gold
+                                    font.pixelSize: 7
+                                    font.family: "monospace"
+                                    font.bold: true
                                 }
                             }
                         }
@@ -613,6 +932,7 @@ Item {
                             anchorPoint.x: sourceItem.width / 2
                             anchorPoint.y: sourceItem.height + 8
                             z: QGroundControl.zOrderVehicles + 1
+                            opacity: root.riskZonePulseOpacity("fleet")
                             sourceItem: ModernZoneLabel {
                                 text: activeVehicle ? ("BRCH-" + activeVehicle.id + " - " + activeVehicle.flightMode) : "BRCH-01 - DAMISA"
                                 borderColor: root.gold
@@ -663,6 +983,139 @@ Item {
                                 map: modernMap
                                 size: ScreenTools.defaultFontPixelHeight * 2.5
                                 z: QGroundControl.zOrderVehicles
+                            }
+                        }
+                    }
+
+                    ModernToastStack {
+                        anchors.top: parent.top
+                        anchors.right: parent.right
+                        anchors.topMargin: 44
+                        anchors.rightMargin: 12
+                        width: 292
+                        model: toastModel
+                    }
+
+                    ModernSwarmPanel {
+                        anchors.top: parent.top
+                        anchors.right: parent.right
+                        anchors.topMargin: 214
+                        anchors.rightMargin: 12
+                        width: 264
+                        vehicleModel: QGroundControl.multiVehicleManager.vehicles
+                    }
+
+                    ModernSparklinePanel {
+                        anchors.left: parent.left
+                        anchors.bottom: parent.bottom
+                        anchors.leftMargin: 76
+                        anchors.bottomMargin: 232
+                        width: 320
+                        height: 146
+                        visible: root.activeModernSection === "fly"
+                        speedSeries: root.speedHistory
+                        altitudeSeries: root.altitudeHistory
+                        batterySeries: root.batteryHistory
+                    }
+
+                    ColumnLayout {
+                        anchors.left: parent.left
+                        anchors.bottom: parent.bottom
+                        anchors.leftMargin: 76
+                        anchors.bottomMargin: 20
+                        spacing: 6
+
+                        ModernPayloadPanel {
+                            Layout.preferredWidth: 318
+                            Layout.preferredHeight: 188
+                            visible: root.payloadPanelOpen
+                            payloadView: root.payloadView
+                            videoVisible: QGroundControl.videoManager.hasVideo || QGroundControl.videoManager.isStreamSource || QGroundControl.videoManager.isUvc || QGroundControl.videoManager.decoding
+                            videoMode: root.payloadVideoMode
+                            zoomLevel: root.payloadZoomLevel
+                            onCloseRequested: root.closePayload()
+                            function onModeRequested(mode) { root.setPayloadMode(mode) }
+                            onZoomRequested: root.cyclePayloadZoom()
+                        }
+
+                        RowLayout {
+                            Layout.preferredWidth: 318
+                            Layout.preferredHeight: 28
+                            spacing: 4
+
+                            ModernPayloadButton {
+                                Layout.fillWidth: true
+                                label: "VIDEO FEED"
+                                iconKind: "video"
+                                active: root.payloadPanelOpen && root.payloadView === "video"
+                                onClicked: root.openPayload("video")
+                            }
+
+                            ModernPayloadButton {
+                                Layout.fillWidth: true
+                                label: "3D VIEW"
+                                iconKind: "3d"
+                                active: root.payloadPanelOpen && root.payloadView === "3d"
+                                onClicked: root.openPayload("3d")
+                            }
+                        }
+
+                    }
+
+                    ModernBatteryArc {
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.rightMargin: 18
+                        anchors.bottomMargin: 48
+                        width: 214
+                        height: 214
+                        percent: root.batteryPercent
+                    }
+
+                    ModernMissionScrubber {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.bottom: parent.bottom
+                        anchors.bottomMargin: 14
+                        width: Math.min(parent.width * 0.42, 620)
+                        visible: root.missionCoordinates.length > 0
+                        maxIndex: root.missionCoordinates.length - 1
+                        currentIndex: root.missionScrubIndex
+                        function onScrubbed(scrubIndex) { root.focusMissionWaypoint(scrubIndex, true) }
+                    }
+
+                    Rectangle {
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.rightMargin: 12
+                        anchors.bottomMargin: 10
+                        width: 154
+                        height: 26
+                        color: "#0b0f15"
+                        border.color: root.gold
+                        border.width: 1
+                        radius: 2
+
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 8
+
+                            Rectangle {
+                                width: 10
+                                height: 10
+                                color: "transparent"
+                                border.color: root.gold
+                                border.width: 1
+                                rotation: 45
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+
+                            Text {
+                                text: "MISSION TIMELINE"
+                                color: root.gold
+                                font.pixelSize: 9
+                                font.bold: true
+                                font.family: "monospace"
+                                font.letterSpacing: 1
                             }
                         }
                     }
@@ -829,6 +1282,86 @@ Item {
                                     enabled: parent.available
                                     onClicked: root.setMapType(modelData.key)
                                 }
+                            }
+                        }
+                    }
+
+                    Column {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.leftMargin: 64
+                        anchors.topMargin: 84
+                        spacing: 4
+
+                        Repeater {
+                            model: [
+                                { label: "NFZ", key: "nfz", tone: root.err },
+                                { label: "RESTRICTED", key: "restricted", tone: root.warn },
+                                { label: "ADVISORY", key: "advisory", tone: root.blue },
+                                { label: "RADAR", key: "radar", tone: "#a855f7" }
+                            ]
+
+                            delegate: Rectangle {
+                                width: 112
+                                height: 28
+                                property bool active: root.selectedRiskZone === modelData.key
+                                color: active ? "#211606" : "#0c1017"
+                                border.color: modelData.tone
+                                border.width: active ? 2 : 1
+
+                                Rectangle {
+                                    anchors.left: parent.left
+                                    anchors.top: parent.top
+                                    anchors.bottom: parent.bottom
+                                    width: 4
+                                    color: modelData.tone
+                                }
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: modelData.label
+                                    color: modelData.tone
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                    font.family: "monospace"
+                                    font.letterSpacing: 1
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: root.selectRiskZone(modelData.key)
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            width: 112
+                            height: 28
+                            color: root.selectedRiskZone === "fleet" ? "#1a1609" : "#0c1017"
+                            border.color: root.gold
+                            border.width: root.selectedRiskZone === "fleet" ? 2 : 1
+
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                width: 4
+                                color: root.gold
+                            }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "FLEET"
+                                color: root.gold
+                                font.pixelSize: 10
+                                font.bold: true
+                                font.family: "monospace"
+                                font.letterSpacing: 1
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: root.selectRiskZone("fleet")
                             }
                         }
                     }
@@ -1092,6 +1625,1000 @@ Item {
             font.pixelSize: highlight ? 11 : 10
             font.bold: true
             font.family: "Geo-Regular"
+        }
+    }
+
+    component ModernToastStack: Item {
+        property var model
+
+        implicitHeight: stackColumn.implicitHeight
+
+        Column {
+            id: stackColumn
+            anchors.fill: parent
+            spacing: 8
+
+            Repeater {
+                model: parent.model
+                delegate: Rectangle {
+                    width: parent.width
+                    height: 58
+                    radius: 4
+                    color: "#11151c"
+                    border.color: modelData.tone === "ok" ? "#22c55e" : modelData.tone === "warn" ? "#f59e0b" : "#2a3340"
+                    border.width: 1
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 4
+                        color: modelData.tone === "ok" ? "#22c55e" : modelData.tone === "warn" ? "#f59e0b" : "#3b82f6"
+                    }
+
+                    Column {
+                        anchors.fill: parent
+                        anchors.leftMargin: 12
+                        anchors.rightMargin: 36
+                        anchors.topMargin: 8
+                        anchors.bottomMargin: 8
+                        spacing: 2
+
+                        Text {
+                            text: modelData.title
+                            color: "#f8fafc"
+                            font.pixelSize: 11
+                            font.bold: true
+                            font.family: "monospace"
+                        }
+
+                        Text {
+                            text: modelData.message
+                            color: "#aab3c1"
+                            wrapMode: Text.WordWrap
+                            font.pixelSize: 9
+                        }
+                    }
+
+                    Text {
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.rightMargin: 10
+                        anchors.topMargin: 8
+                        text: "x"
+                        color: "#6a7585"
+                        font.pixelSize: 12
+                        font.bold: true
+                    }
+                }
+            }
+        }
+    }
+
+    component ModernSparklinePanel: Rectangle {
+        property var speedSeries: []
+        property var altitudeSeries: []
+        property var batterySeries: []
+
+        color: "#090d13"
+        border.color: "#202734"
+        border.width: 1
+        radius: 4
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 10
+            spacing: 6
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                Text {
+                    text: "LIVE TRENDS"
+                    color: root.gold
+                    font.pixelSize: 10
+                    font.bold: true
+                    font.family: "monospace"
+                    font.letterSpacing: 1
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Text {
+                    text: "SPD / ALT / BATT"
+                    color: root.dim
+                    font.pixelSize: 8
+                    font.family: "monospace"
+                }
+            }
+
+            Canvas {
+                id: sparkCanvas
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+
+                onPaint: {
+                    const c = getContext("2d")
+                    c.reset()
+                    c.clearRect(0, 0, width, height)
+
+                    function drawSeries(series, color, yMin, yMax, offsetY) {
+                        if (!series || series.length < 2) {
+                            return
+                        }
+                        const pad = 6
+                        const w = width - pad * 2
+                        const h = height - pad * 2
+                        c.beginPath()
+                        for (let i = 0; i < series.length; i++) {
+                            const x = pad + (i / (series.length - 1)) * w
+                            const normalized = Math.max(0, Math.min(1, (series[i] - yMin) / (yMax - yMin)))
+                            const y = pad + offsetY + h - normalized * (h * 0.32)
+                            if (i === 0) c.moveTo(x, y)
+                            else c.lineTo(x, y)
+                        }
+                        c.strokeStyle = color
+                        c.lineWidth = 2
+                        c.stroke()
+                    }
+
+                    c.strokeStyle = "rgba(255,255,255,0.05)"
+                    c.lineWidth = 1
+                    for (let i = 1; i < 4; i++) {
+                        c.beginPath()
+                        c.moveTo(0, (height / 4) * i)
+                        c.lineTo(width, (height / 4) * i)
+                        c.stroke()
+                    }
+
+                    drawSeries(speedSeries, "#3b82f6", 0, 30, 2)
+                    drawSeries(altitudeSeries, "#22c55e", 0, 200, 14)
+                    drawSeries(batterySeries, "#f59e0b", 0, 100, 26)
+                }
+
+                Connections {
+                    target: root
+                    function onSpeedHistoryChanged() { sparkCanvas.requestPaint() }
+                    function onAltitudeHistoryChanged() { sparkCanvas.requestPaint() }
+                    function onBatteryHistoryChanged() { sparkCanvas.requestPaint() }
+                }
+            }
+        }
+    }
+
+    component ModernBatteryArc: Rectangle {
+        property real percent: 0
+        property real displayPercent: percent
+
+        color: "#090d13"
+        border.color: "#202734"
+        border.width: 1
+        radius: width / 2
+
+        Behavior on displayPercent {
+            NumberAnimation { duration: 450; easing.type: Easing.OutCubic }
+        }
+
+        onPercentChanged: displayPercent = Math.max(0, Math.min(100, percent))
+
+        Canvas {
+            id: arcCanvas
+            anchors.fill: parent
+
+            onPaint: {
+                const c = getContext("2d")
+                c.reset()
+                c.clearRect(0, 0, width, height)
+                const cx = width / 2
+                const cy = height / 2
+                const r = Math.min(width, height) * 0.38
+                const start = -Math.PI * 0.75
+                const end = start + (Math.PI * 1.5) * (displayPercent / 100)
+
+                c.beginPath()
+                c.arc(cx, cy, r, start, start + Math.PI * 1.5)
+                c.strokeStyle = "rgba(255,255,255,0.06)"
+                c.lineWidth = 12
+                c.lineCap = "round"
+                c.stroke()
+
+                c.beginPath()
+                c.arc(cx, cy, r, start, end)
+                c.strokeStyle = displayPercent > 30 ? (displayPercent > 60 ? "#22c55e" : "#f59e0b") : "#ef4444"
+                c.lineWidth = 12
+                c.lineCap = "round"
+                c.stroke()
+
+                c.fillStyle = "#f8fafc"
+                c.font = "bold 30px monospace"
+                c.textAlign = "center"
+                c.fillText(Math.round(displayPercent).toString(), cx, cy + 11)
+                c.fillStyle = "#6a7585"
+                c.font = "10px monospace"
+                c.fillText("BATTERY", cx, cy - 24)
+            }
+        }
+    }
+
+    component ModernVideoFeedPanel: Rectangle {
+        property bool videoVisible: false
+        property string videoMode: "EO"
+        property real zoomLevel: 1
+        signal modeRequested(string mode)
+        signal zoomRequested()
+
+        color: "#090d13"
+        border.color: "#202734"
+        border.width: 1
+        radius: 4
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 8
+            spacing: 6
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                Text {
+                    text: "LIVE VIDEO FEED"
+                    color: root.gold
+                    font.pixelSize: 10
+                    font.bold: true
+                    font.family: "monospace"
+                    font.letterSpacing: 1
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Text {
+                    text: videoVisible ? "STREAMING" : "IDLE"
+                    color: videoVisible ? "#22c55e" : root.dim
+                    font.pixelSize: 8
+                    font.family: "monospace"
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                color: "#05070a"
+                border.color: "#202734"
+                border.width: 1
+                clip: true
+
+                Loader {
+                    anchors.fill: parent
+                    active: videoVisible
+                    visible: videoVisible
+                    source: "qrc:/qml/QGroundControl/FlyView/QGCVideoBackground.qml"
+                }
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.leftMargin: 8
+                    anchors.topMargin: 8
+                    width: implicitWidth + 14
+                    height: 18
+                    color: "#0a0f15"
+                    border.color: videoVisible ? "#22c55e" : root.gold
+                    border.width: 1
+                    radius: 2
+                    visible: true
+
+                    property string _statusText: videoVisible ? (videoMode + " | " + zoomLevel + "x") : "NO LINK"
+                    implicitWidth: statusLabel.implicitWidth
+
+                    Text {
+                        id: statusLabel
+                        anchors.centerIn: parent
+                        text: parent._statusText
+                        color: videoVisible ? "#22c55e" : root.gold
+                        font.pixelSize: 8
+                        font.bold: true
+                        font.family: "monospace"
+                        font.letterSpacing: 1
+                    }
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: "#05070a"
+                    opacity: videoVisible ? 0.08 : 0.82
+                    visible: !videoVisible
+                }
+
+                Column {
+                    anchors.centerIn: parent
+                    spacing: 8
+                    visible: !videoVisible
+
+                    Text {
+                        text: "VIDEO FEED"
+                        color: root.dim
+                        font.pixelSize: 12
+                        font.family: "monospace"
+                        font.bold: true
+                    }
+
+                    Text {
+                        text: "No active stream"
+                        color: "#8b93a3"
+                        font.pixelSize: 10
+                    }
+
+                    Row {
+                        spacing: 8
+
+                        Rectangle {
+                            width: 82
+                            height: 24
+                            color: "#0b0f15"
+                            border.color: root.gold
+                            Text {
+                                anchors.centerIn: parent
+                                text: "START"
+                                color: root.gold
+                                font.pixelSize: 9
+                                font.bold: true
+                                font.family: "monospace"
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: QGroundControl.videoManager.startVideo()
+                            }
+                        }
+
+                        Rectangle {
+                            width: 82
+                            height: 24
+                            color: "#0b0f15"
+                            border.color: root.border
+                            Text {
+                                anchors.centerIn: parent
+                                text: "STOP"
+                                color: root.dim
+                                font.pixelSize: 9
+                                font.bold: true
+                                font.family: "monospace"
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: QGroundControl.videoManager.stopVideo()
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.margins: 8
+                    width: 122
+                    height: 20
+                    color: "#0a0f15"
+                    border.color: "#24303f"
+                    border.width: 1
+                    radius: 2
+
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 8
+
+                        Text {
+                            text: "VIDEO"
+                            color: root.dim
+                            font.pixelSize: 8
+                            font.family: "monospace"
+                            font.bold: true
+                        }
+
+                        Text {
+                            text: videoVisible ? "LIVE" : "STANDBY"
+                            color: videoVisible ? "#22c55e" : root.dim
+                            font.pixelSize: 8
+                            font.family: "monospace"
+                            font.bold: true
+                        }
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 4
+
+                Repeater {
+                    model: [
+                        { label: "EO", key: "EO" },
+                        { label: "IR", key: "IR" },
+                        { label: "BLEND", key: "BLEND" }
+                    ]
+
+                    delegate: Rectangle {
+                        Layout.preferredWidth: modelData.key === "BLEND" ? 52 : 30
+                        Layout.preferredHeight: 20
+                        color: videoMode === modelData.key ? "#1a1407" : "#0b0f15"
+                        border.color: videoMode === modelData.key ? root.gold : root.border
+                        border.width: 1
+                        radius: 2
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: modelData.label
+                            color: videoMode === modelData.key ? root.gold : root.dim
+                            font.pixelSize: 8
+                            font.bold: true
+                            font.family: "monospace"
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: modeRequested(modelData.key)
+                        }
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Text {
+                    text: "ZOOM " + zoomLevel + "x"
+                    color: root.dim
+                    font.pixelSize: 8
+                    font.family: "monospace"
+                }
+
+                Rectangle {
+                    Layout.preferredWidth: 20
+                    Layout.preferredHeight: 20
+                    color: "#0b0f15"
+                    border.color: root.border
+                    border.width: 1
+                    radius: 2
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "⊕"
+                        color: root.gold
+                        font.pixelSize: 10
+                        font.family: "monospace"
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: zoomRequested()
+                    }
+                }
+
+                Rectangle {
+                    Layout.preferredWidth: 28
+                    Layout.preferredHeight: 20
+                    color: "#0b0f15"
+                    border.color: root.gold
+                    border.width: 1
+                    radius: 2
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "START"
+                        color: root.gold
+                        font.pixelSize: 8
+                        font.family: "monospace"
+                        font.bold: true
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: QGroundControl.videoManager.startVideo()
+                    }
+                }
+
+                Rectangle {
+                    Layout.preferredWidth: 28
+                    Layout.preferredHeight: 20
+                    color: "#0b0f15"
+                    border.color: root.border
+                    border.width: 1
+                    radius: 2
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "STOP"
+                        color: root.dim
+                        font.pixelSize: 8
+                        font.family: "monospace"
+                        font.bold: true
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: QGroundControl.videoManager.stopVideo()
+                    }
+                }
+            }
+        }
+    }
+
+    component ModernViewer3DPanel: Rectangle {
+        property bool viewer3DEnabled: QGroundControl.settingsManager.viewer3DSettings.enabled.rawValue
+
+        color: "#090d13"
+        border.color: "#202734"
+        border.width: 1
+        radius: 4
+        clip: true
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 8
+            spacing: 6
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                Text {
+                    text: "LIVE 3D VIEW"
+                    color: root.gold
+                    font.pixelSize: 10
+                    font.bold: true
+                    font.family: "monospace"
+                    font.letterSpacing: 1
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Text {
+                    text: viewer3DEnabled ? "READY" : "DISABLED"
+                    color: viewer3DEnabled ? "#22c55e" : root.dim
+                    font.pixelSize: 8
+                    font.family: "monospace"
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                color: "#05070a"
+                border.color: "#202734"
+                border.width: 1
+                clip: true
+
+                Viewer3D {
+                    anchors.fill: parent
+                    visible: viewer3DEnabled
+                    Component.onCompleted: {
+                        if (viewer3DEnabled) {
+                            open()
+                        }
+                    }
+                    Component.onDestruction: close()
+                }
+
+                Column {
+                    anchors.centerIn: parent
+                    spacing: 8
+                    visible: !viewer3DEnabled
+
+                    Text {
+                        text: "3D VIEW"
+                        color: root.dim
+                        font.pixelSize: 12
+                        font.family: "monospace"
+                        font.bold: true
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
+
+                    Text {
+                        text: "Viewer3D is disabled in settings"
+                        color: "#8b93a3"
+                        font.pixelSize: 10
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
+                }
+            }
+        }
+    }
+
+    component ModernPayloadPanel: Rectangle {
+        id: payloadPanel
+        property string payloadView: "video"
+        property bool videoVisible: false
+        property string videoMode: "EO"
+        property real zoomLevel: 1
+        signal closeRequested()
+        signal modeRequested(string mode)
+        signal zoomRequested()
+
+        color: "#090d13"
+        border.color: "#202734"
+        border.width: 1
+        radius: 4
+        clip: true
+
+        Loader {
+            anchors.fill: parent
+            active: root.payloadPanelOpen
+            sourceComponent: payloadView === "3d" ? modern3DPanelComponent : modernVideoPanelComponent
+        }
+
+        Rectangle {
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.topMargin: 6
+            anchors.rightMargin: 6
+            width: 18
+            height: 18
+            color: "#0b0f15"
+            border.color: root.border
+            border.width: 1
+            radius: 2
+            z: 2
+
+            Text {
+                anchors.centerIn: parent
+                text: "x"
+                color: "#6a7585"
+                font.pixelSize: 11
+                font.bold: true
+                font.family: "monospace"
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: closeRequested()
+            }
+        }
+
+        Component {
+            id: modernVideoPanelComponent
+            ModernVideoFeedPanel {
+                anchors.fill: parent
+                videoVisible: payloadPanel.videoVisible
+                videoMode: payloadPanel.videoMode
+                zoomLevel: payloadPanel.zoomLevel
+                onModeRequested: payloadPanel.modeRequested(mode)
+                onZoomRequested: payloadPanel.zoomRequested()
+            }
+        }
+
+        Component {
+            id: modern3DPanelComponent
+            ModernViewer3DPanel {
+                anchors.fill: parent
+            }
+        }
+    }
+
+    component ModernPayloadButton: Rectangle {
+        signal clicked()
+        property string label: ""
+        property string iconKind: "video"
+        property bool active: false
+        property bool hovered: false
+
+        Layout.preferredHeight: 26
+        color: active ? "rgba(201,168,76,0.10)" : (hovered ? "rgba(201,168,76,0.06)" : "rgba(15,18,24,0.80)")
+        border.color: active ? "rgba(201,168,76,0.85)" : (hovered ? "rgba(201,168,76,0.45)" : "rgba(201,168,76,0.22)")
+        border.width: 1
+        radius: 2
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.margins: 5
+            spacing: 6
+
+            Item {
+                Layout.preferredWidth: 12
+                Layout.preferredHeight: 12
+                visible: iconKind === "video"
+
+                Rectangle {
+                    x: 0
+                    y: 2
+                    width: 8
+                    height: 8
+                    color: active ? root.gold : root.dim
+                    radius: 1
+                }
+
+                Rectangle {
+                    x: 8
+                    y: 4
+                    width: 3
+                    height: 4
+                    color: active ? root.gold : root.dim
+                    radius: 1
+                }
+            }
+
+            Image {
+                Layout.preferredWidth: 12
+                Layout.preferredHeight: 12
+                visible: iconKind === "3d"
+                source: "/qml/QGroundControl/Viewer3D/City3DMapIcon.svg"
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+                opacity: active ? 1.0 : 0.72
+            }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: label
+                    color: active ? root.gold : "#c9a84c"
+                    font.pixelSize: 9
+                    font.bold: true
+                    font.family: "monospace"
+                    font.letterSpacing: 1
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+            }
+
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onEntered: hovered = true
+            onExited: hovered = false
+            onClicked: clicked()
+        }
+    }
+
+    component ModernSwarmPanel: Rectangle {
+        property var vehicleModel
+
+        color: "#090d13"
+        border.color: "#202734"
+        border.width: 1
+        radius: 4
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 8
+            spacing: 6
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                Text {
+                    text: "SWARM"
+                    color: root.gold
+                    font.pixelSize: 10
+                    font.bold: true
+                    font.family: "monospace"
+                    font.letterSpacing: 1
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Text {
+                    text: vehicleModel ? vehicleModel.count : 0
+                    color: root.text
+                    font.pixelSize: 10
+                    font.family: "monospace"
+                }
+            }
+
+            Repeater {
+                model: vehicleModel
+                delegate: Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 28
+                    color: "#0c1017"
+                    border.color: "#1f2631"
+                    border.width: 1
+                    radius: 3
+                    property var vehicleObject: object
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 3
+                        color: object === activeVehicle ? "#22c55e" : root.blue
+                    }
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: 10
+                        text: "BRCH-" + object.id
+                        color: root.text
+                        font.pixelSize: 9
+                        font.family: "monospace"
+                        font.bold: true
+                    }
+
+                    Text {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.rightMargin: 10
+                        text: object.flightMode
+                        color: root.dim
+                        font.pixelSize: 8
+                        font.family: "monospace"
+                    }
+
+                    Text {
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.rightMargin: 10
+                        anchors.bottomMargin: 3
+                        text: object.armed ? "ARMED" : "STBY"
+                        color: object.armed ? "#22c55e" : root.dim
+                        font.pixelSize: 7
+                        font.family: "monospace"
+                        font.bold: true
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (vehicleObject && vehicleObject.coordinate && vehicleObject.coordinate.isValid) {
+                                modernMap.center = vehicleObject.coordinate
+                                modernMap.zoomLevel = Math.max(modernMap.zoomLevel, 16)
+                                pushToast(qsTr("Swarm"), qsTr("Focused BRCH-%1 on the map.").arg(vehicleObject.id), "info", 2200)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    component ModernMissionScrubber: Rectangle {
+        property int maxIndex: 0
+        property int currentIndex: 0
+        signal scrubbed(int scrubIndex)
+        readonly property int _safeMaxIndex: Math.max(0, maxIndex)
+        readonly property int _waypointCount: _safeMaxIndex + 1
+        readonly property real _progress: _safeMaxIndex > 0 ? Math.min(currentIndex, _safeMaxIndex) / _safeMaxIndex : 0
+
+        implicitHeight: 74
+        color: "#090d13"
+        border.color: "#202734"
+        border.width: 1
+        radius: 4
+
+        onCurrentIndexChanged: missionCanvas.requestPaint()
+        onMaxIndexChanged: missionCanvas.requestPaint()
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 8
+            spacing: 6
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
+
+                Text {
+                    text: "MISSION TIMELINE"
+                    color: root.gold
+                    font.pixelSize: 9
+                    font.bold: true
+                    font.family: "monospace"
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Text {
+                    text: "WP " + (Math.min(currentIndex, _safeMaxIndex) + 1) + " / " + _waypointCount
+                    color: root.dim
+                    font.pixelSize: 9
+                    font.family: "monospace"
+                }
+            }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 22
+
+                Canvas {
+                    id: missionCanvas
+                    anchors.fill: parent
+                    onPaint: {
+                        const ctx = getContext("2d")
+                        ctx.reset()
+                        const w = width
+                        const h = height
+                        const pad = 4
+                        const railY = h / 2
+                        const railLeft = pad
+                        const railWidth = w - pad * 2
+                        const activeRatio = _safeMaxIndex > 0 ? Math.min(currentIndex, _safeMaxIndex) / _safeMaxIndex : 0
+                        const markerX = railLeft + (railWidth * activeRatio)
+
+                        ctx.lineWidth = 1
+                        ctx.strokeStyle = "#27303b"
+                        ctx.fillStyle = "#0f1319"
+                        ctx.fillRect(railLeft, railY - 5, railWidth, 10)
+                        ctx.strokeRect(railLeft + 0.5, railY - 4.5, railWidth - 1, 9)
+
+                        ctx.fillStyle = "#151b23"
+                        ctx.fillRect(railLeft, railY - 8, railWidth, 16)
+
+                        ctx.fillStyle = "#1a2028"
+                        ctx.fillRect(railLeft, railY - 2, railWidth, 4)
+
+                        ctx.fillStyle = root.gold
+                        ctx.fillRect(railLeft, railY - 2, railWidth * activeRatio, 4)
+
+                        for (let i = 0; i <= _safeMaxIndex; i++) {
+                            const x = railLeft + (railWidth * (_safeMaxIndex === 0 ? 0 : i / _safeMaxIndex))
+                            ctx.beginPath()
+                            ctx.strokeStyle = i <= currentIndex ? root.gold : "#46505f"
+                            ctx.moveTo(x, railY - 7)
+                            ctx.lineTo(x, railY + 7)
+                            ctx.stroke()
+
+                            ctx.fillStyle = i <= currentIndex ? root.gold : "#54606f"
+                            ctx.beginPath()
+                            ctx.arc(x, railY, i === currentIndex ? 4 : 2.5, 0, Math.PI * 2)
+                            ctx.fill()
+                        }
+
+                        ctx.strokeStyle = "rgba(201,168,76,0.88)"
+                        ctx.lineWidth = 2
+                        ctx.beginPath()
+                        ctx.moveTo(railLeft, railY)
+                        ctx.lineTo(markerX, railY)
+                        ctx.stroke()
+
+                        ctx.beginPath()
+                        ctx.fillStyle = root.gold
+                        ctx.moveTo(markerX, railY + 9)
+                        ctx.lineTo(markerX - 5, railY + 2)
+                        ctx.lineTo(markerX + 5, railY + 2)
+                        ctx.closePath()
+                        ctx.fill()
+                    }
+
+                    onWidthChanged: requestPaint()
+                    onHeightChanged: requestPaint()
+                }
+
+                Slider {
+                    id: missionSlider
+                    anchors.fill: parent
+                    from: 0
+                    to: Math.max(0, maxIndex)
+                    stepSize: 1
+                    snapMode: Slider.SnapAlways
+                    value: Math.min(currentIndex, Math.max(0, maxIndex))
+                    onMoved: scrubbed(Math.round(value))
+                    onPressedChanged: if (!pressed) scrubbed(Math.round(value))
+
+                    background: Item { }
+
+                    handle: Rectangle {
+                        x: missionSlider.leftPadding + (missionSlider.visualPosition * (missionSlider.availableWidth - width))
+                        y: missionSlider.topPadding + (missionSlider.availableHeight - height) / 2
+                        width: 18
+                        height: 18
+                        color: "#151922"
+                        border.color: root.gold
+                        border.width: 1
+                        radius: 2
+
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 6
+                            height: 6
+                            color: root.gold
+                            radius: 1
+                        }
+                    }
+                }
+            }
         }
     }
 

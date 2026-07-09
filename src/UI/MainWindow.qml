@@ -280,8 +280,9 @@ ApplicationWindow {
     Loader {
         id:             briechModernView
         anchors.fill:   parent
+        z:              100
         visible:        false
-        active:         visible
+        active:         true
         source:         "qrc:/Briech/qml/Modern/BriechModernView.qml"
     }
 
