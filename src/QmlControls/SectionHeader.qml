@@ -48,7 +48,7 @@ CheckBox {
                 text:       control.text
                 color:      "#d8dde6"
                 font.bold:  true
-                font.family: "Geo-Regular"
+                font.family: ScreenTools.normalFontFamily
                 font.letterSpacing: 0.5
             }
 

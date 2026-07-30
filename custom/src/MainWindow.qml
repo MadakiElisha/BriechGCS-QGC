@@ -16,7 +16,7 @@ Window {
 
     FontLoader {
         id: logoFont
-        source: "qrc:/fonts/Geo-Regular"
+        source: "qrc:/fonts/Barlow-Regular.ttf"
         onStatusChanged: {
             if (status === FontLoader.Ready) {
                 console.log("Logo font loaded:", name)

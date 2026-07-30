@@ -136,7 +136,7 @@ Item {
                             color: _active ? "#C9A84C" : "#6a7585"
                             font.pixelSize: 11
                             font.bold: true
-                            font.family: "Geo-Regular"
+                            font.family: ScreenTools.normalFontFamily
                             font.letterSpacing: 1
                         }
 
