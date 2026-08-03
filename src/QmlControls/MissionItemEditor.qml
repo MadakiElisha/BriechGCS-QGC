@@ -135,7 +135,11 @@ Rectangle {
 
                 property real _padding: ScreenTools.comboBoxPadding
 
-                QGCLabel { text: missionItem.commandName }
+                QGCLabel {
+                    text: missionItem.commandName.toUpperCase()
+                    font.family: "Barlow Condensed"
+                    font.bold: true
+                }
 
                 QGCColoredImage {
                     height:             ScreenTools.defaultFontPixelWidth
@@ -173,8 +177,10 @@ Rectangle {
             height:                 commandPicker.height
             visible:                !missionItem.isCurrentItem || !missionItem.isSimpleItem || _waypointsOnlyMode || missionItem.isTakeoffItem
             verticalAlignment:      Text.AlignVCenter
-            text:                   missionItem.commandName
+            text:                   missionItem.commandName.toUpperCase()
             color:                  _outerTextColor
+            font.family:            "Barlow Condensed"
+            font.bold:              true
         }
     }
 

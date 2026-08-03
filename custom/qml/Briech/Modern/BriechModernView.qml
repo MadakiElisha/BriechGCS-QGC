@@ -231,9 +231,9 @@ Item {
                 spacing: 8
 
                 Image {
-                    Layout.preferredWidth: 24
-                    Layout.preferredHeight: 24
-                    source: "/res/Briech/Logos/logoBlack.png"
+                    Layout.preferredWidth: 28
+                    Layout.preferredHeight: 28
+                    source: "qrc:/Briech/res/logoBlack.png"
                     fillMode: Image.PreserveAspectFit
                 }
 
@@ -241,7 +241,7 @@ Item {
                     text: "BRIECH UAS"
                     color: "white"
                     font.bold: true
-                    font.pixelSize: 16
+                    font.pixelSize: 20
                     font.letterSpacing: 2
                     font.family: "Barlow Condensed"
                 }
@@ -249,9 +249,10 @@ Item {
                 Text {
                     text: "Ground Control Station"
                     color: root.gold
-                    font.pixelSize: 12
+                    font.pixelSize: 14
                     font.letterSpacing: 2
                     font.family: "Barlow Condensed"
+                    font.bold: true
                 }
 
                 Item { Layout.fillWidth: true }
@@ -292,9 +293,9 @@ Item {
                             text: activeVehicle ? "BRCH-01 - ACTIVE LINK" : "DISCONNECTED - MANUAL CONNECT"
                             color: root.text
                             elide: Text.ElideRight
-                            font.pixelSize: 12
+                            font.pixelSize: 16
                             font.bold: true
-                            font.family: ScreenTools.normalFontFamily
+                            font.family: "Barlow Condensed"
                         }
                     }
                 }
@@ -324,7 +325,7 @@ Item {
                                 id: label
                                 text: modelData.k
                                 color: root.dim
-                                font.pixelSize: 9
+                                font.pixelSize: 14
                                 font.family: "Barlow Condensed"
                                 font.bold: true
                             }
@@ -333,16 +334,16 @@ Item {
                                 id: value
                                 text: modelData.v
                                 color: modelData.k === "BATT" || modelData.k === "MODE" ? root.ok : root.text
-                                font.pixelSize: 11
+                                font.pixelSize: 14
                                 font.bold: true
-                                font.family: ScreenTools.normalFontFamily
+                                font.family: "Barlow Condensed"
                             }
 
                             Text {
                                 id: unit
                                 text: modelData.u
                                 color: root.dim
-                                font.pixelSize: 9
+                                font.pixelSize: 16
                                 font.family: ScreenTools.normalFontFamily
                             }
                         }
@@ -1304,14 +1305,14 @@ Item {
                 height: 13
                 source: iconSource
                 fillMode: Image.PreserveAspectFit
-                opacity: active ? 1 : 0.42
+                opacity: (active || mouseArea.containsMouse) ? 1 : 0.42
             }
 
             Text {
                 id: labelText
                 anchors.verticalCenter: parent.verticalCenter
                 text: label
-                color: active ? "#ffffff" : root.dim
+                color: (active || mouseArea.containsMouse) ? "#ffffff" : root.dim
                 font.pixelSize: 16
                 font.family: "Barlow Condensed"
                 font.bold: true

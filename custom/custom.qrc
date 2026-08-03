@@ -28,6 +28,7 @@
         <file alias="QGCLogoWhite.svg">res/Briech/Logos/QGCLogoWhite.svg</file>
         <file alias="QGCLogoBlack.svg">res/Briech/Logos/QGCLogoBlack.svg</file>
         <file alias="QGCLogoArrow.svg">res/Briech/Logos/QGCLogoArrow.svg</file>
+        <file alias="logoBlack.png">res/Briech/Logos/logoBlack.png</file>
         <file alias="qgroundcontrol.ico">res/icons/custom_qgroundcontrol.ico</file>
     </qresource>
     <qresource prefix="/Briech/qml">
@@ -39,5 +40,10 @@
         <file alias="QGCLogoWhite.svg">res/Briech/Logos/QGCLogoWhite.svg</file>
         <file alias="QGCLogoBlack.svg">res/Briech/Logos/QGCLogoBlack.svg</file>
         <file alias="QGCLogoArrow.svg">res/Briech/Logos/QGCLogoArrow.svg</file>
+        <file alias="logoBlack.png">res/Briech/Logos/logoBlack.png</file>
+    </qresource>
+    <qresource prefix="/res">
+        <file alias="Briech/Logos/logoBlack.png">res/Briech/Logos/logoBlack.png</file>
+        <file alias="logoBlack.png">res/Briech/Logos/logoBlack.png</file>
     </qresource>
 </RCC>

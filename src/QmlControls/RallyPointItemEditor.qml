@@ -46,8 +46,10 @@ Rectangle {
             anchors.leftMargin:     _margin
             anchors.left:           indicator.right
             anchors.verticalCenter: parent.verticalCenter
-            text:                   qsTr("Rally Point")
+            text:                   qsTr("Rally Point").toUpperCase()
             color:                  _outerTextColor
+            font.family:            "Barlow Condensed"
+            font.bold:              true
         }
 
         QGCColoredImage {

@@ -20,7 +20,9 @@ Rectangle {
         anchors.margins:    _margin
         anchors.left:       parent.left
         anchors.top:        parent.top
-        text:               qsTr("Rally Points")
+        text:               qsTr("Rally Points").toUpperCase()
+        font.family:        "Barlow Condensed"
+        font.bold:          true
     }
 
     Rectangle {

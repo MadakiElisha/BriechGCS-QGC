@@ -318,7 +318,7 @@ Item {
         id: editorMap
         anchors.top: topHeader.bottom
         anchors.left: leftPanel.right
-        anchors.right: rightPanel.left
+        anchors.right: parent.right
         anchors.bottom: parent.bottom
         mapName: "BriechModernPlanView"
         allowGCSLocationCenter: true
@@ -379,7 +379,7 @@ Item {
         anchors.top: topHeader.bottom
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        width: Math.min(root.width / 2, ScreenTools.defaultFontPixelWidth * 50) + 50
+        width: Math.min(root.width * 0.3, ScreenTools.defaultFontPixelWidth * 30)
         planMasterController: planMasterController
         editorMap: editorMap
     }
@@ -413,8 +413,10 @@ Item {
         radius: 6
         color: "#0b0d10"
         border.color: root.border
-        x: rightPanel.x - width - 12
+        x: (rightPanel.expanded ? (root.width - rightPanel.width) : root.width) - width - 12
         y: bottomBar.y - height - 24
+
+        Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
 
         Column { anchors.centerIn: parent; spacing: 2; Text { text: "IAS"; color: root.dim; font.pixelSize: 10 } Text { text: QGroundControl.multiVehicleManager.activeVehicle ? ("BRCH-" + QGroundControl.multiVehicleManager.activeVehicle.id) : "--"; color: root.gold; font.bold: true } }
     }

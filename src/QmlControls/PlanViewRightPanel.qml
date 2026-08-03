@@ -38,6 +38,19 @@ Item {
 
     QGCPalette { id: qgcPal }
 
+    property bool expanded: true
+
+    transform: Translate {
+        id: panelTranslation
+        x: root.expanded ? 0 : root.width
+        Behavior on x {
+            NumberAnimation {
+                duration: 220
+                easing.type: Easing.OutCubic
+            }
+        }
+    }
+
     Rectangle {
         id:             rightPanelBackground
         anchors.fill:   parent
@@ -55,40 +68,38 @@ Item {
         height:                 toggleButtonRect.height
         clip:                   true
 
-        property bool _expanded: root.anchors.right == root.parent.right
-
         Rectangle {
             id:             toggleButtonRect
-            width:          ScreenTools.defaultFontPixelWidth * 2.25
+            width:          ScreenTools.defaultFontPixelWidth * 2.0
             height:         width * 3
             radius:         ScreenTools.defaultBorderRadius
-            color:          "#0f1113"
-            border.color:   "#252c38"
+            color:          toggleMouseArea.containsMouse ? "#1c212a" : "#0f1113"
+            border.color:   toggleMouseArea.containsMouse ? "#C9A84C" : "#252c38"
             border.width:   1
+
+            Behavior on color { ColorAnimation { duration: 150 } }
+            Behavior on border.color { ColorAnimation { duration: 150 } }
 
             QGCLabel {
                 id:                 toggleButtonLabel
                 anchors.centerIn:   parent
-                text:               panelOpenCloseButton._expanded ? ">" : "<"
-                color:              "#C9A84C"
+                text:               root.expanded ? ">" : "<"
+                color:              toggleMouseArea.containsMouse ? "#ffffff" : "#C9A84C"
                 font.bold:          true
+                font.pixelSize:     14
+
+                Behavior on color { ColorAnimation { duration: 150 } }
             }
 
         }
 
-        QGCMouseArea {
+        MouseArea {
+            id: toggleMouseArea
             anchors.fill: parent
+            hoverEnabled: true
 
             onClicked: {
-                if (panelOpenCloseButton._expanded) {
-                    // Close panel
-                    root.anchors.right = undefined
-                    root.anchors.left = root.parent.right
-                } else {
-                    // Open panel
-                    root.anchors.left = undefined
-                    root.anchors.right = root.parent.right
-                }
+                root.expanded = !root.expanded
             }
         }
     }
@@ -120,7 +131,7 @@ Item {
                         property bool _active: root._editingTool === index
                         width: parent.width / 3
                         height: parent.height
-                        color: _active ? "#211c10" : "transparent"
+                        color: _active ? "#211c10" : (tabMouseArea.containsMouse ? "#181a20" : "transparent")
 
                         Rectangle {
                             anchors.bottom: parent.bottom
@@ -133,15 +144,17 @@ Item {
                         Text {
                             anchors.centerIn: parent
                             text: modelData
-                            color: _active ? "#C9A84C" : "#6a7585"
-                            font.pixelSize: 11
+                            color: _active ? "#ffffff" : (tabMouseArea.containsMouse ? "#ffffff" : "#6a7585")
+                            font.pixelSize: 16
                             font.bold: true
-                            font.family: ScreenTools.normalFontFamily
+                            font.family: "Barlow Condensed"
                             font.letterSpacing: 1
                         }
 
                         MouseArea {
+                            id: tabMouseArea
                             anchors.fill: parent
+                            hoverEnabled: true
                             onClicked: {
                                 root._editingTool = index
                                 if (index === 0) _editingLayer = _layerMission

@@ -14,7 +14,7 @@ T.ComboBox {
     padding: ScreenTools.comboBoxPadding
     spacing: ScreenTools.defaultFontPixelWidth
     font.pointSize: ScreenTools.defaultFontPointSize
-    font.family: ScreenTools.normalFontFamily
+    font.family: "Barlow Condensed"
     implicitWidth: Math.max(background.implicitWidth,
                             (control.sizeToContents ? _largestTextWidth : contentItem.implicitWidth) + leftPadding + rightPadding + padding)
     implicitHeight: Math.max(background.implicitHeight,
@@ -78,7 +78,7 @@ T.ComboBox {
         }
 
         contentItem: Text {
-            text: _text
+            text: _text.toUpperCase()
             font: control.font
             color: control.currentIndex === index ? qgcPal.buttonHighlightText : qgcPal.buttonText
             verticalAlignment: Text.AlignVCenter
@@ -104,7 +104,7 @@ T.ComboBox {
     // The label of the button
     contentItem: QGCLabel {
         id: text
-        text: control.alternateText === "" ? control.currentText : control.alternateText
+        text: (control.alternateText === "" ? control.currentText : control.alternateText).toUpperCase()
         font: control.font
         color: qgcPal.buttonText
     }
