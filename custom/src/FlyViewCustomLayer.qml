@@ -27,6 +27,25 @@ Item {
     property string _messageTitle:          ""
     property string _messageText:           ""
     property real   _toolsMargin:           ScreenTools.defaultFontPixelWidth * 0.75
+    property real   _stripTopMargin:        parentToolInsets.topEdgeLeftInset + (_toolsMargin * 0.75)
+
+    function _vehicleBatteryPercent() {
+        if (!_activeVehicle) {
+            return "--"
+        }
+        if (_activeVehicle.battery && _activeVehicle.battery.percentRemaining) {
+            return _activeVehicle.battery.percentRemaining.valueString + "%"
+        }
+        return "--"
+    }
+
+    function _missionIndexText() {
+        if (!_activeVehicle || !_activeVehicle.missionManager) {
+            return "--"
+        }
+        var index = _activeVehicle.missionManager.currentIndex
+        return index >= 0 ? String(index + 1) : "--"
+    }
 
     function secondsToHHMMSS(timeS) {
         var sec_num = parseInt(timeS, 10);
@@ -48,7 +67,7 @@ Item {
         rightEdgeCenterInset:   parentToolInsets.rightEdgeCenterInset
         rightEdgeBottomInset:   parent.width - compassBackground.x
         topEdgeLeftInset:       parentToolInsets.topEdgeLeftInset
-        topEdgeCenterInset:     compassArrowIndicator.y + compassArrowIndicator.height
+        topEdgeCenterInset:     Math.max(compassArrowIndicator.y + compassArrowIndicator.height, telemetryStrip.y + telemetryStrip.height)
         topEdgeRightInset:      parentToolInsets.topEdgeRightInset
         bottomEdgeLeftInset:    parentToolInsets.bottomEdgeLeftInset
         bottomEdgeCenterInset:  parentToolInsets.bottomEdgeCenterInset
@@ -146,6 +165,89 @@ Item {
     }
 
     Rectangle {
+        id: telemetryStrip
+        anchors.top:                parent.top
+        anchors.horizontalCenter:    parent.horizontalCenter
+        anchors.topMargin:          _stripTopMargin
+        width:                      Math.min(parent.width * 0.78, ScreenTools.defaultFontPixelWidth * 66)
+        height:                     ScreenTools.defaultFontPixelHeight * 2.8
+        color:                      Qt.rgba(0.04, 0.05, 0.07, 0.92)
+        border.color:               Qt.rgba(0.79, 0.66, 0.30, 0.42)
+        border.width:               1
+        radius:                     3
+        clip:                       true
+
+        Rectangle {
+            anchors.fill: parent
+            color: "#000000"
+            opacity: 0.10
+        }
+
+        Row {
+            anchors.fill: parent
+            anchors.margins: ScreenTools.defaultFontPixelWidth * 0.7
+            spacing: ScreenTools.defaultFontPixelWidth * 0.55
+
+            Repeater {
+                model: [
+                    { k: "WP", v: _missionIndexText(), u: "" },
+                    { k: "ALT", v: _activeVehicle ? _activeVehicle.altitudeRelative.valueString : "0.0", u: "m" },
+                    { k: "ASPD", v: _activeVehicle ? _activeVehicle.airSpeed.valueString : "0.0", u: "m/s" },
+                    { k: "GSPD", v: _activeVehicle ? _activeVehicle.groundSpeed.valueString : "0.0", u: "m/s" },
+                    { k: "HDG", v: _activeVehicle ? _activeVehicle.heading.valueString : "---", u: "deg" },
+                    { k: "DIST HOME", v: _activeVehicle ? _activeVehicle.distanceToHome.valueString : "0", u: "m" },
+                    { k: "DIST WP", v: _activeVehicle && _activeVehicle.missionManager && _activeVehicle.missionManager.currentIndex >= 0 ? String(_activeVehicle.missionManager.currentIndex + 1) : "--", u: "" },
+                    { k: "TIME", v: _activeVehicle && _activeVehicle.flightTime ? _activeVehicle.flightTime.valueString : "00:00:00", u: "" },
+                    { k: "BATT", v: _vehicleBatteryPercent(), u: "" },
+                    { k: "MODE", v: _activeVehicle ? (_activeVehicle.armed ? "ARMED" : _activeVehicle.flightMode) : "STBY", u: "" }
+                ]
+
+                Rectangle {
+                    width: telemetryStrip.width / 10 - ScreenTools.defaultFontPixelWidth * 0.14
+                    height: parent.height
+                    color: "transparent"
+                    border.color: Qt.rgba(1, 1, 1, 0.06)
+                    border.width: 1
+
+                    Column {
+                        anchors.centerIn: parent
+                        spacing: 0
+
+                        Text {
+                            text: modelData.k
+                            color: root.gold
+                            font.pixelSize: 8
+                            font.bold: true
+                            font.family: "monospace"
+                        }
+
+                        Row {
+                            spacing: 2
+                            anchors.horizontalCenter: parent.horizontalCenter
+
+                            Text {
+                                text: modelData.v
+                                color: root.text
+                                font.pixelSize: 12
+                                font.bold: true
+                                font.family: "monospace"
+                            }
+
+                            Text {
+                                visible: modelData.u !== ""
+                                text: modelData.u
+                                color: root.dim
+                                font.pixelSize: 7
+                                font.family: "monospace"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle {
         id:                     compassBackground
         anchors.bottom:         attitudeIndicator.bottom
         anchors.right:          attitudeIndicator.left
@@ -234,10 +336,10 @@ Item {
         radius:                 height * 0.5
         color:                  qgcPal.windowShade
 
-        CustomAttitudeWidget {
+        BriechAttitudeIndicator {
             size:               parent.height * 0.95
             vehicle:            _activeVehicle
-            showHeading:        false
+            showHeading:        true
             anchors.centerIn:   parent
         }
     }

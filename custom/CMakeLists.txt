@@ -60,6 +60,11 @@ set(QML_IMPORT_PATH ${QML_IMPORT_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/res" CACHE S
 qt_add_library(CustomModule STATIC)
 
 # Set resource aliases for custom widgets
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/res/BriechTheme.qml PROPERTIES
+    QT_RESOURCE_ALIAS BriechTheme.qml
+    QT_QML_SINGLETON_TYPE TRUE
+)
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/res/BriechAttitudeIndicator.qml PROPERTIES QT_RESOURCE_ALIAS BriechAttitudeIndicator.qml)
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomArtificialHorizon.qml PROPERTIES QT_RESOURCE_ALIAS CustomArtificialHorizon.qml)
 qgc_set_qt_resource_alias(
     ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomAttitudeWidget.qml
@@ -76,6 +81,8 @@ qt_add_qml_module(CustomModule
     VERSION 1.0
     RESOURCE_PREFIX /qml
     QML_FILES
+        ${CMAKE_CURRENT_SOURCE_DIR}/res/BriechTheme.qml
+        ${CMAKE_CURRENT_SOURCE_DIR}/res/BriechAttitudeIndicator.qml
         ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomArtificialHorizon.qml
         ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomAttitudeWidget.qml
         ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomIconButton.qml
@@ -86,7 +93,6 @@ qt_add_qml_module(CustomModule
         ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomVehicleButton.qml
     NO_PLUGIN
 )
-
 # ============================================================================
 # Custom Plugin Sources
 # ============================================================================
