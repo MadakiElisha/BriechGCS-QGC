@@ -20,6 +20,10 @@ ApplicationWindow {
     flags:      Qt.Window | (ScreenTools.isAndroid ? Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint : 0)
 
     property bool   _utmspSendActTrigger
+    FontLoader {
+        id: logoFont
+        source: "qrc:/fonts/Geo-Regular"
+    }
     Component.onCompleted: {
         // Start the sequence of first run prompt(s)
         firstRunPromptManager.nextPrompt()
@@ -266,14 +270,530 @@ ApplicationWindow {
         color:          QGroundControl.globalPalette.window
     }
 
+
+
+    // --- MAIN HEADER (Branding) ---
+    header: Rectangle {
+        id: header
+        width: parent.width
+        height: 60
+        color: "#000000"
+        z: 10
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 20
+            anchors.rightMargin: 20
+
+            Row {
+                spacing: 12
+                Layout.alignment: Qt.AlignVCenter
+                Image {
+                    source: "/res/logoBlack.png"
+                    width: 30
+                    height: 30
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                }
+                Text {
+                    id: mainTitle
+                    text: "BRIECH UAS"
+                    color: "white"
+                    font.pixelSize: 24
+                    font.weight: Font.ExtraBold
+                    font.family: logoFont.status === FontLoader.Ready ? logoFont.name : "Arial"
+                }
+                Text {
+                    id: subTitle
+                    text: "Ground Control Station"
+                    color: "#FFBF00"
+                    font.pixelSize: 24
+                    font.weight: Font.ExtraBold
+                    font.family: logoFont.status === FontLoader.Ready ? logoFont.name : "Arial"
+                }
+            }
+        }
+        Rectangle {
+            width: parent.width
+            height: 1
+            color: "#222222"
+            anchors.bottom: parent.bottom
+        }
+    }
+
+    // ── Simulated state  (replace with your MAVLink C++ model) ──────────────
+    QtObject {
+        id: telemetry
+
+        // Toggle this to preview both states
+        property bool   connected:   false   // ← false = disconnected screenshot
+
+        // Connected-state values
+        property real   altitude:    127.3
+        property real   climbRate:   8.2
+        property real   groundSpeed: 16.7
+        property int    satellites:  12
+        property int    battery:     82
+        property string flightMode:  "AUTO"
+        property bool   armed:       true
+        property string linkStatus:  "Link Status Nominal"
+    }
+
+    // ── Design tokens ────────────────────────────────────────────────────────
+    QtObject {
+        id: theme
+
+        // Backgrounds
+        readonly property color bg:          "#1b1b1f"
+        readonly property color bgHover:     "#28282d"
+
+        // Text
+        readonly property color textBright:  "#dedede"
+        readonly property color textMid:     "#9a9a9a"
+        readonly property color textDim:     "#5e5e62"
+
+        // Signal colours
+        readonly property color green:       "#4db860"
+        readonly property color yellow:      "#f5c518"
+        readonly property color red:         "#e8453c"
+        readonly property color greyDot:     "#4a4a50"
+
+        // Separators
+        readonly property color sep:         "#35353a"
+
+        // Typography
+        readonly property string font:       "Roboto, 'Noto Sans', sans-serif"
+        readonly property int    sz10:       10
+        readonly property int    sz11:       11
+        readonly property int    sz12:       12
+        readonly property int    sz13:       13
+        readonly property int    sz14:       14
+    }
+
+    Rectangle {
+        id: toolbarBar
+        width: parent.width
+        height: 60
+        anchors.top: header.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        color:        theme.bg
+
+        // Bottom hairline separator
+        Rectangle {
+            anchors.bottom: parent.bottom
+            width:  parent.width
+            height: 1
+            color:  theme.sep
+        }
+
+        RowLayout {
+            anchors {
+                fill:           parent
+                leftMargin:     4
+                rightMargin:    0
+            }
+            spacing: 0
+
+            // ════════════════════════════════════════════════════════════════
+            //  LEFT  –  Connection indicator
+            // ════════════════════════════════════════════════════════════════
+            RowLayout {
+                spacing:              6
+                Layout.leftMargin:    4
+                Layout.alignment:     Qt.AlignVCenter
+
+                // Status dot
+                Rectangle {
+                    id:     statusDot
+                    width:  8
+                    height: 8
+                    radius: 4
+                    color:  telemetry.connected ? theme.green : theme.greyDot
+
+                    SequentialAnimation on opacity {
+                        running:  telemetry.connected
+                        loops:    Animation.Infinite
+                        NumberAnimation { to: 0.25; duration: 900; easing.type: Easing.InOutQuad }
+                        NumberAnimation { to: 1.00; duration: 900; easing.type: Easing.InOutQuad }
+                    }
+                    onVisibleChanged: if (!telemetry.connected) opacity = 1
+                }
+
+                Text {
+                    id:              connectionLabel
+                    text:            telemetry.connected
+                                     ? ("CONNECTED  " + telemetry.linkStatus)
+                                     : "Disconnected  Click to manually connect"
+                    color:           "#FFFFFF"
+                    font.family:     theme.font
+                    font.pixelSize:  theme.sz12
+                    font.weight:     Font.Bold
+                    renderType:      Text.NativeRendering
+
+                    MouseArea {
+                        anchors.fill:  parent
+                        enabled:       !telemetry.connected
+                        cursorShape:   Qt.PointingHandCursor
+                        onClicked: {
+                            console.log("Manual connect requested")
+                        }
+                    }
+                }
+
+                Item {
+                    width:  18
+                    height: 18
+
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width:   14
+                        height:  11
+                        radius:  3
+                        color:   "transparent"
+                        border.color: theme.textDim
+                        border.width: 1.5
+                    }
+
+                    MouseArea {
+                        anchors.fill:  parent
+                        cursorShape:   Qt.PointingHandCursor
+                        hoverEnabled:  true
+                        onEntered:     parent.opacity = 0.7
+                        onExited:      parent.opacity = 1.0
+                        onClicked:     console.log("Messages panel toggled")
+                    }
+                }
+            }
+
+            Item { Layout.fillWidth: true }
+
+            RowLayout {
+                visible:          telemetry.connected
+                spacing:          0
+                Layout.alignment: Qt.AlignVCenter
+
+                component TelCell: RowLayout {
+                    property string prefixChar:  ""
+                    property color  prefixClr:   theme.textMid
+                    property string val:         ""
+                    property string unitStr:     ""
+                    property bool   showSep:     true
+
+                    spacing: 2
+                    Layout.rightMargin: showSep ? 0 : 4
+
+                    Text {
+                        text:            prefixChar
+                        color:           prefixClr
+                        font.family:     theme.font
+                        font.pixelSize:  theme.sz11
+                        font.weight:     Font.Bold
+                        visible:         prefixChar !== ""
+                    }
+                    Text {
+                        text:            val
+                        color:           theme.textBright
+                        font.family:     theme.font
+                        font.pixelSize:  theme.sz13
+                        font.weight:     Font.Bold
+                    }
+                    Text {
+                        text:            unitStr
+                        color:           theme.textMid
+                        font.family:     theme.font
+                        font.pixelSize:  theme.sz10
+                        visible:         unitStr !== ""
+                        Layout.leftMargin: 1
+                    }
+                    Rectangle {
+                        visible:          showSep
+                        width:            1
+                        height:           18
+                        color:            theme.sep
+                        Layout.leftMargin:  6
+                        Layout.rightMargin: 6
+                    }
+                }
+
+                TelCell {
+                    prefixChar: "↑"
+                    val:        telemetry.altitude.toFixed(1)
+                    unitStr:    "m"
+                }
+
+                TelCell {
+                    prefixChar: telemetry.climbRate >= 0 ? "↑" : "↓"
+                    prefixClr:  telemetry.climbRate >= 0 ? theme.green : theme.red
+                    val:        Math.abs(telemetry.climbRate).toFixed(1)
+                    unitStr:    "m/s"
+                }
+
+                TelCell {
+                    prefixChar: "→"
+                    val:        telemetry.groundSpeed.toFixed(1)
+                    unitStr:    "m/s"
+                }
+
+                TelCell {
+                    prefixChar: "+"
+                    prefixClr:  theme.textBright
+                    val:        telemetry.satellites.toString()
+                    unitStr:    ""
+                    showSep:    false
+                }
+                Text {
+                    text:           "GPS"
+                    color:          theme.textMid
+                    font.family:    theme.font
+                    font.pixelSize: theme.sz11
+                    font.weight:    Font.Bold
+                    Layout.rightMargin: 2
+                }
+                Rectangle {
+                    width: 1; height: 18
+                    color: theme.sep
+                    Layout.leftMargin:  6
+                    Layout.rightMargin: 6
+                }
+
+                RowLayout {
+                    spacing: 2
+                    Text {
+                        text:           "⚡"
+                        color:          telemetry.battery > 25 ? theme.green : theme.red
+                        font.pixelSize: theme.sz13
+                    }
+                    Text {
+                        text:           telemetry.battery + "%"
+                        color:          telemetry.battery > 25 ? theme.textBright : theme.red
+                        font.family:    theme.font
+                        font.pixelSize: theme.sz13
+                        font.weight:    Font.Bold
+                    }
+                    Text {
+                        text:           "BATT"
+                        color:          theme.textMid
+                        font.family:    theme.font
+                        font.pixelSize: theme.sz10
+                        font.weight:    Font.Bold
+                    }
+                    Rectangle {
+                        width: 1; height: 18
+                        color: theme.sep
+                        Layout.leftMargin:  6
+                        Layout.rightMargin: 6
+                    }
+                }
+
+                Text {
+                    text:           telemetry.flightMode
+                    color:          theme.textBright
+                    font.family:    theme.font
+                    font.pixelSize: theme.sz12
+                    font.weight:    Font.Bold
+                    Layout.rightMargin: 2
+                }
+                Rectangle {
+                    width: 1; height: 18
+                    color: theme.sep
+                    Layout.leftMargin:  6
+                    Layout.rightMargin: 6
+                }
+
+                Rectangle {
+                    id:             armedPill
+                    height:         22
+                    width:          armedText.width + 14
+                    radius:         3
+                    color:          telemetry.armed
+                                    ? Qt.rgba(0.91, 0.27, 0.24, 0.15)
+                                    : "transparent"
+                    border.color:   telemetry.armed ? theme.red   : theme.textDim
+                    border.width:   1
+                    Layout.rightMargin: 8
+
+                    Text {
+                        id:             armedText
+                        anchors.centerIn: parent
+                        text:           telemetry.armed ? "ARMED" : "DISARMED"
+                        color:          telemetry.armed ? theme.red : theme.textMid
+                        font.family:    theme.font
+                        font.pixelSize: theme.sz12
+                        font.weight:    Font.Bold
+                    }
+
+                    SequentialAnimation on opacity {
+                        running: telemetry.armed
+                        loops:   Animation.Infinite
+                        NumberAnimation { to: 0.45; duration: 550 }
+                        NumberAnimation { to: 1.00; duration: 550 }
+                    }
+                }
+            }
+
+            RowLayout {
+                spacing:          0
+                Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+
+                property int activeTab: 0
+
+                component NavTab: Rectangle {
+                    id: tabRoot
+
+                    property string tabLabel:  ""
+                    property bool   active:    false
+                    signal tabClicked()
+
+                    property alias iconItem: iconSlot.children
+
+                    width:   tabLabel === "ANALYZE" ? 96 : 80
+                    height:  48
+                    color:   active
+                             ? Qt.rgba(0.96, 0.77, 0.09, 0.10)
+                             : hov.containsMouse ? theme.bgHover : "transparent"
+
+                    Rectangle {
+                        width:  parent.width
+                        height: active ? 2 : 0
+                        color:  theme.yellow
+                        anchors.top: parent.top
+                    }
+
+                    RowLayout {
+                        anchors.centerIn: parent
+                        spacing: 4
+
+                        Item {
+                            id: iconSlot
+                            width:  14
+                            height: 14
+                        }
+
+                        Text {
+                            text:           tabLabel
+                            color:          active ? theme.yellow : theme.textDim
+                            font.family:    theme.font
+                            font.pixelSize: theme.sz11
+                            font.weight:    Font.Bold
+                        }
+                    }
+
+                    HoverHandler { id: hov }
+                    TapHandler { onTapped: tabRoot.tabClicked() }
+                }
+
+                NavTab {
+                    tabLabel: "FLY"
+                    active:   parent.activeTab === 0
+                    onTabClicked: parent.activeTab = 0
+
+                    iconItem: [
+                        Text {
+                            anchors.centerIn: parent
+                            text:           "✈"
+                            color:          parent.parent.parent.active
+                                            ? theme.yellow : theme.textDim
+                            font.pixelSize: 13
+                        }
+                    ]
+                }
+
+                NavTab {
+                    tabLabel: "PLAN"
+                    active:   parent.activeTab === 1
+                    onTabClicked: parent.activeTab = 1
+
+                    iconItem: [
+                        Grid {
+                            anchors.centerIn: parent
+                            columns: 2
+                            spacing: 2
+                            Repeater {
+                                model: 4
+                                Rectangle {
+                                    width:  3; height: 3
+                                    color:  parent.parent.parent.parent.active
+                                            ? theme.yellow : theme.textDim
+                                }
+                            }
+                        }
+                    ]
+                }
+
+                NavTab {
+                    tabLabel: "ANALYZE"
+                    active:   parent.activeTab === 2
+                    onTabClicked: parent.activeTab = 2
+
+                    iconItem: [
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 2
+                            property bool act: parent.parent.parent.parent.active
+                            Repeater {
+                                model: [10, 7, 13]
+                                Rectangle {
+                                    width:  3
+                                    height: modelData
+                                    anchors.bottom: parent ? parent.bottom : undefined
+                                    color:  parent.act ? theme.yellow : theme.textDim
+                                }
+                            }
+                        }
+                    ]
+                }
+
+                NavTab {
+                    tabLabel: "VEHICLE"
+                    active:   parent.activeTab === 3
+                    onTabClicked: parent.activeTab = 3
+                    width: 88
+
+                    iconItem: [
+                        Text {
+                            anchors.centerIn: parent
+                            text:           "⌨"
+                            color:          parent.parent.parent.active
+                                            ? theme.yellow : theme.textDim
+                            font.pixelSize: 12
+                        }
+                    ]
+                }
+
+                Rectangle {
+                    width:  40
+                    height: 48
+                    color:  gearHov.containsMouse ? theme.bgHover : "transparent"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text:           "⚙"
+                        color:          theme.textDim
+                        font.pixelSize: 15
+                    }
+
+                    HoverHandler { id: gearHov }
+                    TapHandler   { onTapped: console.log("Settings") }
+                }
+            }
+        }
+    }
+
     FlyView {
         id:                     flyView
-        anchors.fill:           parent
+        anchors.top:            toolbarBar.bottom
+        anchors.left:           parent.left
+        anchors.right:          parent.right
+        anchors.bottom:         parent.bottom
     }
 
     PlanView {
         id:             planView
-        anchors.fill:   parent
+        anchors.top:    toolbarBar.bottom
+        anchors.left:   parent.left
+        anchors.right:  parent.right
+        anchors.bottom: parent.bottom
         visible:        false
     }
 
