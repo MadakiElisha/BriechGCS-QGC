@@ -215,26 +215,26 @@ void QGCApplication::init()
         SettingsManager::instance()->mavlinkSettings()->gcsMavlinkSystemID()->setRawValue(_systemId);
     }
 
-    // Although this should really be in _initForNormalAppBoot putting it here allowws us to create unit tests which pop up more easily
-    if (QFontDatabase::addApplicationFont(":/fonts/opensans") < 0) {
-        qCWarning(QGCApplicationLog) << "Could not load /fonts/opensans font";
-    }
-
-    if (QFontDatabase::addApplicationFont(":/fonts/opensans-demibold") < 0) {
-        qCWarning(QGCApplicationLog) << "Could not load /fonts/opensans-demibold font";
-    }
-
-    // Try to load the Geo family if provided (used by custom themes).
-    // This will be a no-op if the resource is not present; log for visibility.
-    {
-        const int fontId = QFontDatabase::addApplicationFont(":/fonts/Geo-Regular");
+    // Load application fonts
+    static const QStringList fontResources = {
+        QStringLiteral(":/fonts/Barlow-Regular.ttf"),
+        QStringLiteral(":/fonts/Barlow-Medium.ttf"),
+        QStringLiteral(":/fonts/Barlow-SemiBold.ttf"),
+        QStringLiteral(":/fonts/Barlow-Bold.ttf"),
+        QStringLiteral(":/fonts/BarlowCondensed-Medium.ttf"),
+        QStringLiteral(":/fonts/BarlowCondensed-SemiBold.ttf"),
+        QStringLiteral(":/fonts/BarlowCondensed-Bold.ttf"),
+        QStringLiteral(":/fonts/ShareTechMono-Regular.ttf"),
+        QStringLiteral(":/fonts/opensans"),
+        QStringLiteral(":/fonts/opensans-demibold")
+    };
+    for (const QString &fontPath : fontResources) {
+        const int fontId = QFontDatabase::addApplicationFont(fontPath);
         if (fontId < 0) {
-            qCWarning(QGCApplicationLog) << "Geo-Regular font resource not found or could not be loaded";
-                _geoFontFamily.clear();
+            qCWarning(QGCApplicationLog) << "Could not load font resource:" << fontPath;
         } else {
             const QStringList families = QFontDatabase::applicationFontFamilies(fontId);
-            qCDebug(QGCApplicationLog) << "Geo-Regular font registered (id:" << fontId << ") families:" << families;
-                _geoFontFamily = families.isEmpty() ? QString() : families.first();
+            qCDebug(QGCApplicationLog) << "Font resource registered:" << fontPath << "families:" << families;
         }
     }
 

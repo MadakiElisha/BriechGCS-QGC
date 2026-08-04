@@ -477,7 +477,7 @@ Item {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 30
+            Layout.preferredHeight: 50
             color: "#05070a"
 
             Rectangle {
@@ -496,9 +496,9 @@ Item {
                 spacing: 8
 
                 Image {
-                    Layout.preferredWidth: 18
-                    Layout.preferredHeight: 18
-                    source: "/Briech/res/QGCLogoFull.svg"
+                    Layout.preferredWidth: 28
+                    Layout.preferredHeight: 28
+                    source: "qrc:/Briech/res/logoBlack.png"
                     fillMode: Image.PreserveAspectFit
                 }
 
@@ -506,27 +506,21 @@ Item {
                     text: "BRIECH UAS"
                     color: "white"
                     font.bold: true
-                    font.pixelSize: 14
+                    font.pixelSize: 20
                     font.letterSpacing: 2
-                    font.family: "Geo-Regular"
+                    font.family: "Barlow Condensed"
                 }
 
                 Text {
                     text: "Ground Control Station"
                     color: root.gold
-                    font.pixelSize: 9
+                    font.pixelSize: 14
                     font.letterSpacing: 2
-                    font.family: "Geo-Regular"
+                    font.family: "Barlow Condensed"
+                    font.bold: true
                 }
 
                 Item { Layout.fillWidth: true }
-
-                Text {
-                    text: activeVehicle ? ("BRCH-" + activeVehicle.id) : "STANDBY"
-                    color: root.dim
-                    font.pixelSize: 10
-                    font.family: "Geo-Regular"
-                }
             }
         }
 
@@ -564,9 +558,9 @@ Item {
                             text: activeVehicle ? "BRCH-01 - ACTIVE LINK" : "DISCONNECTED - MANUAL CONNECT"
                             color: root.text
                             elide: Text.ElideRight
-                            font.pixelSize: 12
+                            font.pixelSize: 16
                             font.bold: true
-                            font.family: "Geo-Regular"
+                            font.family: "Barlow Condensed"
                         }
                     }
                 }
@@ -596,25 +590,26 @@ Item {
                                 id: label
                                 text: modelData.k
                                 color: root.dim
-                                font.pixelSize: 9
-                                font.family: "Geo-Regular"
+                                font.pixelSize: 14
+                                font.family: "Barlow Condensed"
+                                font.bold: true
                             }
 
                             Text {
                                 id: value
                                 text: modelData.v
                                 color: modelData.k === "BATT" || modelData.k === "MODE" ? root.ok : root.text
-                                font.pixelSize: 11
+                                font.pixelSize: 14
                                 font.bold: true
-                                font.family: "Geo-Regular"
+                                font.family: "Barlow Condensed"
                             }
 
                             Text {
                                 id: unit
                                 text: modelData.u
                                 color: root.dim
-                                font.pixelSize: 9
-                                font.family: "Geo-Regular"
+                                font.pixelSize: 16
+                                font.family: ScreenTools.normalFontFamily
                             }
                         }
                     }
@@ -742,8 +737,8 @@ Item {
                         zoomLevel: QGroundControl.flightMapZoom
                         center: QGroundControl.flightMapPosition
 
-                        onZoomLevelChanged: QGroundControl.flightMapZoom = zoomLevel
-                        onCenterChanged: QGroundControl.flightMapPosition = center
+                        onZoomLevelChanged: QGroundControl.flightMapZoom = modernMap.zoomLevel
+                        onCenterChanged: QGroundControl.flightMapPosition = modernMap.center
                         onMapReadyChanged: root.initializeModernMapType()
                         onActiveMapTypeChanged: root.updateSelectedMapKindFromActiveType()
 
@@ -1180,7 +1175,7 @@ Item {
                                 c.fillRect(x + zw * .43, y + zh * .45, tw, 20)
                                 c.strokeRect(x + zw * .43, y + zh * .45, tw, 20)
                                 c.fillStyle = stroke
-                                c.font = "10px \"Geo-Regular\""
+                                c.font = "10px \"" + ScreenTools.normalFontFamily + "\""
                                 c.fillText(label, x + zw * .43 + 9, y + zh * .45 + 13)
                             }
 
@@ -1208,7 +1203,7 @@ Item {
                                 c.fill()
                                 c.stroke()
                                 c.fillStyle = "white"
-                                c.font = "bold 10px \"Geo-Regular\""
+                                c.font = "bold 10px \"" + ScreenTools.normalFontFamily + "\""
                                 c.textAlign = "center"
                                 c.fillText(String(i + 1), p[0], p[1] + 4)
                             })
@@ -1240,7 +1235,7 @@ Item {
                             text: "WIND SHEAR DETECTED - MONITOR"
                             color: root.warn
                             font.pixelSize: 10
-                            font.family: "Geo-Regular"
+                            font.family: ScreenTools.normalFontFamily
                             font.letterSpacing: 1
                         }
                     }
@@ -1274,7 +1269,7 @@ Item {
                                     font.pixelSize: 10
                                     font.bold: true
                                     font.letterSpacing: 1
-                                    font.family: "Geo-Regular"
+                                    font.family: ScreenTools.normalFontFamily
                                 }
 
                                 MouseArea {
@@ -1430,7 +1425,7 @@ Item {
                                         text: modelData
                                         color: index === 2 ? root.gold : root.text
                                         font.pixelSize: 10
-                                        font.family: "Geo-Regular"
+                                        font.family: ScreenTools.normalFontFamily
                                     }
                                 }
                             }
@@ -1553,21 +1548,21 @@ Item {
                     color: activeVehicle ? root.gold : root.dim
                     font.bold: true
                     font.pixelSize: 11
-                    font.family: "Geo-Regular"
+                    font.family: ScreenTools.normalFontFamily
                 }
 
                 Text {
                     text: "ALT " + (activeVehicle ? activeVehicle.altitudeRelative.valueString : "0.0") + " m"
                     color: root.text
                     font.pixelSize: 10
-                    font.family: "Geo-Regular"
+                    font.family: ScreenTools.normalFontFamily
                 }
 
                 Text {
                     text: "GS " + (activeVehicle ? activeVehicle.groundSpeed.valueString : "0.0") + " m/s"
                     color: root.text
                     font.pixelSize: 10
-                    font.family: "Geo-Regular"
+                    font.family: ScreenTools.normalFontFamily
                 }
 
                 Item { Layout.fillWidth: true }
@@ -1578,7 +1573,7 @@ Item {
                     font.bold: true
                     font.pixelSize: 10
                     font.letterSpacing: 1
-                    font.family: "Geo-Regular"
+                    font.family: ScreenTools.normalFontFamily
                 }
             }
         }
@@ -1602,7 +1597,7 @@ Item {
             color: textColor
             font.pixelSize: 9
             font.bold: true
-            font.family: "Geo-Regular"
+            font.family: ScreenTools.normalFontFamily
             font.letterSpacing: 1
         }
     }
@@ -1624,7 +1619,7 @@ Item {
             color: "white"
             font.pixelSize: highlight ? 11 : 10
             font.bold: true
-            font.family: "Geo-Regular"
+            font.family: ScreenTools.normalFontFamily
         }
     }
 
@@ -2680,7 +2675,7 @@ Item {
                         color: accentColor
                         font.pixelSize: 10
                         font.bold: true
-                        font.family: "Geo-Regular"
+                        font.family: ScreenTools.normalFontFamily
                         font.letterSpacing: 2
                     }
 
@@ -2689,14 +2684,14 @@ Item {
                         color: "#f8fafc"
                         font.pixelSize: 24
                         font.bold: true
-                        font.family: "Geo-Regular"
+                        font.family: ScreenTools.normalFontFamily
                     }
 
                     Text {
                         text: subtitle
                         color: root.dim
                         font.pixelSize: 12
-                        font.family: "Geo-Regular"
+                        font.family: ScreenTools.normalFontFamily
                     }
                 }
             }
@@ -2728,7 +2723,7 @@ Item {
                                 text: modelData.label
                                 color: root.dim
                                 font.pixelSize: 9
-                                font.family: "Geo-Regular"
+                                font.family: ScreenTools.normalFontFamily
                                 font.letterSpacing: 1
                             }
 
@@ -2737,7 +2732,7 @@ Item {
                                 color: accentColor
                                 font.pixelSize: 16
                                 font.bold: true
-                                font.family: "Geo-Regular"
+                                font.family: ScreenTools.normalFontFamily
                             }
                         }
                     }
@@ -2781,7 +2776,7 @@ Item {
                                 color: accentColor
                                 font.pixelSize: 20
                                 font.bold: true
-                                font.family: "Geo-Regular"
+                                font.family: ScreenTools.normalFontFamily
                             }
                         }
 
@@ -2791,7 +2786,7 @@ Item {
                             color: root.text
                             font.pixelSize: 15
                             font.bold: true
-                            font.family: "Geo-Regular"
+                            font.family: ScreenTools.normalFontFamily
                         }
 
                         Text {
@@ -2799,7 +2794,7 @@ Item {
                             text: "Ready for the dedicated Modern " + sectionLabel.toLowerCase() + " QML page."
                             color: root.dim
                             font.pixelSize: 11
-                            font.family: "Geo-Regular"
+                            font.family: ScreenTools.normalFontFamily
                         }
                     }
                 }
@@ -2837,17 +2832,17 @@ Item {
                 height: 13
                 source: iconSource
                 fillMode: Image.PreserveAspectFit
-                opacity: active ? 1 : 0.42
+                opacity: (active || mouseArea.containsMouse) ? 1 : 0.42
             }
 
             Text {
                 id: labelText
                 anchors.verticalCenter: parent.verticalCenter
                 text: label
-                color: active ? "#ffffff" : root.dim
-                font.pixelSize: 11
+                color: (active || mouseArea.containsMouse) ? "#ffffff" : root.dim
+                font.pixelSize: 16
+                font.family: "Barlow Condensed"
                 font.bold: true
-                font.family: "Geo-Regular"
                 font.letterSpacing: 1
             }
         }
@@ -2858,5 +2853,5 @@ Item {
             hoverEnabled: true
             onClicked: parent.clicked()
         }
-    }
+    }   
 }

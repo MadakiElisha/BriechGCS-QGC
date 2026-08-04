@@ -71,8 +71,15 @@ QString ScreenToolsController::normalFontFamily()
         return QStringLiteral("NanumGothic");
     }
 
-    // Prefer a Geo family if available (either system or application-registered).
     const QStringList fams = QFontDatabase::families();
+    if (fams.contains(QStringLiteral("Barlow"))) {
+        return QStringLiteral("Barlow");
+    }
+    if (fams.contains(QStringLiteral("Barlow Condensed"))) {
+        return QStringLiteral("Barlow Condensed");
+    }
+
+    // Prefer a Geo family if available (either system or application-registered).
     for (const QString &f : fams) {
         if (f.contains(QLatin1String("Geo"), Qt::CaseInsensitive) ||
             f.compare(QLatin1String("Geo-Regular"), Qt::CaseInsensitive) == 0) {

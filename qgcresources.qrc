@@ -2,10 +2,16 @@
     <qresource prefix="/fonts">
         <file alias="opensans">resources/fonts/OpenSans-Regular.ttf</file>
         <file alias="opensans-demibold">resources/fonts/OpenSans-Semibold.ttf</file>
-        <file alias="Geo-Regular">resources/fonts/Geo-Regular.ttf</file>
         <file alias="NanumGothic-Regular">resources/fonts/NanumGothic-Regular.ttf</file>
         <file alias="NanumGothic-Bold">resources/fonts/NanumGothic-Bold.ttf</file>
-        <file alias="Geo-Regular">resources/fonts/Geo-Regular.ttf</file>
+        <file alias="BarlowCondensed-Bold.ttf">resources/fonts/BarlowCondensed-Bold.ttf</file>
+        <file alias="BarlowCondensed-SemiBold.ttf">resources/fonts/BarlowCondensed-SemiBold.ttf</file>
+        <file alias="BarlowCondensed-Medium.ttf">resources/fonts/BarlowCondensed-Medium.ttf</file>
+        <file alias="Barlow-Bold.ttf">resources/fonts/Barlow-Bold.ttf</file>
+        <file alias="Barlow-Medium.ttf">resources/fonts/Barlow-Medium.ttf</file>
+        <file alias="Barlow-Regular.ttf">resources/fonts/Barlow-Regular.ttf</file>
+        <file alias="Barlow-SemiBold.ttf">resources/fonts/Barlow-SemiBold.ttf</file>
+        <file alias="ShareTechMono-Regular.ttf">resources/fonts/ShareTechMono-Regular.ttf</file>
     </qresource>
     <qresource prefix="/res">
         <file alias="action.svg">resources/action.svg</file>

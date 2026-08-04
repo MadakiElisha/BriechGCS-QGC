@@ -25,7 +25,9 @@ Rectangle {
         anchors.margins:    _margin
         anchors.left:       parent.left
         anchors.top:        parent.top
-        text:               qsTr("GeoFence")
+        text:               qsTr("GeoFence").toUpperCase()
+        font.family:        "Barlow Condensed"
+        font.bold:          true
         anchors.leftMargin: ScreenTools.defaultFontPixelWidth
     }
 

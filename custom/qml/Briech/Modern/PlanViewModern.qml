@@ -67,7 +67,7 @@ Item {
                 width: 120
                 Layout.fillHeight: true
                 color: "transparent"
-                Text { anchors.centerIn: parent; text: "<  EXIT PLAN"; color: exitHover.containsMouse ? root.gold : root.text; font.pixelSize: 12; font.family: "Geo-Regular"; font.weight: Bold }
+                Text { anchors.centerIn: parent; text: "<  EXIT PLAN"; color: exitHover.containsMouse ? root.gold : root.text; font.pixelSize: 12; font.family: ScreenTools.normalFontFamily; font.bold: true }
                 MouseArea { id: exitHover; anchors.fill: parent; hoverEnabled: true; onClicked: planMasterController.removeAll() }
             }
 
@@ -79,8 +79,8 @@ Item {
                     model: [ {label: "ALT DIFF", value: "0.0 m"}, {label: "TOTAL MISSION", value: "0 m"}, {label: "TIME", value: "00:00:00"} ]
                     delegate: Column {
                         spacing: 2
-                        Text { text: modelData.label; color: "#9aa3ad"; font.pixelSize: 10; font.family: "Geo-Regular" }
-                        Text { text: modelData.value; color: root.text; font.pixelSize: 12; font.bold: true; font.family: "Geo-Regular" }
+                        Text { text: modelData.label; color: "#9aa3ad"; font.pixelSize: 10; font.family: ScreenTools.normalFontFamily }
+                        Text { text: modelData.value; color: root.text; font.pixelSize: 12; font.bold: true; font.family: ScreenTools.normalFontFamily }
                     }
                 }
             }
@@ -92,7 +92,7 @@ Item {
     // Left panel
     Rectangle {
         id: leftPanel
-        width: 280
+        width: 300
         anchors.top: topHeader.bottom
         anchors.left: parent.left
         anchors.bottom: parent.bottom
@@ -108,9 +108,9 @@ Item {
             Text {
                 text: "CREATE PLAN"
                 color: root.gold
-                font.pixelSize: 11
+                font.pixelSize: 14
                 font.bold: true
-                font.family: "Geo-Regular"
+                font.family: "Barlow Condensed"
                 font.letterSpacing: 1
             }
 
@@ -138,7 +138,7 @@ Item {
                             anchors.bottom: cardLabel.top
                             anchors.margins: 4
                             fillMode: Image.PreserveAspectFit
-                            source: modelData.thumbnail || ""
+                            source: (modelData && modelData.thumbnail) ? modelData.thumbnail : ""
                             opacity: 0.9
                         }
 
@@ -148,11 +148,11 @@ Item {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.margins: 8
-                            text: modelData.name || "Template"
+                            text: (modelData && modelData.name) ? modelData.name : "Template"
                             color: cardHover.containsMouse ? root.gold : root.text
                             font.pixelSize: 11
                             font.bold: true
-                            font.family: "Geo-Regular"
+                            font.family: ScreenTools.normalFontFamily
                         }
 
                         MouseArea {
@@ -173,7 +173,7 @@ Item {
                 color: root.gold
                 font.pixelSize: 11
                 font.bold: true
-                font.family: "Geo-Regular"
+                font.family: ScreenTools.normalFontFamily
                 font.letterSpacing: 1
             }
 
@@ -187,7 +187,7 @@ Item {
                     color: "transparent"
                     border.color: "#3b82f6"
                     radius: 3
-                    Text { anchors.centerIn: parent; text: "OPEN..."; color: "#3b82f6"; font.pixelSize: 10; font.bold: true; font.family: "Geo-Regular" }
+                    Text { anchors.centerIn: parent; text: "OPEN..."; color: "#3b82f6"; font.pixelSize: 10; font.bold: true; font.family: ScreenTools.normalFontFamily }
                     MouseArea { anchors.fill: parent; onClicked: {
                         if (planMasterController.dirty) {
                             mainWindow.showMessageDialog(qsTr("Open Plan"),
@@ -206,7 +206,7 @@ Item {
                     color: "#1a1e26"
                     border.color: "#353c4a"
                     radius: 3
-                    Text { anchors.centerIn: parent; text: "SAVE"; color: root.text; font.pixelSize: 10; font.bold: true; font.family: "Geo-Regular" }
+                    Text { anchors.centerIn: parent; text: "SAVE"; color: root.text; font.pixelSize: 10; font.bold: true; font.family: ScreenTools.normalFontFamily }
                     MouseArea { anchors.fill: parent; onClicked: {
                         if (planMasterController.currentPlanFile !== "") {
                             planMasterController.saveToCurrent()
@@ -222,7 +222,7 @@ Item {
                     color: "#1a1e26"
                     border.color: "#353c4a"
                     radius: 3
-                    Text { anchors.centerIn: parent; text: "SAVE AS..."; color: root.text; font.pixelSize: 10; font.bold: true; font.family: "Geo-Regular" }
+                    Text { anchors.centerIn: parent; text: "SAVE AS..."; color: root.text; font.pixelSize: 10; font.bold: true; font.family: ScreenTools.normalFontFamily }
                     MouseArea { anchors.fill: parent; onClicked: planMasterController.saveToSelectedFile() }
                 }
             }
@@ -239,7 +239,7 @@ Item {
                     color: root.text
                     font.pixelSize: 10
                     font.bold: true
-                    font.family: "Geo-Regular"
+                    font.family: ScreenTools.normalFontFamily
                 }
                 MouseArea { anchors.fill: parent; onClicked: {
                     if (_missionController.visualItems.count > 1) {
@@ -256,7 +256,7 @@ Item {
                 color: root.gold
                 font.pixelSize: 11
                 font.bold: true
-                font.family: "Geo-Regular"
+                font.family: ScreenTools.normalFontFamily
                 font.letterSpacing: 1
             }
 
@@ -270,7 +270,7 @@ Item {
                     color: "transparent"
                     border.color: "#3b82f6"
                     radius: 3
-                    Text { anchors.centerIn: parent; text: "UPLOAD"; color: "#3b82f6"; font.pixelSize: 10; font.bold: true; font.family: "Geo-Regular" }
+                    Text { anchors.centerIn: parent; text: "UPLOAD"; color: "#3b82f6"; font.pixelSize: 10; font.bold: true; font.family: ScreenTools.normalFontFamily }
                     MouseArea { anchors.fill: parent; onClicked: planMasterController.upload() }
                 }
 
@@ -280,7 +280,7 @@ Item {
                     color: "#1a1e26"
                     border.color: "#353c4a"
                     radius: 3
-                    Text { anchors.centerIn: parent; text: "DOWNLOAD"; color: root.text; font.pixelSize: 10; font.bold: true; font.family: "Geo-Regular" }
+                    Text { anchors.centerIn: parent; text: "DOWNLOAD"; color: root.text; font.pixelSize: 10; font.bold: true; font.family: ScreenTools.normalFontFamily }
                     MouseArea { anchors.fill: parent; onClicked: {
                         if (planMasterController.dirty) {
                             mainWindow.showMessageDialog(qsTr("Download"),
@@ -299,7 +299,7 @@ Item {
                     color: "transparent"
                     border.color: "#ef4444"
                     radius: 3
-                    Text { anchors.centerIn: parent; text: "CLEAR"; color: "#ef4444"; font.pixelSize: 10; font.bold: true; font.family: "Geo-Regular" }
+                    Text { anchors.centerIn: parent; text: "CLEAR"; color: "#ef4444"; font.pixelSize: 10; font.bold: true; font.family: ScreenTools.normalFontFamily }
                     MouseArea { anchors.fill: parent; onClicked: {
                         mainWindow.showMessageDialog(qsTr("Clear"),
                             qsTr("Are you sure you want to remove all the items from the plan editor?"),
@@ -318,7 +318,7 @@ Item {
         id: editorMap
         anchors.top: topHeader.bottom
         anchors.left: leftPanel.right
-        anchors.right: rightPanel.left
+        anchors.right: parent.right
         anchors.bottom: parent.bottom
         mapName: "BriechModernPlanView"
         allowGCSLocationCenter: true
@@ -328,8 +328,8 @@ Item {
         zoomLevel: QGroundControl.flightMapZoom
         center: QGroundControl.flightMapPosition
 
-        onZoomLevelChanged: QGroundControl.flightMapZoom = zoomLevel
-        onCenterChanged: QGroundControl.flightMapPosition = center
+        onZoomLevelChanged: QGroundControl.flightMapZoom = editorMap.zoomLevel
+        onCenterChanged: QGroundControl.flightMapPosition = editorMap.center
 
         // Mission visuals
         Repeater {
@@ -379,7 +379,7 @@ Item {
         anchors.top: topHeader.bottom
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        width: Math.min(root.width / 3, ScreenTools.defaultFontPixelWidth * 50) + 50
+        width: Math.min(root.width * 0.3, ScreenTools.defaultFontPixelWidth * 30)
         planMasterController: planMasterController
         editorMap: editorMap
     }
@@ -413,22 +413,12 @@ Item {
         radius: 6
         color: "#0b0d10"
         border.color: root.border
-        x: rightPanel.x - width - 12
+        x: (rightPanel.expanded ? (root.width - rightPanel.width) : root.width) - width - 12
         y: bottomBar.y - height - 24
+
+        Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
 
         Column { anchors.centerIn: parent; spacing: 2; Text { text: "IAS"; color: root.dim; font.pixelSize: 10 } Text { text: QGroundControl.multiVehicleManager.activeVehicle ? ("BRCH-" + QGroundControl.multiVehicleManager.activeVehicle.id) : "--"; color: root.gold; font.bold: true } }
     }
 
-    Rectangle {
-        id: attitudeWheel
-        width: 140
-        height: 140
-        radius: 70
-        color: "#0c1014"
-        border.color: root.border
-        x: rightPanel.x - width - 12
-        y: bottomBar.y - height - 12
-
-        Text { anchors.centerIn: parent; text: "ATT"; color: root.dim }
-    }
 }

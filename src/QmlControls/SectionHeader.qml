@@ -45,11 +45,11 @@ CheckBox {
                 anchors.left:           parent.left
                 anchors.leftMargin:     ScreenTools.defaultFontPixelWidth
                 anchors.verticalCenter: parent.verticalCenter
-                text:       control.text
+                text:       control.text.toUpperCase()
                 color:      "#d8dde6"
                 font.bold:  true
-                font.family: "Geo-Regular"
-                font.letterSpacing: 0.5
+                font.family: "Barlow Condensed"
+                font.letterSpacing: 1.0
             }
 
             QGCColoredImage {
