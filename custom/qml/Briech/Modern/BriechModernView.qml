@@ -1326,5 +1326,5 @@ Item {
             hoverEnabled: true
             onClicked: parent.clicked()
         }
-    }
+    }   
 }
