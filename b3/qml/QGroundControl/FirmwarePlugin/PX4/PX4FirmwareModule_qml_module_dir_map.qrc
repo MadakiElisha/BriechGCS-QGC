@@ -1,0 +1,6 @@
+<RCC>
+  <qresource prefix="/">
+    <file alias="/qml/QGroundControl/FirmwarePlugin/PX4">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/qml/QGroundControl/FirmwarePlugin/PX4</file>
+
+  </qresource>
+</RCC>

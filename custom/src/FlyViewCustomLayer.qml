@@ -215,7 +215,7 @@ Item {
 
                         Text {
                             text: modelData.k
-                            color: root.gold
+                            color: BriechTheme.goldAccent
                             font.pixelSize: 8
                             font.bold: true
                             font.family: "monospace"
@@ -227,7 +227,7 @@ Item {
 
                             Text {
                                 text: modelData.v
-                                color: root.text
+                                color: BriechTheme.textColor
                                 font.pixelSize: 12
                                 font.bold: true
                                 font.family: "monospace"
@@ -236,7 +236,7 @@ Item {
                             Text {
                                 visible: modelData.u !== ""
                                 text: modelData.u
-                                color: root.dim
+                                color: BriechTheme.mutedColor
                                 font.pixelSize: 7
                                 font.family: "monospace"
                             }

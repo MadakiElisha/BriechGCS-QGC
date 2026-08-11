@@ -1,0 +1,6 @@
+<RCC>
+  <qresource prefix="/json/Vehicle">
+    <file alias="GimbalFact.json">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/src/Gimbal/GimbalFact.json</file>
+  </qresource>
+</RCC>
+

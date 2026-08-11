@@ -1,0 +1,11 @@
+<RCC>
+  <qresource prefix="/json">
+    <file alias="APM-MavCmdInfoCommon.json">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/src/FirmwarePlugin/APM/APM-MavCmdInfoCommon.json</file>
+    <file alias="APM-MavCmdInfoFixedWing.json">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/src/FirmwarePlugin/APM/APM-MavCmdInfoFixedWing.json</file>
+    <file alias="APM-MavCmdInfoMultiRotor.json">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/src/FirmwarePlugin/APM/APM-MavCmdInfoMultiRotor.json</file>
+    <file alias="APM-MavCmdInfoRover.json">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/src/FirmwarePlugin/APM/APM-MavCmdInfoRover.json</file>
+    <file alias="APM-MavCmdInfoSub.json">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/src/FirmwarePlugin/APM/APM-MavCmdInfoSub.json</file>
+    <file alias="APM-MavCmdInfoVTOL.json">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/src/FirmwarePlugin/APM/APM-MavCmdInfoVTOL.json</file>
+  </qresource>
+</RCC>
+

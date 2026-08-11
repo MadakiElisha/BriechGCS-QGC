@@ -35,6 +35,7 @@
     </qresource>
     <qresource prefix="/Briech/qml">
         <file alias="Modern/BriechModernView.qml">qml/Briech/Modern/BriechModernView.qml</file>
+        <file alias="Modern/BriechRiskDataManager.qml">qml/Briech/Modern/BriechRiskDataManager.qml</file>
         <file alias="Modern/PlanViewModern.qml">qml/Briech/Modern/PlanViewModern.qml</file>
     </qresource>
     <qresource prefix="/Briech/res">

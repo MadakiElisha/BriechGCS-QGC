@@ -82,6 +82,15 @@ target_include_directories(${CMAKE_PROJECT_NAME}
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
+if(WIN32)
+    if(CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION)
+        set(_qgc_windows_sdk_um_dir "C:/Program Files (x86)/Windows Kits/10/Lib/${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}/um/x64")
+        if(EXISTS "${_qgc_windows_sdk_um_dir}/runtimeobject.lib")
+            target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE "${_qgc_windows_sdk_um_dir}")
+        endif()
+    endif()
+endif()
+
 # ============================================================================
 # Link Libraries
 # ============================================================================

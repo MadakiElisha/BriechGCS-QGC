@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
@@ -20,10 +22,6 @@ ApplicationWindow {
     flags:      Qt.Window | (ScreenTools.isAndroid ? Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint : 0)
 
     property bool   _utmspSendActTrigger
-    FontLoader {
-        id: logoFont
-        source: "qrc:/fonts/Geo-Regular"
-    }
     Component.onCompleted: {
         // Start the sequence of first run prompt(s)
         firstRunPromptManager.nextPrompt()
@@ -62,6 +60,8 @@ ApplicationWindow {
     }
 
     readonly property real      _topBottomMargins:          ScreenTools.defaultFontPixelHeight * 0.5
+    property bool               _briechModernViewInitialized: false
+    property string             _pendingSettingsPage: ""
 
     //-------------------------------------------------------------------------
     //-- Global Scope Variables
@@ -126,6 +126,9 @@ ApplicationWindow {
         planView.visible = false
         briechModernView.visible = true
         toolDrawer.visible = false
+        if (briechModernView.item && briechModernView.item.activateModernSection) {
+            briechModernView.item.activateModernSection("fly")
+        }
     }
 
     function showTool(toolTitle, toolSource, toolIcon) {
@@ -162,9 +165,11 @@ ApplicationWindow {
     }
 
     function showSettingsTool(settingsPage = "") {
+        _pendingSettingsPage = settingsPage
         showTool(qsTr("Application Settings"), "qrc:/qml/QGroundControl/Controls/AppSettings.qml", "/res/QGCLogoWhite")
-        if (settingsPage !== "") {
-            toolDrawerLoader.item.showSettingsPage(settingsPage)
+        if (_pendingSettingsPage !== "" && toolDrawerLoader.item && toolDrawerLoader.item.showSettingsPage) {
+            toolDrawerLoader.item.showSettingsPage(_pendingSettingsPage)
+            _pendingSettingsPage = ""
         }
     }
 
@@ -272,55 +277,6 @@ ApplicationWindow {
 
 
 
-    // --- MAIN HEADER (Branding) ---
-    header: Rectangle {
-        id: header
-        width: parent.width
-        height: 60
-        color: "#000000"
-        z: 10
-
-        RowLayout {
-            anchors.fill: parent
-            anchors.leftMargin: 20
-            anchors.rightMargin: 20
-
-            Row {
-                spacing: 12
-                Layout.alignment: Qt.AlignVCenter
-                Image {
-                    source: "/res/logoBlack.png"
-                    width: 30
-                    height: 30
-                    fillMode: Image.PreserveAspectFit
-                    smooth: true
-                }
-                Text {
-                    id: mainTitle
-                    text: "BRIECH UAS"
-                    color: "white"
-                    font.pixelSize: 24
-                    font.weight: Font.ExtraBold
-                    font.family: logoFont.status === FontLoader.Ready ? logoFont.name : "Arial"
-                }
-                Text {
-                    id: subTitle
-                    text: "Ground Control Station"
-                    color: "#FFBF00"
-                    font.pixelSize: 24
-                    font.weight: Font.ExtraBold
-                    font.family: logoFont.status === FontLoader.Ready ? logoFont.name : "Arial"
-                }
-            }
-        }
-        Rectangle {
-            width: parent.width
-            height: 1
-            color: "#222222"
-            anchors.bottom: parent.bottom
-        }
-    }
-
     // ── Simulated state  (replace with your MAVLink C++ model) ──────────────
     QtObject {
         id: telemetry
@@ -373,10 +329,11 @@ ApplicationWindow {
     Rectangle {
         id: toolbarBar
         width: parent.width
-        height: 60
-        anchors.top: header.bottom
+        height: 0
+        anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
+        visible: false
         color:        theme.bg
 
         // Bottom hairline separator
@@ -636,8 +593,6 @@ ApplicationWindow {
                 spacing:          0
                 Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
 
-                property int activeTab: 0
-
                 component NavTab: Rectangle {
                     id: tabRoot
 
@@ -709,12 +664,12 @@ ApplicationWindow {
                             anchors.centerIn: parent
                             columns: 2
                             spacing: 2
+                            property bool act: tabRoot.active
                             Repeater {
                                 model: 4
                                 Rectangle {
                                     width:  3; height: 3
-                                    color:  parent.parent.parent.parent.active
-                                            ? theme.yellow : theme.textDim
+                                    color:  parent.act ? theme.yellow : theme.textDim
                                 }
                             }
                         }
@@ -730,7 +685,7 @@ ApplicationWindow {
                         Row {
                             anchors.centerIn: parent
                             spacing: 2
-                            property bool act: parent.parent.parent.parent.active
+                            property bool act: tabRoot.active
                             Repeater {
                                 model: [10, 7, 13]
                                 Rectangle {
@@ -782,7 +737,7 @@ ApplicationWindow {
 
     FlyView {
         id:                     flyView
-        anchors.top:            toolbarBar.bottom
+        anchors.top:            parent.top
         anchors.left:           parent.left
         anchors.right:          parent.right
         anchors.bottom:         parent.bottom
@@ -790,7 +745,7 @@ ApplicationWindow {
 
     PlanView {
         id:             planView
-        anchors.top:    toolbarBar.bottom
+        anchors.top:    parent.top
         anchors.left:   parent.left
         anchors.right:  parent.right
         anchors.bottom: parent.bottom
@@ -802,8 +757,20 @@ ApplicationWindow {
         anchors.fill:   parent
         z:              100
         visible:        false
-        active:         true
+        active:         visible || mainWindow._briechModernViewInitialized
         source:         "qrc:/Briech/qml/Modern/BriechModernView.qml"
+
+        onVisibleChanged: {
+            if (visible) {
+                mainWindow._briechModernViewInitialized = true
+            }
+        }
+
+        onLoaded: {
+            if (item && item.activateModernSection) {
+                item.activateModernSection("fly")
+            }
+        }
     }
 
     footer: LogReplayStatusBar {
@@ -914,6 +881,12 @@ ApplicationWindow {
             anchors.right:  parent.right
             anchors.top:    toolDrawerToolbar.bottom
             anchors.bottom: parent.bottom
+            onLoaded: {
+                if (mainWindow._pendingSettingsPage !== "" && item && item.showSettingsPage) {
+                    item.showSettingsPage(mainWindow._pendingSettingsPage)
+                    mainWindow._pendingSettingsPage = ""
+                }
+            }
 
             Connections {
                 target:                 toolDrawerLoader.item
@@ -948,7 +921,7 @@ ApplicationWindow {
         modal:              false
         focus:              true
 
-        property alias  criticalVehicleMessage:             criticalVehicleMessageText.text
+        property string criticalVehicleMessage:             ""
         property bool   additionalCriticalMessagesReceived: false
 
         background: Rectangle {
@@ -1012,6 +985,7 @@ ApplicationWindow {
             wrapMode:           Text.WordWrap
             color:              qgcPal.alertText
             textFormat:         TextEdit.RichText
+            text:               criticalVehicleMessagePopup.criticalVehicleMessage
         }
 
         MouseArea {

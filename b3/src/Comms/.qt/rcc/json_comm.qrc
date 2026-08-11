@@ -1,0 +1,6 @@
+<RCC>
+  <qresource prefix="/json">
+    <file alias="USBBoardInfo.json">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/src/Comms/USBBoardInfo.json</file>
+  </qresource>
+</RCC>
+
