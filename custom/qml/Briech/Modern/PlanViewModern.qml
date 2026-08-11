@@ -1,7 +1,8 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Dialogs
 import QtLocation
 import QtPositioning
 import QGroundControl
@@ -38,12 +39,102 @@ Item {
 
         Component.onCompleted: {
             planMasterController.start()
-            _missionController.setCurrentPlanViewSeqNum(0, true)
+            root._missionController.setCurrentPlanViewSeqNum(0, true)
         }
     }
 
-    Component.onCompleted: {
-        console.log("PlanViewModern: Component completed; size=" + root.width + "x" + root.height)
+    function sharedMapCenter() {
+        return QGroundControl.flightMapPosition.isValid ? QGroundControl.flightMapPosition : QtPositioning.coordinate(9.0765, 7.3986)
+    }
+
+    function mapTypeKeywords(kind) {
+        switch (String(kind || "").toLowerCase()) {
+        case "street":
+            return ["street", "map"]
+        case "satellite":
+            return ["satellite", "sat"]
+        case "terrain":
+            return ["terrain", "topo", "topographic"]
+        case "hybrid":
+            return ["hybrid"]
+        default:
+            return [String(kind || "").toLowerCase()]
+        }
+    }
+
+    function currentSharedMapKind() {
+        const settings = QGroundControl.settingsManager.flightMapSettings
+        const mapType = String(settings.mapType.rawValue || settings.mapType.value || "").toLowerCase()
+        const kinds = ["hybrid", "satellite", "terrain", "street"]
+        for (let i = 0; i < kinds.length; i++) {
+            const keywords = mapTypeKeywords(kinds[i])
+            for (let keywordIndex = 0; keywordIndex < keywords.length; keywordIndex++) {
+                if (mapType.indexOf(keywords[keywordIndex]) !== -1) {
+                    return kinds[i]
+                }
+            }
+        }
+        return "hybrid"
+    }
+
+    function findEditorMapType(kind) {
+        if (!editorMap || !editorMap.mapReady) {
+            return null
+        }
+        const keywords = mapTypeKeywords(kind)
+        for (let i = 0; i < editorMap.supportedMapTypes.length; i++) {
+            const candidate = editorMap.supportedMapTypes[i]
+            const candidateName = String(candidate.name || "").toLowerCase()
+            for (let keywordIndex = 0; keywordIndex < keywords.length; keywordIndex++) {
+                if (candidateName.indexOf(keywords[keywordIndex]) !== -1) {
+                    return candidate
+                }
+            }
+        }
+        return null
+    }
+
+    function syncEditorMapTypeFromSharedState() {
+        if (!editorMap || !editorMap.mapReady) {
+            return
+        }
+        const candidate = findEditorMapType(currentSharedMapKind())
+        if (candidate && (!editorMap.activeMapType || editorMap.activeMapType.name !== candidate.name)) {
+            editorMap.activeMapType = candidate
+        }
+    }
+
+    function syncEditorMapFromSharedState() {
+        if (!editorMap || !editorMap.mapReady) {
+            return
+        }
+        const center = sharedMapCenter()
+        if (!coordinatesClose(editorMap.center, center)) {
+            editorMap.center = center
+        }
+        if (Math.abs(editorMap.zoomLevel - QGroundControl.flightMapZoom) > 0.01) {
+            editorMap.zoomLevel = QGroundControl.flightMapZoom
+        }
+        syncEditorMapTypeFromSharedState()
+    }
+
+    function coordinatesClose(a, b) {
+        return a && b && a.isValid && b.isValid
+            && Math.abs(a.latitude - b.latitude) < 0.000001
+            && Math.abs(a.longitude - b.longitude) < 0.000001
+    }
+
+    Connections {
+        target: QGroundControl
+        ignoreUnknownSignals: true
+        function onFlightMapPositionChanged() { root.syncEditorMapFromSharedState() }
+        function onFlightMapZoomChanged() { root.syncEditorMapFromSharedState() }
+    }
+
+    Connections {
+        target: QGroundControl.settingsManager.flightMapSettings.mapType
+        ignoreUnknownSignals: true
+        function onRawValueChanged() { root.syncEditorMapTypeFromSharedState() }
     }
 
     // Top header (Exit + metrics)
@@ -321,30 +412,31 @@ Item {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         mapName: "BriechModernPlanView"
-        allowGCSLocationCenter: true
-        allowVehicleLocationCenter: true
+        allowGCSLocationCenter: false
+        allowVehicleLocationCenter: false
         planView: true
 
         zoomLevel: QGroundControl.flightMapZoom
-        center: QGroundControl.flightMapPosition
+        center: root.sharedMapCenter()
 
         onZoomLevelChanged: QGroundControl.flightMapZoom = editorMap.zoomLevel
         onCenterChanged: QGroundControl.flightMapPosition = editorMap.center
+        onMapReadyChanged: root.syncEditorMapFromSharedState()
 
         // Mission visuals
         Repeater {
-            model: _missionController.visualItems
+            model: root._missionController.visualItems
             delegate: MissionItemMapVisual {
                 map: editorMap
-                opacity: _editingLayer == _layerMission ? 1 : 0.5
-                interactive: _editingLayer == _layerMission
+                opacity: root._editingLayer == root._layerMission ? 1 : 0.5
+                interactive: root._editingLayer == root._layerMission
                 vehicle: planMasterController.controllerVehicle
-                onClicked: { _missionController.setCurrentPlanViewSeqNum(sequenceNumber, false) }
+                onClicked: { root._missionController.setCurrentPlanViewSeqNum(sequenceNumber, false) }
             }
         }
 
         MissionLineView {
-            model: _missionController.simpleFlightPathSegments
+            model: root._missionController.simpleFlightPathSegments
         }
 
         // Vehicles
@@ -358,19 +450,6 @@ Item {
                 z: QGroundControl.zOrderMapItems - 1
             }
         }
-    }
-
-    /* Debug overlay to confirm component instantiation */
-    Rectangle {
-        id: debugOverlay
-        anchors.left: leftPanel.right
-        anchors.top: topHeader.bottom
-        width: 160
-        height: 28
-        color: "#00000088"
-        visible: true
-
-        Text { anchors.centerIn: parent; text: "PlanView loaded"; color: root.gold; font.pixelSize: 12 }
     }
 
     // Right panel (reuses existing PlanViewRightPanel)

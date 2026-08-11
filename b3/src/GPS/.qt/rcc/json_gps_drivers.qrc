@@ -1,0 +1,6 @@
+<RCC>
+  <qresource prefix="/json/Vehicle">
+    <file alias="GPSRTKFact.json">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/src/GPS/GPSRTKFact.json</file>
+  </qresource>
+</RCC>
+

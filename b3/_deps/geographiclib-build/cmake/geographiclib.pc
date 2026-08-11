@@ -1,0 +1,14 @@
+prefix=C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/staging
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/OFF
+bindir=${exec_prefix}/OFF
+
+Name: GeographicLib
+Description: A library for geographic projections
+Version: 2.7
+URL: https://geographiclib.sourceforge.io
+
+Requires:
+Libs: -L${libdir} -lGeographicLib_d
+Cflags: -I${includedir}

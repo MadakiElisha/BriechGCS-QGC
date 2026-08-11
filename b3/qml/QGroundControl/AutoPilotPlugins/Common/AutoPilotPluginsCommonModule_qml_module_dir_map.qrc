@@ -1,0 +1,6 @@
+<RCC>
+  <qresource prefix="/">
+    <file alias="/qml/QGroundControl/AutoPilotPlugins/Common">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/qml/QGroundControl/AutoPilotPlugins/Common</file>
+
+  </qresource>
+</RCC>

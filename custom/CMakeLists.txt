@@ -98,6 +98,8 @@ qt_add_qml_module(CustomModule
 # ============================================================================
 
 set(CUSTOM_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/BriechAirspaceManager.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/BriechAirspaceManager.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CustomPlugin.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CustomPlugin.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/AutoPilotPlugin/CustomAutoPilotPlugin.cc
@@ -138,5 +140,7 @@ set(CUSTOM_DEFINITIONS
 # Custom Qt components required
 set(CUSTOM_QT_COMPONENTS
     Core
+    Network
+    Qml
     CACHE INTERNAL "" FORCE
 )

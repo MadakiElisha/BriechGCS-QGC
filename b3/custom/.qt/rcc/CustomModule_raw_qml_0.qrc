@@ -1,0 +1,15 @@
+<RCC>
+  <qresource prefix="/qml/Custom/Widgets/">
+    <file alias="BriechTheme.qml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/custom/res/BriechTheme.qml</file>
+    <file alias="BriechAttitudeIndicator.qml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/custom/res/BriechAttitudeIndicator.qml</file>
+    <file alias="CustomArtificialHorizon.qml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/custom/res/Custom/Widgets/CustomArtificialHorizon.qml</file>
+    <file alias="CustomAttitudeWidget.qml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/custom/res/Custom/Widgets/CustomAttitudeWidget.qml</file>
+    <file alias="CustomIconButton.qml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/custom/res/Custom/Widgets/CustomIconButton.qml</file>
+    <file alias="CustomOnOffSwitch.qml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/custom/res/Custom/Widgets/CustomOnOffSwitch.qml</file>
+    <file alias="CustomQuickButton.qml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/custom/res/Custom/Widgets/CustomQuickButton.qml</file>
+    <file alias="CustomSignalStrength.qml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/custom/res/Custom/Widgets/CustomSignalStrength.qml</file>
+    <file alias="CustomToolBarButton.qml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/custom/res/Custom/Widgets/CustomToolBarButton.qml</file>
+    <file alias="CustomVehicleButton.qml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/custom/res/Custom/Widgets/CustomVehicleButton.qml</file>
+  </qresource>
+</RCC>
+

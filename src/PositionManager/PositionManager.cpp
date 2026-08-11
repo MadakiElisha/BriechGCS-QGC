@@ -7,6 +7,7 @@
 
 #include <QtCore/QApplicationStatic>
 #include <QtCore/QPermissions>
+#include <QtCore/QTimer>
 #include <QtPositioning/QGeoPositionInfoSource>
 #include <QtPositioning/private/qgeopositioninfosource_p.h>
 #include <QtPositioning/QNmeaPositionInfoSource>
@@ -37,7 +38,7 @@ void QGCPositionManager::init()
         _simulatedSource = new SimulatedPosition(this);
         _setPositionSource(QGCPositionSource::Simulated);
     } else {
-        _checkPermission();
+        QTimer::singleShot(0, this, &QGCPositionManager::_checkPermission);
     }
 }
 
@@ -52,6 +53,9 @@ void QGCPositionManager::_setupPositionSources()
         _defaultSource = QGeoPositionInfoSource::createDefaultSource(this);
         if (!_defaultSource) {
             qCWarning(QGCPositionManagerLog) << Q_FUNC_INFO << "No default source available";
+            qgcApp()->showAppMessage(
+                tr("No Windows location provider is available. Turn on Windows Location Services or connect a GPS/NMEA source to show this ground station on the map."),
+                tr("Location Unavailable"));
             return;
         }
     }
@@ -65,6 +69,9 @@ void QGCPositionManager::_handlePermissionStatus(Qt::PermissionStatus permission
         _setupPositionSources();
     } else {
         qCWarning(QGCPositionManagerLog) << Q_FUNC_INFO << "Location Permission Denied";
+        qgcApp()->showAppMessage(
+            tr("Location permission is not enabled for this app. Enable Windows Location Services and allow %1 to access location, then restart the app.").arg(qgcApp()->applicationName()),
+            tr("Location Permission Required"));
     }
 }
 
@@ -109,14 +116,17 @@ void QGCPositionManager::_positionUpdated(const QGeoPositionInfo &update)
 
     QGeoCoordinate newGCSPosition(_gcsPosition);
 
-    if (update.hasAttribute(QGeoPositionInfo::HorizontalAccuracy)) {
-        if ((qAbs(update.coordinate().latitude()) > 0.001) && (qAbs(update.coordinate().longitude()) > 0.001)) {
+    if ((qAbs(update.coordinate().latitude()) > 0.001) && (qAbs(update.coordinate().longitude()) > 0.001)) {
+        if (update.hasAttribute(QGeoPositionInfo::HorizontalAccuracy)) {
             _gcsPositionHorizontalAccuracy = update.attribute(QGeoPositionInfo::HorizontalAccuracy);
             if (_gcsPositionHorizontalAccuracy <= kMinHorizonalAccuracyMeters) {
                 newGCSPosition.setLatitude(update.coordinate().latitude());
                 newGCSPosition.setLongitude(update.coordinate().longitude());
             }
             emit gcsPositionHorizontalAccuracyChanged(_gcsPositionHorizontalAccuracy);
+        } else {
+            newGCSPosition.setLatitude(update.coordinate().latitude());
+            newGCSPosition.setLongitude(update.coordinate().longitude());
         }
     }
 
@@ -196,7 +206,7 @@ void QGCPositionManager::_setPositionSource(QGCPositionSource source)
     }
 
     if (_currentSource != nullptr) {
-        _currentSource->setPreferredPositioningMethods(QGeoPositionInfoSource::SatellitePositioningMethods);
+        _currentSource->setPreferredPositioningMethods(QGeoPositionInfoSource::AllPositioningMethods);
         _updateInterval = _currentSource->minimumUpdateInterval();
         #if !defined(Q_OS_DARWIN) && !defined(Q_OS_IOS)
             _currentSource->setUpdateInterval(_updateInterval);

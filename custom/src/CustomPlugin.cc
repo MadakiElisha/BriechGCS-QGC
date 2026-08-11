@@ -1,4 +1,5 @@
 #include "CustomPlugin.h"
+#include "BriechAirspaceManager.h"
 #include "QmlComponentInfo.h"
 #include "QGCLoggingCategory.h"
 #include "QGCPalette.h"
@@ -9,6 +10,7 @@
 #include <QtCore/QApplicationStatic>
 #include <QtQml/QQmlApplicationEngine>
 #include <QtQml/QQmlFile>
+#include <QtQml/qqml.h>
 
 QGC_LOGGING_CATEGORY(CustomLog, "Custom.CustomPlugin")
 
@@ -266,6 +268,8 @@ void CustomPlugin::paletteOverride(const QString &colorName, QGCPalette::Palette
 
 QQmlApplicationEngine* CustomPlugin::createQmlApplicationEngine(QObject* parent)
 {
+    qmlRegisterType<BriechAirspaceManager>("Custom.Widgets", 1, 0, "BriechAirspaceManager");
+
     _qmlEngine = QGCCorePlugin::createQmlApplicationEngine(parent);
     _qmlEngine->addImportPath("qrc:/qml/Custom/Widgets");
     // TODO: Investigate _qmlEngine->setExtraSelectors({"custom"})

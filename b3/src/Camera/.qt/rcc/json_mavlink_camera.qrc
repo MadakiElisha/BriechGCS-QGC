@@ -1,0 +1,6 @@
+<RCC>
+  <qresource prefix="/json">
+    <file alias="CameraMetaData.json">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/src/Camera/CameraMetaData.json</file>
+  </qresource>
+</RCC>
+

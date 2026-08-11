@@ -1,0 +1,11 @@
+<RCC>
+  <qresource prefix="/MockLink">
+    <file alias="PX4MockLink.params">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/src/Comms/MockLink/PX4MockLink.params</file>
+    <file alias="General.MetaData.json">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/src/Comms/MockLink/MockLink.General.MetaData.json</file>
+    <file alias="General.MetaData.json.xz">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/src/Comms/MockLink/MockLink.General.MetaData.json.xz</file>
+    <file alias="Parameter.MetaData.json.xz">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/src/Comms/MockLink/MockLink.Parameter.MetaData.json.xz</file>
+    <file alias="Parameter.MetaData.json">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/src/Comms/MockLink/MockLink.Parameter.MetaData.json</file>
+    <file alias="Arduplane.params.ftp.bin">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/src/Comms/MockLink/Mocklink.Arduplane.params.ftp.bin</file>
+  </qresource>
+</RCC>
+

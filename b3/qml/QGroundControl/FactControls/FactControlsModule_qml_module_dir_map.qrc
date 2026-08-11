@@ -1,0 +1,6 @@
+<RCC>
+  <qresource prefix="/">
+    <file alias="/qml/QGroundControl/FactControls">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/qml/QGroundControl/FactControls</file>
+
+  </qresource>
+</RCC>

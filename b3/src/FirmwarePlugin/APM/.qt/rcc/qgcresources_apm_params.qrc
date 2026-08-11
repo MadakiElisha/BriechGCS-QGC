@@ -1,0 +1,32 @@
+<RCC>
+  <qresource prefix="/">
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Plane.4.0.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Plane-4.0/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Plane.4.1.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Plane-4.1/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Plane.4.2.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Plane-4.2/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Plane.4.3.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Plane-4.3/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Plane.4.4.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Plane-4.4/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Plane.4.5.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Plane-4.5/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Plane.4.6.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Plane-4.6/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Plane.4.7.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Plane-4.7/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Copter.4.0.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Copter-4.0/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Copter.4.1.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Copter-4.1/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Copter.4.2.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Copter-4.2/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Copter.4.3.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Copter-4.3/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Copter.4.4.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Copter-4.4/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Copter.4.5.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Copter-4.5/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Copter.4.6.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Copter-4.6/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Copter.4.7.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Copter-4.7/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Rover.4.0.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Rover-4.0/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Rover.4.1.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Rover-4.1/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Rover.4.2.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Rover-4.2/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Rover.4.4.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Rover-4.4/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Rover.4.5.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Rover-4.5/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Rover.4.6.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Rover-4.6/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Rover.4.7.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Rover-4.7/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Sub.4.0.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Sub-4.0/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Sub.4.1.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Sub-4.1/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Sub.4.5.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Sub-4.5/apm.pdef.xml</file>
+    <file alias="FirmwarePlugin/APM/APMParameterFactMetaData.Sub.4.7.xml">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/cpm_modules/ardupilotparams/99f3/Sub-4.7/apm.pdef.xml</file>
+  </qresource>
+</RCC>
+

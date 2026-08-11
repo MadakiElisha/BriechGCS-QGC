@@ -1,0 +1,6 @@
+<RCC>
+  <qresource prefix="/qml/Custom/Widgets">
+    <file alias="qmldir">C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/b3/qml/Custom/Widgets/qmldir</file>
+  </qresource>
+</RCC>
+
