@@ -16,6 +16,8 @@ Item {
     id: root
     anchors.fill: parent
 
+    signal exitRequested()
+
     // Theme defaults (overridden when embedded in BriechModernView)
     property color gold: "#C9A84C"
     property color border: "#252c38"
@@ -124,6 +126,77 @@ Item {
             && Math.abs(a.longitude - b.longitude) < 0.000001
     }
 
+    function formatMissionTime(seconds) {
+        const totalSeconds = Math.max(0, Math.floor(Number(seconds) || 0))
+        const hours = Math.floor(totalSeconds / 3600)
+        const minutes = Math.floor((totalSeconds % 3600) / 60)
+        const remainingSeconds = totalSeconds % 60
+        return [hours, minutes, remainingSeconds].map(function(value) {
+            return value < 10 ? "0" + value : String(value)
+        }).join(":")
+    }
+
+    function missionDistanceText() {
+        const distance = Number(_missionController.missionPlannedDistance)
+        if (isNaN(distance)) {
+            return "--"
+        }
+        return QGroundControl.unitsConversion.metersToAppSettingsHorizontalDistanceUnits(distance).toFixed(0)
+            + " " + QGroundControl.unitsConversion.appSettingsHorizontalDistanceUnitsString
+    }
+
+    function missionAltitudeDifferenceText() {
+        const item = _missionController.currentPlanViewItem
+        if (!item || isNaN(Number(item.altDifference))) {
+            return "--"
+        }
+        return QGroundControl.unitsConversion.metersToAppSettingsVerticalDistanceUnits(Number(item.altDifference)).toFixed(1)
+            + " " + QGroundControl.unitsConversion.appSettingsVerticalDistanceUnitsString
+    }
+
+    function planStatusText() {
+        if (planMasterController.syncInProgress) {
+            return "SYNCING"
+        }
+        if (planMasterController.dirty) {
+            return "UNSAVED"
+        }
+        return planMasterController.containsItems ? "READY" : "EMPTY"
+    }
+
+    function planStatusColor() {
+        if (planMasterController.syncInProgress) {
+            return "#60a5fa"
+        }
+        if (planMasterController.dirty) {
+            return root.gold
+        }
+        return planMasterController.containsItems ? "#4ade80" : root.dim
+    }
+
+    function insertSimpleItemAfterCurrent(coordinate) {
+        const nextIndex = _missionController.currentPlanViewVIIndex + 1
+        _missionController.insertSimpleMissionItem(coordinate, nextIndex, true)
+    }
+
+    function handleMapClick(mouse) {
+        editorMap.focus = true
+        if (!mainWindow.allowViewSwitch()) {
+            return
+        }
+
+        const coordinate = editorMap.toCoordinate(Qt.point(mouse.x, mouse.y), false)
+        coordinate.latitude = coordinate.latitude.toFixed(7)
+        coordinate.longitude = coordinate.longitude.toFixed(7)
+        coordinate.altitude = coordinate.altitude.toFixed(2)
+
+        if (_editingLayer === _layerMission) {
+            insertSimpleItemAfterCurrent(coordinate)
+        } else if (_editingLayer === _layerRally && _rallyPointController.supported) {
+            _rallyPointController.addPoint(coordinate)
+        }
+    }
+
     Connections {
         target: QGroundControl
         ignoreUnknownSignals: true
@@ -159,7 +232,7 @@ Item {
                 Layout.fillHeight: true
                 color: "transparent"
                 Text { anchors.centerIn: parent; text: "<  EXIT PLAN"; color: exitHover.containsMouse ? root.gold : root.text; font.pixelSize: 12; font.family: ScreenTools.normalFontFamily; font.bold: true }
-                MouseArea { id: exitHover; anchors.fill: parent; hoverEnabled: true; onClicked: planMasterController.removeAll() }
+                MouseArea { id: exitHover; anchors.fill: parent; hoverEnabled: true; onClicked: root.exitRequested() }
             }
 
             Item { width: 16 }
@@ -167,7 +240,7 @@ Item {
             RowLayout {
                 spacing: 18
                 Repeater {
-                    model: [ {label: "ALT DIFF", value: "0.0 m"}, {label: "TOTAL MISSION", value: "0 m"}, {label: "TIME", value: "00:00:00"} ]
+                    model: [ {label: "ALT DIFF", value: root.missionAltitudeDifferenceText()}, {label: "TOTAL MISSION", value: root.missionDistanceText()}, {label: "TIME", value: root.formatMissionTime(_missionController.missionTime)} ]
                     delegate: Column {
                         spacing: 2
                         Text { text: modelData.label; color: "#9aa3ad"; font.pixelSize: 10; font.family: ScreenTools.normalFontFamily }
@@ -177,6 +250,35 @@ Item {
             }
 
             Item { Layout.fillWidth: true }
+
+            Rectangle {
+                Layout.preferredWidth: 124
+                Layout.preferredHeight: 28
+                color: Qt.rgba(1, 1, 1, 0.025)
+                border.color: planStatusColor()
+                border.width: 1
+
+                Row {
+                    anchors.centerIn: parent
+                    spacing: 7
+
+                    Rectangle {
+                        width: 6
+                        height: 6
+                        radius: 3
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: planStatusColor()
+                    }
+
+                    Text {
+                        text: planStatusText()
+                        color: planStatusColor()
+                        font.pixelSize: 10
+                        font.bold: true
+                        font.family: "monospace"
+                    }
+                }
+            }
         }
     }
 
@@ -186,7 +288,7 @@ Item {
         width: 300
         anchors.top: topHeader.bottom
         anchors.left: parent.left
-        anchors.bottom: parent.bottom
+            anchors.bottom: bottomBar.top
         color: "#0f1113"
         border.color: "#22252a"
 
@@ -409,12 +511,14 @@ Item {
         id: editorMap
         anchors.top: topHeader.bottom
         anchors.left: leftPanel.right
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        mapName: "BriechModernPlanView"
-        allowGCSLocationCenter: false
-        allowVehicleLocationCenter: false
+        anchors.right: rightPanel.expanded ? rightPanel.left : parent.right
+        anchors.bottom: bottomBar.top
+        mapName: "MissionEditor"
+        allowGCSLocationCenter: true
+        allowVehicleLocationCenter: true
         planView: true
+
+        property real _nonInteractiveOpacity: 0.5
 
         zoomLevel: QGroundControl.flightMapZoom
         center: root.sharedMapCenter()
@@ -422,6 +526,7 @@ Item {
         onZoomLevelChanged: QGroundControl.flightMapZoom = editorMap.zoomLevel
         onCenterChanged: QGroundControl.flightMapPosition = editorMap.center
         onMapReadyChanged: root.syncEditorMapFromSharedState()
+        onMapClicked: (mouse) => root.handleMapClick(mouse)
 
         // Mission visuals
         Repeater {
@@ -436,7 +541,57 @@ Item {
         }
 
         MissionLineView {
+            showSpecialVisual: root._missionController.isROIBeginCurrentItem
             model: root._missionController.simpleFlightPathSegments
+            opacity: root._editingLayer == root._layerMission ? 1 : editorMap._nonInteractiveOpacity
+        }
+
+        MapItemView {
+            model: root._editingLayer == root._layerMission ? root._missionController.directionArrows : undefined
+
+            delegate: MapLineArrow {
+                fromCoord: object ? object.coordinate1 : undefined
+                toCoord: object ? object.coordinate2 : undefined
+                arrowPosition: 3
+                z: QGroundControl.zOrderWaypointLines + 1
+            }
+        }
+
+        MapQuickItem {
+            id: splitSegmentItem
+            anchorPoint.x: sourceItem.width / 2
+            anchorPoint.y: sourceItem.height / 2
+            z: QGroundControl.zOrderWaypointLines + 1
+            visible: root._editingLayer == root._layerMission
+
+            sourceItem: SplitIndicator {
+                onClicked: root._missionController.insertSimpleMissionItem(splitSegmentItem.coordinate,
+                                                                            root._missionController.currentPlanViewVIIndex,
+                                                                            true)
+            }
+
+            function updateSplitCoordinate() {
+                if (root._missionController.splitSegment) {
+                    const segment = root._missionController.splitSegment
+                    const distance = segment.coordinate1.distanceTo(segment.coordinate2)
+                    const azimuth = segment.coordinate1.azimuthTo(segment.coordinate2)
+                    splitSegmentItem.coordinate = segment.coordinate1.atDistanceAndAzimuth(distance / 2, azimuth)
+                } else {
+                    splitSegmentItem.coordinate = QtPositioning.coordinate()
+                }
+            }
+
+            Connections {
+                target: root._missionController
+                function onSplitSegmentChanged() { splitSegmentItem.updateSplitCoordinate() }
+            }
+
+            Connections {
+                target: root._missionController.splitSegment
+                ignoreUnknownSignals: true
+                function onCoordinate1Changed() { splitSegmentItem.updateSplitCoordinate() }
+                function onCoordinate2Changed() { splitSegmentItem.updateSplitCoordinate() }
+            }
         }
 
         // Vehicles
@@ -450,6 +605,23 @@ Item {
                 z: QGroundControl.zOrderMapItems - 1
             }
         }
+
+        GeoFenceMapVisuals {
+            map: editorMap
+            myGeoFenceController: root._geoFenceController
+            interactive: root._editingLayer == root._layerFence
+            homePosition: root._missionController.plannedHomePosition
+            planView: true
+            opacity: root._editingLayer == root._layerFence ? 1 : editorMap._nonInteractiveOpacity
+        }
+
+        RallyPointMapVisuals {
+            map: editorMap
+            myRallyPointController: root._rallyPointController
+            interactive: root._editingLayer == root._layerRally
+            planView: true
+            opacity: root._editingLayer == root._layerRally ? 1 : editorMap._nonInteractiveOpacity
+        }
     }
 
     // Right panel (reuses existing PlanViewRightPanel)
@@ -457,7 +629,7 @@ Item {
         id: rightPanel
         anchors.top: topHeader.bottom
         anchors.right: parent.right
-        anchors.bottom: parent.bottom
+        anchors.bottom: bottomBar.top
         width: Math.min(root.width * 0.3, ScreenTools.defaultFontPixelWidth * 30)
         planMasterController: planMasterController
         editorMap: editorMap
@@ -478,9 +650,9 @@ Item {
             anchors.margins: 12
             spacing: 18
 
-            Text { text: "ALT DIFF: 0.0 m"; color: root.dim; font.pixelSize: 12 }
-            Text { text: "TOTAL MISSION: 0 m"; color: root.dim; font.pixelSize: 12 }
-            Text { text: "TIME: 00:00:00"; color: root.dim; font.pixelSize: 12 }
+            Text { text: "ALT DIFF: " + root.missionAltitudeDifferenceText(); color: root.dim; font.pixelSize: 12 }
+            Text { text: "TOTAL MISSION: " + root.missionDistanceText(); color: root.dim; font.pixelSize: 12 }
+            Text { text: "TIME: " + root.formatMissionTime(_missionController.missionTime); color: root.dim; font.pixelSize: 12 }
         }
     }
 

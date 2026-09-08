@@ -29,12 +29,50 @@ Item {
     property real   _toolsMargin:           ScreenTools.defaultFontPixelWidth * 0.75
     property real   _stripTopMargin:        parentToolInsets.topEdgeLeftInset + (_toolsMargin * 0.75)
 
+    function _factNumber(fact, fallback) {
+        if (!fact) {
+            return fallback
+        }
+        const value = Number(fact.rawValue)
+        return isNaN(value) ? fallback : value
+    }
+
+    function _factText(fact, fallback) {
+        if (!fact || fact.valueString === undefined || fact.valueString === null || String(fact.valueString).length === 0) {
+            return fallback
+        }
+        return fact.valueString
+    }
+
+    function _formatHeading(value) {
+        const safeHeading = isNaN(value) ? 0 : ((Math.round(value) % 360) + 360) % 360
+        return ("000" + safeHeading).slice(-3)
+    }
+
+    function _headingNumberValue() {
+        return _formatHeading(_heading)
+    }
+
     function _vehicleBatteryPercent() {
         if (!_activeVehicle) {
             return "--"
         }
+        if (_activeVehicle.batteries && _activeVehicle.batteries.count > 0) {
+            var lowest = NaN
+            for (var i = 0; i < _activeVehicle.batteries.count; i++) {
+                var battery = _activeVehicle.batteries.get(i)
+                var percent = battery && battery.percentRemaining ? Number(battery.percentRemaining.rawValue) : NaN
+                if (!isNaN(percent) && (isNaN(lowest) || percent < lowest)) {
+                    lowest = percent
+                }
+            }
+            if (!isNaN(lowest)) {
+                return Math.round(lowest) + "%"
+            }
+        }
         if (_activeVehicle.battery && _activeVehicle.battery.percentRemaining) {
-            return _activeVehicle.battery.percentRemaining.valueString + "%"
+            var singlePercent = Number(_activeVehicle.battery.percentRemaining.rawValue)
+            return isNaN(singlePercent) ? "--" : Math.round(singlePercent) + "%"
         }
         return "--"
     }
@@ -43,8 +81,38 @@ Item {
         if (!_activeVehicle || !_activeVehicle.missionManager) {
             return "--"
         }
-        var index = _activeVehicle.missionManager.currentIndex
+        var index = _activeVehicle.missionItemIndex ? _factNumber(_activeVehicle.missionItemIndex, NaN) : NaN
+        if (isNaN(index)) {
+            index = _activeVehicle.missionManager.currentIndex
+        }
         return index >= 0 ? String(index + 1) : "--"
+    }
+
+    function _distanceToNextWpText() {
+        if (!_activeVehicle || !_activeVehicle.distanceToNextWP) {
+            return "--"
+        }
+        const value = _factNumber(_activeVehicle.distanceToNextWP, NaN)
+        return isNaN(value) ? "--" : _activeVehicle.distanceToNextWP.valueString
+    }
+
+    function _speedText() {
+        if (!_activeVehicle) {
+            return "--"
+        }
+        const airspeed = _factNumber(_activeVehicle.airSpeed, NaN)
+        if (!isNaN(airspeed) && airspeed > 0.1) {
+            return _factText(_activeVehicle.airSpeed, "--")
+        }
+        return _factText(_activeVehicle.groundSpeed, "--")
+    }
+
+    function _speedKey() {
+        if (!_activeVehicle) {
+            return "SPD"
+        }
+        const airspeed = _factNumber(_activeVehicle.airSpeed, NaN)
+        return !isNaN(airspeed) && airspeed > 0.1 ? "ASPD" : "GSPD"
     }
 
     function secondsToHHMMSS(timeS) {
@@ -67,7 +135,7 @@ Item {
         rightEdgeCenterInset:   parentToolInsets.rightEdgeCenterInset
         rightEdgeBottomInset:   parent.width - compassBackground.x
         topEdgeLeftInset:       parentToolInsets.topEdgeLeftInset
-        topEdgeCenterInset:     Math.max(compassArrowIndicator.y + compassArrowIndicator.height, telemetryStrip.y + telemetryStrip.height)
+        topEdgeCenterInset:     telemetryStrip.y + telemetryStrip.height
         topEdgeRightInset:      parentToolInsets.topEdgeRightInset
         bottomEdgeLeftInset:    parentToolInsets.bottomEdgeLeftInset
         bottomEdgeCenterInset:  parentToolInsets.bottomEdgeCenterInset
@@ -94,74 +162,100 @@ Item {
         property real leftEdgeCenterInset: visible ? x + width : 0
     }
 
-    //-------------------------------------------------------------------------
-    //-- Heading Indicator
     Rectangle {
-        id:                         compassBar
-        height:                     ScreenTools.defaultFontPixelHeight * 1.5
-        width:                      ScreenTools.defaultFontPixelWidth  * 50
-        anchors.bottom:             parent.bottom
-        anchors.bottomMargin:       _toolsMargin
-        color:                      "#DEDEDE"
-        radius:                     2
-        clip:                       true
-        anchors.horizontalCenter:   parent.horizontalCenter
-        Repeater {
-            model: 720
-            QGCLabel {
-                function _normalize(degrees) {
-                    var a = degrees % 360
-                    if (a < 0) a += 360
-                    return a
-                }
-                property int _startAngle: modelData + 180 + _heading
-                property int _angle: _normalize(_startAngle)
-                anchors.verticalCenter: parent.verticalCenter
-                x:              visible ? ((modelData * (compassBar.width / 360)) - (width * 0.5)) : 0
-                visible:        _angle % 45 == 0
-                color:          "#75505565"
-                font.pointSize: ScreenTools.smallFontPointSize
-                text: {
-                    switch(_angle) {
-                    case 0:     return "N"
-                    case 45:    return "NE"
-                    case 90:    return "E"
-                    case 135:   return "SE"
-                    case 180:   return "S"
-                    case 225:   return "SW"
-                    case 270:   return "W"
-                    case 315:   return "NW"
+        id: headingTapePanel
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: _toolsMargin
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: ScreenTools.defaultFontPixelWidth * 34
+        height: ScreenTools.defaultFontPixelHeight * 2.0
+        color: "#0b1017"
+        border.color: "#2a3342"
+        border.width: 1
+        clip: true
+
+        Canvas {
+            id: flyHeadingTape
+            anchors.fill: parent
+            anchors.margins: 4
+
+            onPaint: {
+                const ctx = getContext("2d")
+                ctx.reset()
+                ctx.clearRect(0, 0, width, height)
+                const centerX = width / 2
+                const heading = _heading
+                const pixelsPerDegree = width / 60
+                const bottomY = height - 4
+
+                ctx.strokeStyle = "rgba(170,182,201,0.72)"
+                ctx.lineWidth = 1
+
+                for (let deg = -30; deg <= 30; deg += 5) {
+                    const x = centerX + deg * pixelsPerDegree
+                    const absolute = ((Math.round(heading + deg) % 360) + 360) % 360
+                    const major = deg % 10 === 0
+                    const tickTop = major ? 16 : 22
+                    ctx.beginPath()
+                    ctx.moveTo(x, tickTop)
+                    ctx.lineTo(x, bottomY)
+                    ctx.stroke()
+
+                    if (major) {
+                        ctx.fillStyle = "#d8dee8"
+                        ctx.font = "bold 11px monospace"
+                        ctx.textAlign = "center"
+                        ctx.fillText(("000" + absolute).slice(-3), x, 11)
                     }
-                    return ""
+                }
+            }
+
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+            Component.onCompleted: requestPaint()
+        }
+
+        Rectangle {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: parent.top
+            width: parent.width * 0.16
+            height: parent.height
+            color: Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.12)
+            border.color: Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.78)
+            border.width: 1
+
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: parent.top
+                anchors.topMargin: 5
+                text: _headingNumberValue()
+                color: "#f7f9fc"
+                font.family: "monospace"
+                font.pixelSize: 11
+                font.bold: true
+            }
+
+            Canvas {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 4
+                width: 12
+                height: 8
+
+                onPaint: {
+                    const ctx = getContext("2d")
+                    ctx.reset()
+                    ctx.clearRect(0, 0, width, height)
+                    ctx.fillStyle = "#c9a84c"
+                    ctx.beginPath()
+                    ctx.moveTo(width / 2, height)
+                    ctx.lineTo(0, 0)
+                    ctx.lineTo(width, 0)
+                    ctx.closePath()
+                    ctx.fill()
                 }
             }
         }
-    }
-    Rectangle {
-        id:                         headingIndicator
-        height:                     ScreenTools.defaultFontPixelHeight
-        width:                      ScreenTools.defaultFontPixelWidth * 4
-        color:                      qgcPal.windowShadeDark
-        anchors.top:                compassBar.top
-        anchors.topMargin:          -headingIndicator.height / 2
-        anchors.horizontalCenter:   parent.horizontalCenter
-        QGCLabel {
-            text:                   _heading
-            color:                  qgcPal.text
-            font.pointSize:         ScreenTools.smallFontPointSize
-            anchors.centerIn:       parent
-        }
-    }
-    Image {
-        id:                         compassArrowIndicator
-        height:                     _indicatorsHeight
-        width:                      height
-        source:                     "/custom/img/compass_pointer.svg"
-        fillMode:                   Image.PreserveAspectFit
-        sourceSize.height:          height
-        anchors.top:                compassBar.bottom
-        anchors.topMargin:          -height / 2
-        anchors.horizontalCenter:   parent.horizontalCenter
     }
 
     Rectangle {
@@ -191,15 +285,15 @@ Item {
             Repeater {
                 model: [
                     { k: "WP", v: _missionIndexText(), u: "" },
-                    { k: "ALT", v: _activeVehicle ? _activeVehicle.altitudeRelative.valueString : "0.0", u: "m" },
-                    { k: "ASPD", v: _activeVehicle ? _activeVehicle.airSpeed.valueString : "0.0", u: "m/s" },
-                    { k: "GSPD", v: _activeVehicle ? _activeVehicle.groundSpeed.valueString : "0.0", u: "m/s" },
-                    { k: "HDG", v: _activeVehicle ? _activeVehicle.heading.valueString : "---", u: "deg" },
-                    { k: "DIST HOME", v: _activeVehicle ? _activeVehicle.distanceToHome.valueString : "0", u: "m" },
-                    { k: "DIST WP", v: _activeVehicle && _activeVehicle.missionManager && _activeVehicle.missionManager.currentIndex >= 0 ? String(_activeVehicle.missionManager.currentIndex + 1) : "--", u: "" },
-                    { k: "TIME", v: _activeVehicle && _activeVehicle.flightTime ? _activeVehicle.flightTime.valueString : "00:00:00", u: "" },
+                    { k: "ALT", v: _activeVehicle ? _factText(_activeVehicle.altitudeRelative, "--") : "--", u: "m" },
+                    { k: _speedKey(), v: _speedText(), u: "m/s" },
+                    { k: "GSPD", v: _activeVehicle ? _factText(_activeVehicle.groundSpeed, "--") : "--", u: "m/s" },
+                    { k: "HDG", v: _activeVehicle ? _formatHeading(_factNumber(_activeVehicle.heading, NaN)) : "---", u: "deg" },
+                    { k: "DIST HOME", v: _activeVehicle ? _factText(_activeVehicle.distanceToHome, "--") : "--", u: "m" },
+                    { k: "NEXT WP", v: _distanceToNextWpText(), u: _activeVehicle && _distanceToNextWpText() !== "--" ? "m" : "" },
+                    { k: "TIME", v: _activeVehicle && _activeVehicle.flightTime ? _activeVehicle.flightTime.valueString : "--:--:--", u: "" },
                     { k: "BATT", v: _vehicleBatteryPercent(), u: "" },
-                    { k: "MODE", v: _activeVehicle ? (_activeVehicle.armed ? "ARMED" : _activeVehicle.flightMode) : "STBY", u: "" }
+                    { k: "MODE", v: _activeVehicle ? _activeVehicle.flightMode : "STBY", u: "" }
                 ]
 
                 Rectangle {
@@ -251,11 +345,13 @@ Item {
         id:                     compassBackground
         anchors.bottom:         attitudeIndicator.bottom
         anchors.right:          attitudeIndicator.left
-        anchors.rightMargin:    -attitudeIndicator.width / 2
-        width:                  -anchors.rightMargin + compassBezel.width + (_toolsMargin * 2)
-        height:                 attitudeIndicator.height * 0.75
+        anchors.rightMargin:    -attitudeIndicator.width * 0.08
+        width:                  attitudeIndicator.width * 0.38
+        height:                 attitudeIndicator.height * 0.34
         radius:                 2
-        color:                  qgcPal.window
+        color:                  "#0b1017"
+        border.color:           "#2a3342"
+        border.width:           1
 
         Rectangle {
             id:                     compassBezel
@@ -265,7 +361,7 @@ Item {
             width:                  height
             height:                 parent.height - (northLabelBackground.height / 2) - (headingLabelBackground.height / 2)
             radius:                 height / 2
-            border.color:           qgcPal.text
+            border.color:           "#7a8799"
             border.width:           1
             color:                  Qt.rgba(0,0,0,0)
         }
@@ -278,13 +374,13 @@ Item {
             width:                      northLabel.contentWidth * 1.5
             height:                     northLabel.contentHeight * 1.5
             radius:                     ScreenTools.defaultFontPixelWidth  * 0.25
-            color:                      qgcPal.windowShade
+            color:                      "#111823"
 
             QGCLabel {
                 id:                 northLabel
                 anchors.centerIn:   parent
                 text:               "N"
-                color:              qgcPal.text
+                color:              "#d9e1ea"
                 font.pointSize:     ScreenTools.smallFontPointSize
             }
         }
@@ -313,13 +409,13 @@ Item {
             width:                      headingLabel.contentWidth * 1.5
             height:                     headingLabel.contentHeight * 1.5
             radius:                     ScreenTools.defaultFontPixelWidth  * 0.25
-            color:                      qgcPal.windowShade
+            color:                      "#111823"
 
             QGCLabel {
                 id:                 headingLabel
                 anchors.centerIn:   parent
-                text:               _heading
-                color:              qgcPal.text
+                text:               _headingNumberValue()
+                color:              "#d9e1ea"
                 font.pointSize:     ScreenTools.smallFontPointSize
             }
         }
@@ -331,10 +427,12 @@ Item {
         anchors.rightMargin:    _toolsMargin
         anchors.bottom:         parent.bottom
         anchors.right:          parent.right
-        height:                 ScreenTools.defaultFontPixelHeight * 6
+        height:                 ScreenTools.defaultFontPixelHeight * 8.4
         width:                  height
         radius:                 height * 0.5
-        color:                  qgcPal.windowShade
+        color:                  "#0c1118"
+        border.color:           "#2a3342"
+        border.width:           1
 
         BriechAttitudeIndicator {
             size:               parent.height * 0.95
