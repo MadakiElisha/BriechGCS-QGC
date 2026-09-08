@@ -3,12 +3,13 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtLocation
+import Qt5Compat.GraphicalEffects
 import QtPositioning
 
 import QGroundControl
 import QGroundControl.Controls
 import QGroundControl.FlightMap
+import QGroundControl.FlyView
 import QGroundControl.Viewer3D
 import Custom.Widgets 1.0
 
@@ -32,8 +33,14 @@ Item {
     property color warn: BriechTheme.warnColor
     property color err: BriechTheme.errColor
     property color blue: BriechTheme.blueColor
+    property color modernGlass: Qt.rgba(8 / 255, 10 / 255, 14 / 255, 0.72)
+    property color modernGlassStrong: Qt.rgba(8 / 255, 10 / 255, 14 / 255, 0.88)
+    property color modernGlassSoft: Qt.rgba(15 / 255, 18 / 255, 24 / 255, 0.58)
+    property color modernHairline: Qt.rgba(1, 1, 1, 0.075)
+    property color modernGoldHairline: Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.18)
+    property color modernGoldFill: Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.075)
     property string activeModernSection: "fly"
-    property string selectedMapKind: "hybrid"
+    property string selectedMapKind: "default"
     property string selectedRiskZone: ""
     property var riskZones: []
     property var airportRiskZones: []
@@ -47,6 +54,10 @@ Item {
     property bool liveGcsLocationReceived: false
     property bool modernSettingsOpen: false
     property bool modernConnectPanelOpen: false
+    property bool modernVehicleMessagesOpen: false
+    property bool modernMapToolsOpen: false
+    property bool modernDiagnosticsOpen: false
+    property bool modernWatermarkEnabled: true
     property string lastRiskDataUrl: ""
     property string lastAirportRiskDataUrl: ""
     property bool openAipTileOverlayEnabled: true
@@ -71,20 +82,21 @@ Item {
     property var speedHistory: []
     property var altitudeHistory: []
     property var batteryHistory: []
+    property string modernAlertClock: Qt.formatTime(new Date(), "hh:mm:ss")
+    property string dismissedBatteryWarningKey: ""
+    property string dismissedWindWarningKey: ""
+    property string lastVehicleWarningMessage: ""
+    property string lastVehicleWarningKey: ""
+    property string dismissedVehicleWarningKey: ""
+    property string lastVehicleWarningTime: ""
     property var modernNavSections: [
         { label: "FLY", key: "fly", icon: "/qmlimages/PaperPlane.svg" },
         { label: "PLAN", key: "plan", icon: "/qmlimages/Plan.svg" },
         { label: "ANALYZE", key: "analyze", icon: "/qmlimages/Analyze.svg" },
         { label: "VEHICLE", key: "vehicle", icon: "/qmlimages/Gears.svg" }
     ]
-    property var modernMapTypeOptions: [
-        { label: "SATELLITE", key: "satellite" },
-        { label: "STREET", key: "street" },
-        { label: "TERRAIN", key: "terrain" },
-        { label: "HYBRID", key: "hybrid" }
-    ]
-
     property var missionCoordinates: []
+    property bool missionTimelineInspectionMode: false
 
     PlanMasterController {
         id: modernPlanController
@@ -164,6 +176,241 @@ Item {
     function batteryPercentText() {
         const percent = currentBatteryPercent()
         return isNaN(percent) ? "--" : Math.round(percent) + "%"
+    }
+
+    function distanceMetersBetween(fromCoordinate, toCoordinate) {
+        if (!fromCoordinate || !toCoordinate || !fromCoordinate.isValid || !toCoordinate.isValid) {
+            return 0
+        }
+        return fromCoordinate.distanceTo(toCoordinate)
+    }
+
+    function missionTimelineAvailable() {
+        return missionCoordinates.length > 0 && !!_missionController && _missionController.missionItemCount > 0
+    }
+
+    function missionTimelineIndexForSequence(sequenceNumber) {
+        if (!_visualItems || missionCoordinates.length === 0) {
+            return -1
+        }
+        let missionIndex = 0
+        for (let i = 0; i < _visualItems.count; i++) {
+            const item = _visualItems.get(i)
+            if (!isTimelineMissionItem(item)) {
+                continue
+            }
+            if (item.sequenceNumber >= sequenceNumber) {
+                return missionIndex
+            }
+            missionIndex++
+        }
+        return missionCoordinates.length
+    }
+
+    function currentMissionTimelineIndex() {
+        if (!missionTimelineAvailable()) {
+            return -1
+        }
+        const sequenceNumber = _missionController.currentMissionIndex
+        if (sequenceNumber < 0) {
+            return 0
+        }
+        return missionTimelineIndexForSequence(sequenceNumber)
+    }
+
+    function missionTimelineComplete() {
+        if (!missionTimelineAvailable()) {
+            return false
+        }
+        const sequenceNumber = _missionController.currentMissionIndex
+        return sequenceNumber >= 0 && sequenceNumber >= _missionController.missionItemCount
+    }
+
+    function missionTimelineLiveIndex() {
+        if (!missionTimelineAvailable()) {
+            return 0
+        }
+        const liveIndex = currentMissionTimelineIndex()
+        if (liveIndex < 0) {
+            return 0
+        }
+        return Math.max(0, Math.min(liveIndex, missionCoordinates.length - 1))
+    }
+
+    function missionTimelineDisplayedIndex() {
+        if (!missionTimelineAvailable()) {
+            return 0
+        }
+        if (missionTimelineInspectionMode) {
+            return Math.max(0, Math.min(missionScrubIndex, missionCoordinates.length - 1))
+        }
+        return missionTimelineLiveIndex()
+    }
+
+    function missionTimelineNextIndex() {
+        if (!missionTimelineAvailable() || missionTimelineComplete()) {
+            return -1
+        }
+        const liveIndex = missionTimelineLiveIndex()
+        return liveIndex < missionCoordinates.length - 1 ? liveIndex + 1 : -1
+    }
+
+    function missionTimelineSequenceText() {
+        if (!missionTimelineAvailable()) {
+            return "SEQ --"
+        }
+        const sequenceNumber = _missionController.currentMissionIndex
+        return sequenceNumber >= 0 ? qsTr("SEQ %1").arg(sequenceNumber) : qsTr("SEQ STAGED")
+    }
+
+    function missionWaypointProgressText() {
+        if (!missionTimelineAvailable()) {
+            return "WP -- / --"
+        }
+        const liveIndex = missionTimelineLiveIndex()
+        if (missionTimelineComplete()) {
+            return qsTr("WP %1 / %2").arg(missionCoordinates.length).arg(missionCoordinates.length)
+        }
+        return qsTr("WP %1 / %2").arg(Math.min(liveIndex + 1, missionCoordinates.length)).arg(missionCoordinates.length)
+    }
+
+    function missionCurrentWaypointLabel() {
+        if (!missionTimelineAvailable()) {
+            return "--"
+        }
+        if (missionTimelineComplete()) {
+            return qsTr("COMPLETE")
+        }
+        return qsTr("WP %1").arg(missionTimelineLiveIndex() + 1)
+    }
+
+    function missionNextWaypointLabel() {
+        const nextIndex = missionTimelineNextIndex()
+        return nextIndex >= 0 ? qsTr("WP %1").arg(nextIndex + 1) : "--"
+    }
+
+    function missionTimelineStatusText() {
+        if (!missionTimelineAvailable()) {
+            return qsTr("NO MISSION")
+        }
+        if (missionTimelineComplete()) {
+            return qsTr("COMPLETE")
+        }
+        if (_missionController.currentMissionIndex < 0) {
+            return qsTr("STAGED")
+        }
+        return missionTimelineInspectionMode ? qsTr("INSPECT") : qsTr("ACTIVE")
+    }
+
+    function missionRemainingDistanceMeters() {
+        if (!missionTimelineAvailable()) {
+            return NaN
+        }
+        if (missionTimelineComplete()) {
+            return 0
+        }
+
+        const liveIndex = missionTimelineLiveIndex()
+        let remainingDistance = 0
+        const firstTarget = missionCoordinateAt(liveIndex)
+        const liveVehicleCoordinate = activeVehicle && activeVehicle.coordinate && activeVehicle.coordinate.isValid
+            ? activeVehicle.coordinate
+            : QtPositioning.coordinate()
+
+        if (liveVehicleCoordinate.isValid && firstTarget && firstTarget.isValid) {
+            remainingDistance += distanceMetersBetween(liveVehicleCoordinate, firstTarget)
+        }
+
+        for (let i = liveIndex; i < missionCoordinates.length - 1; i++) {
+            remainingDistance += distanceMetersBetween(missionCoordinates[i], missionCoordinates[i + 1])
+        }
+
+        return remainingDistance
+    }
+
+    function missionEtaSeconds() {
+        const remainingDistance = missionRemainingDistanceMeters()
+        const groundSpeed = activeVehicle ? numericFactValue(activeVehicle.groundSpeed, NaN) : NaN
+        if (isNaN(remainingDistance) || isNaN(groundSpeed) || groundSpeed <= 0.5) {
+            return NaN
+        }
+        return remainingDistance / groundSpeed
+    }
+
+    function formatMissionDistance(meters) {
+        if (isNaN(meters)) {
+            return "--"
+        }
+        if (meters >= 1000) {
+            return (meters / 1000).toFixed(meters >= 10000 ? 0 : 1) + " km"
+        }
+        return Math.round(meters) + " m"
+    }
+
+    function formatMissionEta(seconds) {
+        if (isNaN(seconds) || seconds < 0) {
+            return "--"
+        }
+        const totalSeconds = Math.round(seconds)
+        const hours = Math.floor(totalSeconds / 3600)
+        const minutes = Math.floor((totalSeconds % 3600) / 60)
+        const secs = totalSeconds % 60
+        if (hours > 0) {
+            return qsTr("%1h %2m").arg(hours).arg(minutes)
+        }
+        if (minutes > 0) {
+            return qsTr("%1m %2s").arg(minutes).arg(secs)
+        }
+        return qsTr("%1s").arg(secs)
+    }
+
+    function missionBatteryAtHomePercent() {
+        if (!missionTimelineAvailable() || !activeVehicle) {
+            return NaN
+        }
+        const currentPercent = currentBatteryPercent()
+        const homeCoordinate = activeVehicle.homePosition && activeVehicle.homePosition.isValid
+            ? activeVehicle.homePosition
+            : QtPositioning.coordinate()
+        const flownMeters = activeVehicle.flightDistance ? Number(activeVehicle.flightDistance.rawValue) : NaN
+        if (isNaN(currentPercent) || !homeCoordinate.isValid || isNaN(flownMeters) || flownMeters < 500 || batteryHistory.length < 2) {
+            return NaN
+        }
+
+        const firstPercent = Number(batteryHistory[0])
+        const lastPercent = Number(batteryHistory[batteryHistory.length - 1])
+        const usedPercent = firstPercent - lastPercent
+        if (isNaN(usedPercent) || usedPercent < 2) {
+            return NaN
+        }
+
+        const percentPerMeter = usedPercent / flownMeters
+        if (!(percentPerMeter > 0)) {
+            return NaN
+        }
+
+        const remainingMissionDistance = missionRemainingDistanceMeters()
+        if (isNaN(remainingMissionDistance)) {
+            return NaN
+        }
+
+        const missionEndCoordinate = missionCoordinates.length > 0
+            ? missionCoordinateAt(missionCoordinates.length - 1)
+            : QtPositioning.coordinate()
+        const returnDistance = missionEndCoordinate && missionEndCoordinate.isValid
+            ? distanceMetersBetween(missionEndCoordinate, homeCoordinate)
+            : (activeVehicle.coordinate && activeVehicle.coordinate.isValid ? distanceMetersBetween(activeVehicle.coordinate, homeCoordinate) : 0)
+
+        const estimate = currentPercent - (percentPerMeter * (remainingMissionDistance + returnDistance))
+        if (isNaN(estimate)) {
+            return NaN
+        }
+        return Math.max(0, Math.min(100, estimate))
+    }
+
+    function missionBatteryAtHomeEstimateText() {
+        const estimate = missionBatteryAtHomePercent()
+        return isNaN(estimate) ? "--" : Math.round(estimate) + "%"
     }
 
     function vehicleHasHealthChecks() {
@@ -285,6 +532,57 @@ Item {
         return isNaN(heading) ? "--" : Math.round(heading).toString()
     }
 
+    function normalizedHeadingText() {
+        if (!activeVehicle || !activeVehicle.heading) {
+            return "---"
+        }
+        const heading = Number(activeVehicle.heading.rawValue)
+        if (isNaN(heading)) {
+            return "---"
+        }
+        const normalized = ((Math.round(heading) % 360) + 360) % 360
+        return ("000" + normalized).slice(-3)
+    }
+
+    function headingDegreesValue() {
+        if (!activeVehicle || !activeVehicle.heading) {
+            return 0
+        }
+        const heading = Number(activeVehicle.heading.rawValue)
+        return isNaN(heading) ? 0 : heading
+    }
+
+    function hudRollAngle() {
+        return activeVehicle ? numericFactValue(activeVehicle.roll, 0) : 0
+    }
+
+    function hudPitchAngle() {
+        return activeVehicle ? numericFactValue(activeVehicle.pitch, 0) : 0
+    }
+
+    function hudClimbRateText() {
+        return activeVehicle ? telemetryValue(activeVehicle.climbRate, "--") : "--"
+    }
+
+    function hudSpeedLabel() {
+        if (!activeVehicle) {
+            return "IAS"
+        }
+        const airspeed = numericFactValue(activeVehicle.airSpeed, NaN)
+        return !isNaN(airspeed) && airspeed > 0.1 ? "IAS" : "GS"
+    }
+
+    function hudSpeedText() {
+        if (!activeVehicle) {
+            return "--"
+        }
+        const airspeed = numericFactValue(activeVehicle.airSpeed, NaN)
+        if (!isNaN(airspeed) && airspeed > 0.1) {
+            return telemetryValue(activeVehicle.airSpeed, "--")
+        }
+        return telemetryValue(activeVehicle.groundSpeed, "--")
+    }
+
     function altitudeText() {
         return activeVehicle ? telemetryValue(activeVehicle.altitudeRelative, "--") : "--"
     }
@@ -316,6 +614,19 @@ Item {
         return activeVehicle ? String(activeVehicle.messageCount || 0) : "0"
     }
 
+    function vehicleMessageIconColor() {
+        if (!activeVehicle) {
+            return root.dim
+        }
+        if (activeVehicle.messageTypeError) {
+            return root.err
+        }
+        if (activeVehicle.messageTypeWarning) {
+            return root.warn
+        }
+        return root.text
+    }
+
     function batteryPackCountText() {
         if (!activeVehicle || !activeVehicle.batteries) {
             return "0"
@@ -336,6 +647,12 @@ Item {
     function prearmStatusText() {
         if (!activeVehicle) {
             return qsTr("No vehicle linked")
+        }
+        if (lastVehicleWarningMessage.length > 0
+                && (lastVehicleWarningMessage.toLowerCase().indexOf("prearm") !== -1
+                    || lastVehicleWarningMessage.toLowerCase().indexOf("hardware safety") !== -1
+                    || lastVehicleWarningMessage.toLowerCase().indexOf("not armable") !== -1)) {
+            return lastVehicleWarningMessage
         }
         if (activeVehicle.prearmError && String(activeVehicle.prearmError).length > 0) {
             return activeVehicle.prearmError
@@ -520,6 +837,135 @@ Item {
         return logEntryCount() > 0 ? root.ok : root.dim
     }
 
+    function mapTypeKeywords(kind) {
+        switch (String(kind || "").toLowerCase()) {
+        case "street":
+            return ["street", "road", "map"]
+        case "satellite":
+            return ["satellite", "sat"]
+        case "terrain":
+            return ["terrain", "topo", "topographic"]
+        case "hybrid":
+            return ["hybrid"]
+        case "default":
+            return [String(QGroundControl.settingsManager.flightMapSettings.mapType.rawValue || QGroundControl.settingsManager.flightMapSettings.mapType.value || "").toLowerCase()]
+        default:
+            return [String(kind || "").toLowerCase()]
+        }
+    }
+
+    function findModernMapType(kind) {
+        if (!modernMap || !modernMap.mapReady || !modernMap.supportedMapTypes) {
+            return null
+        }
+        const keywords = mapTypeKeywords(kind)
+        for (let i = 0; i < modernMap.supportedMapTypes.length; i++) {
+            const candidate = modernMap.supportedMapTypes[i]
+            const candidateName = String(candidate.name || "").toLowerCase()
+            for (let keywordIndex = 0; keywordIndex < keywords.length; keywordIndex++) {
+                if (keywords[keywordIndex] !== "" && candidateName.indexOf(keywords[keywordIndex]) !== -1) {
+                    return candidate
+                }
+            }
+        }
+        return null
+    }
+
+    function setModernMapKind(kind) {
+        if (!modernMap || !modernMap.mapReady) {
+            return
+        }
+        const candidate = findModernMapType(kind)
+        if (candidate) {
+            modernMap.activeMapType = candidate
+            selectedMapKind = kind
+            pushToast(qsTr("Map"), qsTr("%1 map selected.").arg(String(kind).toUpperCase()), "info", 1600)
+        } else {
+            selectedMapKind = "default"
+            pushToast(qsTr("Map"), qsTr("Requested map type is not available in the current provider."), "warn", 2400)
+        }
+    }
+
+    function modernMapLayerModel() {
+        return [
+            { label: "DEFAULT", key: "default", active: selectedMapKind === "default", available: !!modernMap && modernMap.mapReady },
+            { label: "SATELLITE", key: "satellite", active: selectedMapKind === "satellite", available: findModernMapType("satellite") !== null },
+            { label: "STREET", key: "street", active: selectedMapKind === "street", available: findModernMapType("street") !== null },
+            { label: "TERRAIN", key: "terrain", active: selectedMapKind === "terrain", available: findModernMapType("terrain") !== null },
+            { label: "HYBRID", key: "hybrid", active: selectedMapKind === "hybrid", available: findModernMapType("hybrid") !== null }
+        ]
+    }
+
+    function modernDiagnosticsModel() {
+        return [
+            { label: "MAP", value: modernMap && modernMap.mapReady ? "READY" : "LOADING", tone: modernMap && modernMap.mapReady ? root.ok : root.warn },
+            { label: "MAP TYPE", value: selectedMapKind.toUpperCase(), tone: root.gold },
+            { label: "VEHICLE", value: activeVehicle ? ("BRCH-" + activeVehicle.id) : "NONE", tone: activeVehicle ? root.ok : root.dim },
+            { label: "VIDEO", value: hasVideoSignal() ? "LIVE" : "IDLE", tone: hasVideoSignal() ? root.ok : root.dim },
+            { label: "3D", value: viewer3DReady() ? "READY" : "OFF", tone: viewer3DReady() ? root.ok : root.dim },
+            { label: "AIRSPACE", value: airspaceStatusText(), tone: airspaceStateColor() },
+            { label: "LOGS", value: logStatusText(), tone: logStateTone() },
+            { label: "WATERMARK", value: modernWatermarkEnabled ? "ON" : "OFF", tone: modernWatermarkEnabled ? root.gold : root.dim }
+        ]
+    }
+
+    function vehicleIdentityModel() {
+        return [
+            { label: "MAV ID", value: activeVehicle ? String(activeVehicle.id) : "--", tone: root.text },
+            { label: "FIRMWARE", value: activeVehicle ? String(activeVehicle.firmwareTypeString || activeVehicle.firmwareType || "--") : "--", tone: root.text },
+            { label: "TYPE", value: activeVehicle ? String(activeVehicle.vehicleTypeString || activeVehicle.vehicleType || "--") : "--", tone: root.text },
+            { label: "MODE", value: flightModeText(), tone: root.ok }
+        ]
+    }
+
+    function vehicleCapabilityModel() {
+        return [
+            { label: "GUIDED", value: activeVehicle && activeVehicle.guidedModeSupported ? "YES" : "NO", tone: activeVehicle && activeVehicle.guidedModeSupported ? root.ok : root.dim },
+            { label: "TAKEOFF", value: activeVehicle && activeVehicle.takeoffVehicleSupported ? "YES" : "NO", tone: activeVehicle && activeVehicle.takeoffVehicleSupported ? root.ok : root.dim },
+            { label: "PAUSE", value: activeVehicle && activeVehicle.pauseVehicleSupported ? "YES" : "NO", tone: activeVehicle && activeVehicle.pauseVehicleSupported ? root.ok : root.dim },
+            { label: "RTL", value: activeVehicle && activeVehicle.rtlFlightMode ? "YES" : "NO", tone: activeVehicle && activeVehicle.rtlFlightMode ? root.ok : root.dim },
+            { label: "FIXED WING", value: activeVehicle && activeVehicle.fixedWing ? "YES" : "NO", tone: activeVehicle && activeVehicle.fixedWing ? root.gold : root.dim },
+            { label: "MULTIROTOR", value: activeVehicle && activeVehicle.multiRotor ? "YES" : "NO", tone: activeVehicle && activeVehicle.multiRotor ? root.gold : root.dim }
+        ]
+    }
+
+    function vehiclePowerModel() {
+        const percent = currentBatteryPercent()
+        return [
+            { label: "BATTERY", value: batteryPercentText(), tone: isNaN(percent) ? root.dim : (percent <= 30 ? root.err : root.ok) },
+            { label: "PACKS", value: batteryPackCountText(), tone: root.text },
+            { label: "USED", value: batteryUsedText(), tone: root.gold },
+            { label: "HOME EST", value: missionBatteryAtHomeEstimateText(), tone: missionBatteryAtHomeEstimateText() === "--" ? root.dim : root.ok }
+        ]
+    }
+
+    function vehicleLinkModel() {
+        return [
+            { label: "QUALITY", value: linkQualityText(), tone: isNaN(linkQualityValue()) ? root.dim : (linkQualityValue() < 90 ? root.warn : root.ok) },
+            { label: "LOSS", value: activeVehicle ? String(activeVehicle.mavlinkLossCount || 0) : "--", tone: root.text },
+            { label: "MESSAGES", value: messageCountText(), tone: Number(messageCountText()) > 0 ? root.warn : root.ok },
+            { label: "RC", value: activeVehicle ? String(activeVehicle.rcRSSI || "--") : "--", tone: guidedActionsEnabled() ? root.ok : root.warn }
+        ]
+    }
+
+    function vehicleGpsModel() {
+        return [
+            { label: "GPS", value: gpsStatusText(), tone: gpsStatusText() === "NO FIX" ? root.warn : root.ok },
+            { label: "DETAIL", value: gpsDetailText(), tone: root.text },
+            { label: "COORD", value: activeVehicle && activeVehicle.coordinate.isValid ? activeVehicle.coordinate.latitude.toFixed(6) + ", " + activeVehicle.coordinate.longitude.toFixed(6) : "--", tone: root.text },
+            { label: "HOME", value: activeVehicle && activeVehicle.homePosition && activeVehicle.homePosition.isValid ? "SET" : "--", tone: activeVehicle && activeVehicle.homePosition && activeVehicle.homePosition.isValid ? root.ok : root.dim }
+        ]
+    }
+
+    function vehicleCommandStateModel() {
+        return [
+            { label: "ARM", value: vehicleCanArm() ? "AVAILABLE" : "BLOCKED", tone: vehicleCanArm() ? root.ok : root.warn },
+            { label: "TAKEOFF", value: vehicleCanTakeoff() ? "AVAILABLE" : "BLOCKED", tone: vehicleCanTakeoff() ? root.ok : root.dim },
+            { label: "LAND", value: vehicleCanLand() ? "AVAILABLE" : "BLOCKED", tone: vehicleCanLand() ? root.ok : root.dim },
+            { label: "RTL", value: vehicleCanRTL() ? "AVAILABLE" : "BLOCKED", tone: vehicleCanRTL() ? root.ok : root.dim }
+        ]
+    }
+
     function analyzeSessionSummaryModel() {
         return [
             { label: "FLIGHT TIME", value: flightTimeText(), tone: root.text },
@@ -596,11 +1042,12 @@ Item {
         const wpCount = missionCoordinates.length
         const battery = batteryPercentText()
         const mode = flightModeText()
-        return qsTr("Aircraft %1 operating in %2 with %3 mission points staged. Current battery reserve is %4 and airspace monitoring remains active across the viewed sector.")
+        return qsTr("%1 | mode %2 | mission points %3 | battery %4 | airspace zones %5")
             .arg(activeVehicle ? ("BRCH-" + activeVehicle.id) : qsTr("Unavailable"))
             .arg(mode)
             .arg(wpCount)
             .arg(battery)
+            .arg(visibleRiskZones().length)
     }
 
     function sessionChecklistModel() {
@@ -621,6 +1068,14 @@ Item {
                 detail: qsTr("%1 | %2 | %3 WP").arg(flightModeText()).arg(flightTimeText()).arg(missionCoordinates.length),
                 status: vehicleReadyText().toUpperCase(),
                 tone: vehicleCanArm() ? root.ok : root.warn
+            })
+        }
+        if (lastVehicleWarningMessage.length > 0) {
+            items.push({
+                title: qsTr("LAST VEHICLE WARNING"),
+                detail: lastVehicleWarningMessage,
+                status: lastVehicleWarningTime.length > 0 ? lastVehicleWarningTime : qsTr("LIVE"),
+                tone: root.warn
             })
         }
         if (logEntryCount() > 0) {
@@ -665,6 +1120,12 @@ Item {
                     : qsTr("Connect a vehicle to inspect vibration and observed battery change."),
                 badge: isNaN(vibrationPeakValue()) ? "NO DATA" : vibrationStatusText().toUpperCase(),
                 tone: isNaN(vibrationPeakValue()) ? root.dim : (vibrationPeakValue() >= 60 ? root.warn : root.ok)
+            },
+            {
+                title: "LAST VEHICLE WARNING",
+                body: lastVehicleWarningMessage.length > 0 ? lastVehicleWarningMessage : qsTr("No vehicle warnings captured in this Modern session."),
+                badge: lastVehicleWarningMessage.length > 0 ? "CHECK" : "CLEAR",
+                tone: lastVehicleWarningMessage.length > 0 ? root.warn : root.ok
             }
         ]
     }
@@ -840,6 +1301,17 @@ Item {
         toastSweepTimer.start()
     }
 
+    function formatVehicleMessageHtml(message) {
+        if (!message || String(message).length === 0) {
+            return ""
+        }
+        let formatted = String(message)
+        formatted = formatted.replace(new RegExp("<#E>", "g"), "color: " + root.err + "; font: 9pt monospace;")
+        formatted = formatted.replace(new RegExp("<#I>", "g"), "color: " + root.warn + "; font: 9pt monospace;")
+        formatted = formatted.replace(new RegExp("<#N>", "g"), "color: " + root.text + "; font: 9pt monospace;")
+        return formatted
+    }
+
     function setRiskDataSource(url) {
         riskDataSourceTemplate = url || ""
         refreshRiskDataForMap()
@@ -1005,6 +1477,185 @@ Item {
             return "AIRSPACE ERR"
         }
         return "AIRSPACE IDLE"
+    }
+
+    function batteryRemainingMinutesValue() {
+        if (!activeVehicle || !activeVehicle.batteries || activeVehicle.batteries.count <= 0) {
+            return NaN
+        }
+
+        for (let i = 0; i < activeVehicle.batteries.count; i++) {
+            const battery = activeVehicle.batteries.get(i)
+            if (!battery) {
+                continue
+            }
+
+            const candidates = [ "timeRemaining", "timeRemainingStr" ]
+            for (let j = 0; j < candidates.length; j++) {
+                const name = candidates[j]
+                if (!battery[name]) {
+                    continue
+                }
+                const fact = battery[name]
+                const raw = Number(fact.rawValue !== undefined ? fact.rawValue : fact.value)
+                if (!isNaN(raw) && raw > 0) {
+                    return raw > 300 ? raw / 60 : raw
+                }
+                const textValue = String(fact.valueString || fact.value || "")
+                const match = textValue.match(/([0-9]+(?:\.[0-9]+)?)/)
+                if (match) {
+                    const parsed = Number(match[1])
+                    if (!isNaN(parsed) && parsed > 0) {
+                        return parsed
+                    }
+                }
+            }
+        }
+        return NaN
+    }
+
+    function batteryAlertKey() {
+        const percent = currentBatteryPercent()
+        const minutes = batteryRemainingMinutesValue()
+        if (isNaN(percent) && isNaN(minutes)) {
+            return ""
+        }
+        return "battery:" + (isNaN(percent) ? "--" : Math.round(percent)) + ":" + (isNaN(minutes) ? "--" : Math.round(minutes))
+    }
+
+    function batteryAlertDetailText() {
+        const percent = currentBatteryPercent()
+        const minutes = batteryRemainingMinutesValue()
+        if (!isNaN(percent) && !isNaN(minutes)) {
+            return qsTr("%1% - Estimated %2 min remaining").arg(Math.round(percent)).arg(Math.round(minutes))
+        }
+        if (!isNaN(percent)) {
+            return qsTr("%1% remaining - monitor reserve").arg(Math.round(percent))
+        }
+        return !isNaN(minutes) ? qsTr("Estimated %1 min remaining").arg(Math.round(minutes)) : ""
+    }
+
+    function batteryWarningActive() {
+        const percent = currentBatteryPercent()
+        const minutes = batteryRemainingMinutesValue()
+        return (!isNaN(minutes) && minutes <= 20) || (!isNaN(percent) && percent <= 25)
+    }
+
+    function windAlertKey() {
+        const alert = activeWindAlert()
+        if (!alert) {
+            return ""
+        }
+        return "wind:" + String(alert.id || alert.label || alert.message || alert.type || "active")
+    }
+
+    function windAlertDetailText() {
+        const alert = activeWindAlert()
+        if (!alert) {
+            return ""
+        }
+        const speed = alert.speed || alert.windSpeed || alert.value || alert.gust || ""
+        const unit = alert.unit || alert.units || "m/s"
+        const segment = alert.segment || alert.routeSegment || alert.leg || ""
+        if (speed !== "" && segment !== "") {
+            return qsTr("%1 %2 on segment %3 - Monitor").arg(speed).arg(unit).arg(segment)
+        }
+        return alert.message || alert.description || qsTr("Live weather alert active - Monitor")
+    }
+
+    function modernFlightAlerts() {
+        const alerts = []
+        if (lastVehicleWarningKey.length > 0 && dismissedVehicleWarningKey !== lastVehicleWarningKey) {
+            alerts.push({
+                key: lastVehicleWarningKey,
+                kind: "vehicle",
+                title: qsTr("VEHICLE WARNING"),
+                detail: lastVehicleWarningMessage,
+                time: lastVehicleWarningTime.length > 0 ? lastVehicleWarningTime : modernAlertClock,
+                tone: root.warn
+            })
+        }
+
+        const batteryKey = batteryAlertKey()
+        if (batteryWarningActive() && batteryKey !== "" && dismissedBatteryWarningKey !== batteryKey) {
+            alerts.push({
+                key: batteryKey,
+                kind: "battery",
+                title: qsTr("BATTERY WARNING"),
+                detail: batteryAlertDetailText(),
+                time: modernAlertClock,
+                tone: root.warn
+            })
+        }
+
+        const windKey = windAlertKey()
+        if (windKey !== "" && dismissedWindWarningKey !== windKey) {
+            const alert = activeWindAlert()
+            alerts.push({
+                key: windKey,
+                kind: "wind",
+                title: alert && alert.label ? String(alert.label).toUpperCase() : qsTr("WIND SHEAR DETECTED"),
+                detail: windAlertDetailText(),
+                time: modernAlertClock,
+                tone: root.warn
+            })
+        }
+        return alerts
+    }
+
+    function dismissModernFlightAlert(key, kind) {
+        if (kind === "battery") {
+            dismissedBatteryWarningKey = key
+        } else if (kind === "wind") {
+            dismissedWindWarningKey = key
+        } else if (kind === "vehicle") {
+            dismissedVehicleWarningKey = key
+        }
+    }
+
+    function recordVehicleWarning(message) {
+        const plainLines = String(message || "")
+            .replace(/<br\s*\/?>/gi, "\n")
+            .replace(/<\/p>/gi, "\n")
+            .replace(/<[^>]*>/g, " ")
+            .split("\n")
+        let cleanMessage = ""
+        for (let i = 0; i < plainLines.length; i++) {
+            const candidate = plainLines[i].replace(/\s+/g, " ").trim()
+            const loweredCandidate = candidate.toLowerCase()
+            if (candidate.length > 0
+                    && (loweredCandidate.indexOf("command failed") !== -1
+                        || loweredCandidate.indexOf("prearm") !== -1
+                        || loweredCandidate.indexOf("hardware safety") !== -1
+                        || loweredCandidate.indexOf("not armable") !== -1
+                        || loweredCandidate.indexOf("critical") !== -1
+                        || loweredCandidate.indexOf("error") !== -1
+                        || loweredCandidate.indexOf("warning") !== -1)) {
+                cleanMessage = candidate
+                break
+            }
+        }
+        if (cleanMessage.length > 180) {
+            cleanMessage = cleanMessage.slice(0, 177) + "..."
+        }
+        if (cleanMessage.length === 0) {
+            return
+        }
+        const lowered = cleanMessage.toLowerCase()
+        const relevant = lowered.indexOf("command failed") !== -1
+            || lowered.indexOf("prearm") !== -1
+            || lowered.indexOf("hardware safety") !== -1
+            || lowered.indexOf("not armable") !== -1
+            || lowered.indexOf("critical") !== -1
+            || lowered.indexOf("error") !== -1
+            || lowered.indexOf("warning") !== -1
+        if (!relevant) {
+            return
+        }
+        lastVehicleWarningMessage = cleanMessage
+        lastVehicleWarningTime = modernAlertClock
+        lastVehicleWarningKey = "vehicle:" + cleanMessage + ":" + lastVehicleWarningTime
+        dismissedVehicleWarningKey = ""
     }
 
     function saveOpenAipToken(token) {
@@ -1306,12 +1957,22 @@ Item {
         pushToast(qsTr("Waypoint %1").arg(index + 1), qsTr("Waypoint repositioned."), "info", 2400)
     }
 
+    function syncMissionScrubIndexToLive() {
+        if (!missionTimelineAvailable()) {
+            missionScrubIndex = 0
+            missionTimelineInspectionMode = false
+            return
+        }
+        missionScrubIndex = missionTimelineLiveIndex()
+    }
+
     function focusMissionWaypoint(index, announce) {
         if (missionCoordinates.length === 0) {
             return
         }
         const safeIndex = Math.max(0, Math.min(index, missionCoordinates.length - 1))
         missionScrubIndex = safeIndex
+        missionTimelineInspectionMode = safeIndex !== missionTimelineLiveIndex()
         const coordinate = missionCoordinateAt(safeIndex)
         const missionItem = missionVisualItemAtMissionIndex(safeIndex)
         if (missionItem) {
@@ -1385,6 +2046,7 @@ Item {
         if (!_visualItems) {
             missionCoordinates = []
             missionScrubIndex = 0
+            missionTimelineInspectionMode = false
             return
         }
         const coordinates = []
@@ -1395,21 +2057,32 @@ Item {
             }
         }
         missionCoordinates = coordinates
+        if (missionCoordinates.length === 0) {
+            missionScrubIndex = 0
+            missionTimelineInspectionMode = false
+            return
+        }
         if (missionScrubIndex >= missionCoordinates.length) {
             missionScrubIndex = Math.max(0, missionCoordinates.length - 1)
+        }
+        if (!missionTimelineInspectionMode) {
+            syncMissionScrubIndexToLive()
         }
     }
 
     Component {
         id: planViewComponent
-        PlanViewModern { anchors.fill: parent }
+        PlanViewModern {
+            anchors.fill: parent
+            onExitRequested: root.activateModernSection("fly")
+        }
     }
 
     Component {
         id: analyzeViewComponent
 
         Rectangle {
-            color: root.bg
+            color: "#05070a"
 
             RowLayout {
                 anchors.fill: parent
@@ -1418,8 +2091,8 @@ Item {
                 Rectangle {
                     Layout.preferredWidth: 276
                     Layout.fillHeight: true
-                    color: "#0a0d13"
-                    border.color: "#1c2330"
+                    color: root.modernGlassStrong
+                    border.color: root.modernGoldHairline
                     border.width: 1
 
                     ColumnLayout {
@@ -1450,8 +2123,8 @@ Item {
                                     required property var modelData
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 42
-                                    color: "#0d1219"
-                                    border.color: "#202836"
+                                    color: root.modernGlassSoft
+                                    border.color: root.modernHairline
                                     border.width: 1
 
                                     Column {
@@ -1496,8 +2169,8 @@ Item {
                             Rectangle {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 112
-                                color: "#0c1017"
-                                border.color: "#1f2631"
+                                color: root.modernGlass
+                                border.color: root.modernGoldHairline
                                 border.width: 1
 
                                 ColumnLayout {
@@ -1508,7 +2181,7 @@ Item {
                                     Text {
                                         Layout.fillWidth: true
                                         horizontalAlignment: Text.AlignHCenter
-                                        text: "OPEN FLIGHT LOG TOOLS"
+                                        text: root.logStatusText().toUpperCase()
                                         color: root.text
                                         font.pixelSize: 18
                                         font.bold: true
@@ -1525,7 +2198,7 @@ Item {
 
                                     ModernSettingsAction {
                                         Layout.fillWidth: true
-                                        label: "OPEN ANALYZE"
+                                        label: "OPEN LOG TOOLS"
                                         tone: root.blue
                                         onClicked: mainWindow.showAnalyzeTool()
                                     }
@@ -1555,7 +2228,7 @@ Item {
                             spacing: 8
 
                             Text {
-                                text: "RECENT MISSIONS"
+                                text: "LIVE SESSION EVENTS"
                                 color: root.gold
                                 font.pixelSize: 10
                                 font.bold: true
@@ -1571,8 +2244,8 @@ Item {
                                     required property var modelData
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 88
-                                    color: "#11151b"
-                                    border.color: "#1f2631"
+                                    color: root.modernGlassSoft
+                                    border.color: root.modernHairline
                                     border.width: 1
 
                                     Column {
@@ -1615,14 +2288,14 @@ Item {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 88
                                 visible: root.recentMissionModel().length === 0
-                                color: "#11151b"
-                                border.color: "#1f2631"
+                                color: root.modernGlassSoft
+                                border.color: root.modernHairline
                                 border.width: 1
 
                                 Text {
                                     anchors.centerIn: parent
                                     width: parent.width - 24
-                                    text: "No recent mission data available yet."
+                                    text: root.activeVehicle ? "No session events have been captured yet." : "Connect a vehicle to populate live session events."
                                     color: root.dim
                                     font.pixelSize: 10
                                     font.family: ScreenTools.normalFontFamily
@@ -1651,8 +2324,8 @@ Item {
                         Rectangle {
                             Layout.preferredWidth: 210
                             Layout.preferredHeight: 26
-                            color: "#0a1016"
-                            border.color: root.gold
+                            color: root.modernGoldFill
+                            border.color: root.modernGoldHairline
                             border.width: 1
 
                             Row {
@@ -1668,7 +2341,7 @@ Item {
                                 }
 
                                 Text {
-                                    text: "LIVE SESSION REVIEW"
+                                    text: root.activeVehicle ? "LIVE SESSION REVIEW" : "AWAITING VEHICLE DATA"
                                     color: root.gold
                                     font.pixelSize: 10
                                     font.bold: true
@@ -1697,8 +2370,8 @@ Item {
                                 required property var modelData
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 56
-                                color: "#0b0f15"
-                                border.color: "#1f2631"
+                                color: root.modernGlass
+                                border.color: root.modernHairline
                                 border.width: 1
 
                                 Column {
@@ -1730,8 +2403,8 @@ Item {
                             Layout.fillWidth: true
                             Layout.columnSpan: 4
                             Layout.preferredHeight: 152
-                            color: "#090d13"
-                            border.color: "#1f2631"
+                            color: root.modernGlass
+                            border.color: root.modernGoldHairline
                             border.width: 1
 
                             Column {
@@ -1839,6 +2512,75 @@ Item {
                             }
                         }
 
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.columnSpan: 4
+                            Layout.preferredHeight: 86
+                            color: root.modernGlass
+                            border.color: root.modernHairline
+                            border.width: 1
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 8
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "LIVE TELEMETRY SUMMARY"
+                                    color: root.gold
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                    font.letterSpacing: 1
+                                    font.family: "monospace"
+                                }
+
+                                GridLayout {
+                                    Layout.fillWidth: true
+                                    columns: 6
+                                    columnSpacing: 8
+
+                                    Repeater {
+                                        model: root.analyzeTelemetrySummaryModel()
+
+                                        delegate: Rectangle {
+                                            id: telemetrySummaryCard
+                                            required property var modelData
+
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 42
+                                            color: root.modernGlassSoft
+                                            border.color: root.modernHairline
+                                            border.width: 1
+
+                                            Column {
+                                                anchors.centerIn: parent
+                                                spacing: 2
+
+                                                Text {
+                                                    anchors.horizontalCenter: parent.horizontalCenter
+                                                    text: telemetrySummaryCard.modelData.label
+                                                    color: root.dim
+                                                    font.pixelSize: 8
+                                                    font.bold: true
+                                                    font.family: "monospace"
+                                                }
+
+                                                Text {
+                                                    anchors.horizontalCenter: parent.horizontalCenter
+                                                    text: telemetrySummaryCard.modelData.value
+                                                    color: telemetrySummaryCard.modelData.tone
+                                                    font.pixelSize: 10
+                                                    font.bold: true
+                                                    font.family: "monospace"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         Repeater {
                             model: root.analyzeInsightCards()
 
@@ -1848,8 +2590,8 @@ Item {
                                 Layout.fillWidth: true
                                 Layout.columnSpan: 4
                                 Layout.preferredHeight: 74
-                                color: "#0b0f15"
-                                border.color: "#1f2631"
+                                color: root.modernGlass
+                                border.color: root.modernHairline
                                 border.width: 1
 
                                 Column {
@@ -1911,8 +2653,8 @@ Item {
                 Rectangle {
                     Layout.preferredWidth: 304
                     Layout.fillHeight: true
-                    color: "#0a0d13"
-                    border.color: "#1c2330"
+                    color: root.modernGlassStrong
+                    border.color: root.modernGoldHairline
                     border.width: 1
 
                     ColumnLayout {
@@ -1932,8 +2674,8 @@ Item {
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 102
-                            color: "#11151b"
-                            border.color: "#2a2f22"
+                            color: root.modernGoldFill
+                            border.color: root.modernGoldHairline
                             border.width: 1
 
                             Text {
@@ -1977,8 +2719,8 @@ Item {
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 120
-                            color: "#0b0f15"
-                            border.color: "#1f2631"
+                            color: root.modernGlass
+                            border.color: root.modernHairline
                             border.width: 1
 
                             Column {
@@ -2028,21 +2770,40 @@ Item {
         id: vehicleViewComponent
 
         Rectangle {
-            color: root.bg
+            color: "#05070a"
 
-            ColumnLayout {
+            ScrollView {
+                id: vehicleScroll
                 anchors.fill: parent
-                anchors.margins: 22
-                spacing: 14
+                clip: true
+                contentWidth: availableWidth
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                Item {
+                    width: vehicleScroll.availableWidth
+                    height: vehicleColumn.implicitHeight + 28
+
+                    ColumnLayout {
+                        id: vehicleColumn
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: 14
+                        spacing: 10
 
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 54
+                    Layout.minimumHeight: 54
+                    Layout.maximumHeight: 54
+                    Layout.fillHeight: false
                     spacing: 12
 
                     Rectangle {
                         Layout.preferredWidth: 4
-                        Layout.fillHeight: true
+                        Layout.preferredHeight: 54
+                        Layout.minimumHeight: 54
+                        Layout.maximumHeight: 54
                         color: root.ok
                     }
 
@@ -2062,7 +2823,7 @@ Item {
                         Text {
                             text: "Vehicle Configuration"
                             color: "#f8fafc"
-                            font.pixelSize: 22
+                            font.pixelSize: 20
                             font.bold: true
                             font.family: ScreenTools.normalFontFamily
                         }
@@ -2107,11 +2868,11 @@ Item {
                             id: vehicleCard
                             required property var modelData
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 72
-                            color: "#0c1017"
-                            border.color: "#222a35"
+                            Layout.preferredHeight: 62
+                            color: root.modernGlass
+                            border.color: root.modernHairline
                             border.width: 1
-                            radius: 4
+                            radius: 2
 
                             Column {
                                 anchors.left: parent.left
@@ -2140,18 +2901,117 @@ Item {
 
                 GridLayout {
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    columns: 2
+                    columnSpacing: 10
+                    rowSpacing: 10
+
+                    ModernDataPanel {
+                        Layout.fillWidth: true
+                        title: "VEHICLE IDENTITY"
+                        model: root.vehicleIdentityModel()
+                    }
+
+                    ModernDataPanel {
+                        Layout.fillWidth: true
+                        title: "LIVE CAPABILITIES"
+                        model: root.vehicleCapabilityModel()
+                    }
+
+                    ModernDataPanel {
+                        Layout.fillWidth: true
+                        title: "POWER"
+                        model: root.vehiclePowerModel()
+                    }
+
+                    ModernDataPanel {
+                        Layout.fillWidth: true
+                        title: "LINK"
+                        model: root.vehicleLinkModel()
+                    }
+
+                    ModernDataPanel {
+                        Layout.fillWidth: true
+                        title: "GPS / POSITION"
+                        model: root.vehicleGpsModel()
+                    }
+
+                    ModernDataPanel {
+                        Layout.fillWidth: true
+                        title: "COMMAND AVAILABILITY"
+                        model: root.vehicleCommandStateModel()
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 46
+                    visible: !!root.activeVehicle && !root.vehicleCanArm()
+                    color: root.modernGlassStrong
+                    border.color: root.warn
+                    border.width: 1
+                    radius: 2
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 14
+                        anchors.rightMargin: 14
+                        spacing: 10
+
+                        Rectangle {
+                            Layout.preferredWidth: 7
+                            Layout.preferredHeight: 7
+                            radius: 3.5
+                            color: root.warn
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 1
+
+                            Text {
+                                text: "PREARM BLOCKER"
+                                color: root.warn
+                                font.pixelSize: 9
+                                font.bold: true
+                                font.family: "monospace"
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.prearmStatusText()
+                                color: root.text
+                                font.pixelSize: 11
+                                font.bold: true
+                                font.family: "Barlow Condensed"
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        ModernSettingsAction {
+                            Layout.preferredWidth: 104
+                            label: "OPEN CHECKS"
+                            tone: root.warn
+                            onClicked: mainWindow.showVehicleConfig()
+                        }
+                    }
+                }
+
+                GridLayout {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: implicitHeight
+                    Layout.minimumHeight: implicitHeight
+                    Layout.fillHeight: false
                     columns: 3
                     columnSpacing: 12
                     rowSpacing: 12
 
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        color: "#0b0f15"
-                        border.color: "#222a35"
+                        Layout.preferredHeight: 280
+                        color: root.modernGlass
+                        border.color: root.modernGoldHairline
                         border.width: 1
-                        radius: 4
+                        radius: 2
 
                         ColumnLayout {
                             anchors.fill: parent
@@ -2179,10 +3039,10 @@ Item {
                                     required property var modelData
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 44
-                                    color: "#0f141b"
-                                    border.color: "#1f2631"
+                                    color: root.modernGlassSoft
+                                    border.color: root.modernHairline
                                     border.width: 1
-                                    radius: 3
+                                    radius: 2
 
                                     Text {
                                         anchors.left: parent.left
@@ -2207,17 +3067,17 @@ Item {
                                 }
                             }
 
-                            Item { Layout.fillHeight: true }
+                            Item { Layout.preferredHeight: 1 }
                         }
                     }
 
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        color: "#0b0f15"
-                        border.color: "#222a35"
+                        Layout.preferredHeight: 280
+                        color: root.modernGlass
+                        border.color: root.modernGoldHairline
                         border.width: 1
-                        radius: 4
+                        radius: 2
 
                         ColumnLayout {
                             anchors.fill: parent
@@ -2247,10 +3107,10 @@ Item {
                                     required property var modelData
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 40
-                                    color: "#0f141b"
-                                    border.color: "#1f2631"
+                                    color: root.modernGlassSoft
+                                    border.color: root.modernHairline
                                     border.width: 1
-                                    radius: 3
+                                    radius: 2
 
                                     Text {
                                         anchors.left: parent.left
@@ -2274,16 +3134,18 @@ Item {
                                     }
                                 }
                             }
+
+                            Item { Layout.preferredHeight: 1 }
                         }
                     }
 
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        color: "#0b0f15"
-                        border.color: "#222a35"
+                        Layout.preferredHeight: 220
+                        color: root.modernGlass
+                        border.color: root.modernGoldHairline
                         border.width: 1
-                        radius: 4
+                        radius: 2
 
                         ColumnLayout {
                             anchors.fill: parent
@@ -2316,17 +3178,17 @@ Item {
                                 ModernSettingsAction { Layout.fillWidth: true; label: root.pendingVehicleAction === "disarm" ? "DISARM..." : "DISARM"; tone: root.err; enabled: root.pendingVehicleAction === "" && root.vehicleCanDisarm(); onClicked: root.disarmVehicle() }
                             }
 
-                            Item { Layout.fillHeight: true }
+                            Item { Layout.preferredHeight: 1 }
                         }
                     }
 
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        color: "#0b0f15"
-                        border.color: "#222a35"
+                        Layout.preferredHeight: 220
+                        color: root.modernGlass
+                        border.color: root.modernGoldHairline
                         border.width: 1
-                        radius: 4
+                        radius: 2
 
                         ColumnLayout {
                             anchors.fill: parent
@@ -2349,10 +3211,10 @@ Item {
                                     required property var modelData
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 40
-                                    color: "#0f141b"
+                                    color: root.modernGlassSoft
                                     border.color: setupRow.modelData.setupComplete ? root.ok : root.warn
                                     border.width: 1
-                                    radius: 3
+                                    radius: 2
 
                                     Text {
                                         anchors.left: parent.left
@@ -2382,10 +3244,10 @@ Item {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 64
                                 visible: root.setupComponentCount() === 0
-                                color: "#0f141b"
-                                border.color: "#1f2631"
+                                color: root.modernGlassSoft
+                                border.color: root.modernHairline
                                 border.width: 1
-                                radius: 3
+                                radius: 2
 
                                 Text {
                                     anchors.centerIn: parent
@@ -2399,18 +3261,18 @@ Item {
                                 }
                             }
 
-                            Item { Layout.fillHeight: true }
+                            Item { Layout.preferredHeight: 1 }
                         }
                     }
 
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.fillHeight: true
+                        Layout.preferredHeight: 184
                         Layout.columnSpan: 2
-                        color: "#0b0f15"
-                        border.color: "#222a35"
+                        color: root.modernGlass
+                        border.color: root.modernGoldHairline
                         border.width: 1
-                        radius: 4
+                        radius: 2
 
                         ColumnLayout {
                             anchors.fill: parent
@@ -2436,10 +3298,10 @@ Item {
                                     required property var modelData
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 42
-                                    color: "#0f141b"
-                                    border.color: "#1f2631"
+                                    color: root.modernGlassSoft
+                                    border.color: root.modernHairline
                                     border.width: 1
-                                    radius: 3
+                                    radius: 2
 
                                     Text {
                                         anchors.left: parent.left
@@ -2473,8 +3335,11 @@ Item {
                                 }
                             }
 
-                            Item { Layout.fillHeight: true }
+                            Item { Layout.preferredHeight: 1 }
                         }
+                    }
+                }
+
                     }
                 }
             }
@@ -2488,74 +3353,22 @@ Item {
         return QtPositioning.coordinate(overlayCenter.latitude + latitudeOffset, overlayCenter.longitude + longitudeOffset)
     }
 
-    function mapTypeKeywords(kind) {
-        switch (kind) {
-        case "satellite":
-            return ["satellite"]
-        case "street":
-            return ["street", "road", "map"]
-        case "terrain":
-            return ["terrain", "topo", "topographic"]
-        case "hybrid":
-            return ["hybrid"]
-        default:
-            return [kind]
-        }
-    }
-
-    function findMapType(kind) {
-        if (!modernMap.mapReady) {
-            return null
-        }
-        const keywords = mapTypeKeywords(kind)
-        for (let i = 0; i < modernMap.supportedMapTypes.length; i++) {
-            const candidate = modernMap.supportedMapTypes[i]
-            const candidateName = candidate.name.toLowerCase()
-            for (let keywordIndex = 0; keywordIndex < keywords.length; keywordIndex++) {
-                if (candidateName.indexOf(keywords[keywordIndex]) !== -1) {
-                    return candidate
-                }
-            }
-        }
-        return null
-    }
-
-    function setMapType(kind) {
-        const candidate = findMapType(kind)
-        if (candidate) {
-            modernMap.activeMapType = candidate
-            selectedMapKind = kind
-            persistActiveMapType(candidate)
-            pushToast(qsTr("Map"), qsTr("%1 map active").arg(kind.charAt(0).toUpperCase() + kind.slice(1)), "info", 2200)
-        }
-    }
-
-    function persistActiveMapType(mapType) {
-        if (!mapType || !mapType.name) {
-            return
-        }
-        const settings = QGroundControl.settingsManager.flightMapSettings
-        const provider = String(settings.mapProvider.rawValue || settings.mapProvider.value || "")
-        const fullName = String(mapType.name)
-        if (provider.length > 0 && fullName.indexOf(provider + " ") === 0) {
-            settings.mapType.rawValue = fullName.substring(provider.length + 1)
-        }
-    }
-
     function updateSelectedMapKindFromActiveType() {
         if (!modernMap.activeMapType || !modernMap.activeMapType.name) {
+            selectedMapKind = "default"
             return
         }
         const activeName = modernMap.activeMapType.name.toLowerCase()
-        const kinds = ["hybrid", "satellite", "terrain", "street"]
-        for (let i = 0; i < kinds.length; i++) {
-            const keywords = mapTypeKeywords(kinds[i])
-            for (let keywordIndex = 0; keywordIndex < keywords.length; keywordIndex++) {
-                if (activeName.indexOf(keywords[keywordIndex]) !== -1) {
-                    selectedMapKind = kinds[i]
-                    return
-                }
-            }
+        if (activeName.indexOf("hybrid") !== -1) {
+            selectedMapKind = "hybrid"
+        } else if (activeName.indexOf("satellite") !== -1) {
+            selectedMapKind = "satellite"
+        } else if (activeName.indexOf("terrain") !== -1 || activeName.indexOf("topo") !== -1) {
+            selectedMapKind = "terrain"
+        } else if (activeName.indexOf("street") !== -1 || activeName.indexOf("road") !== -1 || activeName.indexOf("map") !== -1) {
+            selectedMapKind = "street"
+        } else {
+            selectedMapKind = "default"
         }
     }
 
@@ -2582,18 +3395,6 @@ Item {
                 modernMap.setVisibleRegion(bounds)
             }
             pushToast(qsTr("Mission"), qsTr("View fitted to the current mission envelope."), "info", 2400)
-        }
-    }
-
-    function cycleMapType() {
-        const types = ["satellite", "street", "terrain", "hybrid"]
-        const currentIndex = Math.max(0, types.indexOf(selectedMapKind))
-        for (let step = 1; step <= types.length; step++) {
-            const nextKind = types[(currentIndex + step) % types.length]
-            if (findMapType(nextKind)) {
-                setMapType(nextKind)
-                return
-            }
         }
     }
 
@@ -2976,6 +3777,9 @@ Item {
         pendingVehicleAction = ""
         pendingVehicleActionStartedAt = 0
         pendingVehicleActionTimer.stop()
+        if (!success) {
+            recordVehicleWarning(message)
+        }
         pushToast(qsTr("Vehicle Command"), message, success ? "ok" : "warn", success ? 2200 : 4200)
     }
 
@@ -3170,6 +3974,15 @@ Item {
     }
 
     Timer {
+        id: modernAlertClockTimer
+        interval: 1000
+        repeat: true
+        running: root.activeModernSection === "fly"
+        triggeredOnStart: true
+        onTriggered: root.modernAlertClock = Qt.formatTime(new Date(), "hh:mm:ss")
+    }
+
+    Timer {
         id: pendingVehicleActionTimer
         interval: 250
         repeat: true
@@ -3211,6 +4024,17 @@ Item {
         function onVisualItemsChanged() { root.syncMissionCoordinates() }
         function onNewItemsFromVehicle() { root.syncMissionCoordinates() }
         function onCurrentPlanViewSeqNumChanged() { root.syncMissionCoordinates() }
+        function onCurrentMissionIndexChanged() {
+            if (!root.missionTimelineInspectionMode) {
+                root.syncMissionScrubIndexToLive()
+            }
+        }
+        function onMissionItemCountChanged() {
+            root.syncMissionCoordinates()
+            if (!root.missionTimelineInspectionMode) {
+                root.syncMissionScrubIndexToLive()
+            }
+        }
     }
 
     Connections {
@@ -3276,6 +4100,8 @@ Item {
             if (root.activeVehicle) {
                 root.modernConnectPanelOpen = false
             }
+            root.syncMissionCoordinates()
+            root.syncMissionScrubIndexToLive()
         }
     }
 
@@ -3326,7 +4152,7 @@ Item {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 50
-            color: "#05070a"
+            color: "#040507"
 
             Rectangle {
                 anchors.left: parent.left
@@ -3375,7 +4201,7 @@ Item {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 38
-            color: root.panel
+            color: root.modernGlassStrong
 
             RowLayout {
                 anchors.fill: parent
@@ -3385,7 +4211,7 @@ Item {
                     Layout.preferredWidth: root.activeVehicle ? 248 : 282
                     Layout.fillHeight: true
                     color: "transparent"
-                    border.color: "#1e242e"
+                    border.color: root.modernHairline
                     border.width: 1
 
                     RowLayout {
@@ -3411,13 +4237,45 @@ Item {
                             font.family: "Barlow Condensed"
                         }
 
-                        ModernSettingsAction {
-                            Layout.preferredWidth: 90
+                        Rectangle {
+                            Layout.preferredWidth: visible ? 28 : 0
                             Layout.preferredHeight: 24
-                            visible: !root.activeVehicle
-                            label: "COMM LINKS"
-                            tone: root.gold
-                            onClicked: root.openCommLinksSettings()
+                            visible: root.activeVehicle && Number(root.messageCountText()) > 0
+                            radius: 4
+                            color: root.modernVehicleMessagesOpen ? "#1b2230" : "transparent"
+                            border.color: root.modernVehicleMessagesOpen ? root.gold : "transparent"
+                            border.width: root.modernVehicleMessagesOpen ? 1 : 0
+
+                            QGCColoredImage {
+                                anchors.centerIn: parent
+                                width: 18
+                                height: 18
+                                source: "qrc:/res/VehicleMessages.png"
+                                color: "#ffffff"
+                                fillMode: Image.PreserveAspectFit
+                                smooth: true
+                                mipmap: true
+                            }
+
+                            Rectangle {
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.rightMargin: -2
+                                anchors.topMargin: -2
+                                width: 8
+                                height: 8
+                                radius: 4
+                                visible: root.activeVehicle && (root.activeVehicle.messageTypeError || root.activeVehicle.messageTypeWarning)
+                                color: root.vehicleMessageIconColor()
+                                border.color: "#05070a"
+                                border.width: 1
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.modernVehicleMessagesOpen = !root.modernVehicleMessagesOpen
+                            }
                         }
                     }
 
@@ -3438,7 +4296,7 @@ Item {
                         Layout.preferredWidth: Math.max(72, label.implicitWidth + value.implicitWidth + unit.implicitWidth + 18)
                         Layout.fillHeight: true
                         color: "transparent"
-                        border.color: "#1e242e"
+                        border.color: root.modernHairline
                         border.width: 1
 
                         RowLayout {
@@ -3477,7 +4335,7 @@ Item {
                 Item { Layout.fillWidth: true }
 
                 RowLayout {
-                    Layout.preferredWidth: 384
+                    Layout.preferredWidth: 440
                     Layout.fillHeight: true
                     Layout.rightMargin: 4
                     spacing: 0
@@ -3495,6 +4353,33 @@ Item {
                             iconSource: navIcon
                             active: root.activeModernSection === navKey
                             onClicked: root.activateModernSection(navKey)
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.preferredWidth: 42
+                        Layout.fillHeight: true
+                        color: settingsMouseArea.containsMouse ? "#111720" : "#0b0f15"
+                        border.color: "#171d27"
+                        border.width: 1
+
+                        QGCColoredImage {
+                            anchors.centerIn: parent
+                            width: 16
+                            height: 16
+                            source: "/qmlimages/Gears.svg"
+                            color: settingsMouseArea.containsMouse ? root.gold : root.dim
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            mipmap: true
+                        }
+
+                        MouseArea {
+                            id: settingsMouseArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.openFullSettings()
                         }
                     }
                 }
@@ -3595,18 +4480,32 @@ Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
 
-                    FlightMap {
+                    QtObject {
+                        id: modernMapToolInsets
+
+                        property real leftEdgeTopInset: 24
+                        property real leftEdgeCenterInset: 24
+                        property real leftEdgeBottomInset: 24
+                        property real rightEdgeTopInset: 150
+                        property real rightEdgeCenterInset: 280
+                        property real rightEdgeBottomInset: 280
+                        property real topEdgeLeftInset: 48
+                        property real topEdgeRightInset: 48
+                        property real bottomEdgeLeftInset: 72
+                        property real bottomEdgeRightInset: 250
+                    }
+
+                    FlyViewMap {
                         id: modernMap
                         x: 0
                         y: 0
                         width: modernMapContainer.width
                         height: modernMapContainer.height
-                        mapName: "BriechModernPlanView"
-                        allowGCSLocationCenter: false
-                        allowVehicleLocationCenter: false
-                        planView: false
-                        zoomLevel: QGroundControl.flightMapZoom
-                        center: QGroundControl.flightMapPosition.isValid ? QGroundControl.flightMapPosition : root.defaultCenter
+                        mapName: "BriechModernFlyView"
+                        planMasterController: root._planMasterController
+                        toolInsets: modernMapToolInsets
+                        rightPanelWidth: 0
+                        pipMode: false
 
                         onZoomLevelChanged: {
                             QGroundControl.flightMapZoom = modernMap.zoomLevel
@@ -3639,167 +4538,22 @@ Item {
                                 }
                             }
                         }
-                        onActiveMapTypeChanged: root.updateSelectedMapKindFromActiveType()
+                    }
 
-                        MapItemView {
-                            model: root.openAipTileModel()
-                            delegate: MapQuickItem {
-                                id: openAipTileItem
-                                required property var modelData
-                                coordinate: modelData.coordinate
-                                anchorPoint.x: 0
-                                anchorPoint.y: 0
-                                z: QGroundControl.zOrderMapItems
-                                opacity: 0.82
-                                sourceItem: Image {
-                                    width: openAipTileItem.modelData.size
-                                    height: openAipTileItem.modelData.size
-                                    source: openAipTileItem.modelData.url
-                                    fillMode: Image.Stretch
-                                    smooth: true
-                                    cache: true
-                                }
-                            }
-                        }
+                    ModernWatermarkLayer {
+                        anchors.fill: parent
+                        visible: root.activeModernSection === "fly" && root.modernWatermarkEnabled
+                    }
 
-                        MapItemView {
-                            model: root.visibleRiskZones()
-                            delegate: MapPolygon {
-                                required property var modelData
-                                path: modelData.path
-                                color: modelData.fillColor
-                                border.color: modelData.borderColor
-                                border.width: root.riskZoneBorderWidth(modelData.kind)
-                                opacity: root.riskZonePulseOpacity(modelData.kind)
-                                z: QGroundControl.zOrderMapItems + 1
-                            }
-                        }
-
-                        MapItemView {
-                            model: root.visibleRiskZones()
-                            delegate: MapQuickItem {
-                                required property var modelData
-                                coordinate: modelData.center
-                                anchorPoint.x: sourceItem.width / 2
-                                anchorPoint.y: sourceItem.height / 2
-                                z: QGroundControl.zOrderMapItems + 2
-                                opacity: root.riskZonePulseOpacity(modelData.kind)
-                                sourceItem: ModernZoneLabel {
-                                    text: modelData.label
-                                    borderColor: modelData.borderColor
-                                    textColor: modelData.textColor
-                                }
-                            }
-                        }
-
-                        Repeater {
-                            model: root._missionController.visualItems
-                            delegate: MissionItemMapVisual {
-                                map: modernMap
-                                opacity: 1.0
-                                interactive: root.activeModernSection === "fly" && (!root.activeVehicle || !root.activeVehicle.armed)
-                                vehicle: root._planMasterController.controllerVehicle
-                                onClicked: function(sequenceNumber) {
-                                    root._missionController.setCurrentPlanViewSeqNum(sequenceNumber, false)
-                                    root.syncMissionCoordinates()
-                                }
-                            }
-                        }
-
-                        MissionLineView {
-                            model: root._missionController.simpleFlightPathSegments
-                        }
-
-                        MapQuickItem {
-                            coordinate: root.activeVehicle && root.activeVehicle.homePosition.isValid ? root.activeVehicle.homePosition : QtPositioning.coordinate()
-                            anchorPoint.x: sourceItem.width / 2
-                            anchorPoint.y: sourceItem.height / 2
-                            z: QGroundControl.zOrderMapItems + 4
-                            visible: root.activeVehicle && root.activeVehicle.homePosition.isValid
-                            sourceItem: Item {
-                                width: 22
-                                height: 28
-
-                                Image {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    anchors.top: parent.top
-                                    width: 20
-                                    height: 20
-                                    source: "qrc:/qmlimages/MapHome.svg"
-                                    fillMode: Image.PreserveAspectFit
-                                    smooth: true
-                                }
-
-                                Text {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    anchors.bottom: parent.bottom
-                                    text: "HOME"
-                                    color: root.gold
-                                    font.pixelSize: 7
-                                    font.family: "monospace"
-                                    font.bold: true
-                                }
-                            }
-                        }
-
-                        MapQuickItem {
-                            coordinate: activeVehicle && activeVehicle.coordinate.isValid ? activeVehicle.coordinate : QtPositioning.coordinate()
-                            anchorPoint.x: sourceItem.width / 2
-                            anchorPoint.y: sourceItem.height + 8
-                            z: QGroundControl.zOrderVehicles + 1
-                            opacity: root.riskZonePulseOpacity("fleet")
-                            visible: activeVehicle && activeVehicle.coordinate.isValid
-                            sourceItem: ModernZoneLabel {
-                                text: activeVehicle ? ("BRCH-" + activeVehicle.id + " - " + activeVehicle.flightMode) : ""
-                                borderColor: root.gold
-                                textColor: root.gold
-                            }
-                        }
-
-                        MapPolyline {
-                            id: trajectoryPolyline
-                            line.width: 3
-                            line.color: root.blue
-                            z: QGroundControl.zOrderTrajectoryLines
-
-                            Connections {
-                                target: QGroundControl.multiVehicleManager
-                                function onActiveVehicleChanged() {
-                                    trajectoryPolyline.path = activeVehicle ? activeVehicle.trajectoryPoints.list() : []
-                                }
-                            }
-
-                            Connections {
-                                target: activeVehicle ? activeVehicle.trajectoryPoints : null
-                                function onPointAdded(coordinate) { trajectoryPolyline.addCoordinate(coordinate) }
-                                function onUpdateLastPoint(coordinate) { trajectoryPolyline.replaceCoordinate(trajectoryPolyline.pathLength() - 1, coordinate) }
-                                function onPointsCleared() { trajectoryPolyline.path = [] }
-                            }
-                        }
-
-                        MapItemView {
-                            model: QGroundControl.multiVehicleManager.vehicles
-                            delegate: VehicleMapItem {
-                                vehicle: object
-                                coordinate: object.coordinate
-                                map: modernMap
-                                size: ScreenTools.defaultFontPixelHeight * 3
-                                z: QGroundControl.zOrderVehicles
-                            }
-                        }
-
-                        MapItemView {
-                            model: QGroundControl.adsbVehicleManager.adsbVehicles
-                            delegate: VehicleMapItem {
-                                coordinate: object.coordinate
-                                altitude: object.altitude
-                                callsign: object.callsign
-                                heading: object.heading
-                                alert: object.alert
-                                map: modernMap
-                                size: ScreenTools.defaultFontPixelHeight * 2.5
-                                z: QGroundControl.zOrderVehicles
-                            }
+                    ModernFlightAlertStack {
+                        anchors.top: parent.top
+                        anchors.right: parent.right
+                        anchors.topMargin: 20
+                        anchors.rightMargin: 214
+                        width: 312
+                        model: root.modernFlightAlerts()
+                        onDismissRequested: function(key, kind) {
+                            root.dismissModernFlightAlert(key, kind)
                         }
                     }
 
@@ -3810,6 +4564,144 @@ Item {
                         anchors.rightMargin: 12
                         width: 292
                         model: toastModel
+                    }
+
+                    Rectangle {
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.topMargin: 48
+                        anchors.leftMargin: 18
+                        width: 420
+                        height: 520
+                        visible: root.activeModernSection === "fly" && root.activeVehicle && root.modernVehicleMessagesOpen
+                        color: "#161b22"
+                        border.color: "#4a5564"
+                        border.width: 1
+                        radius: 4
+                        z: QGroundControl.zOrderWidgets + 11
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            spacing: 8
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                ModernSettingsAction {
+                                    Layout.preferredWidth: 52
+                                    label: "ARM"
+                                    tone: root.gold
+                                    enabled: root.vehicleCanArm()
+                                    onClicked: root.armVehicle()
+                                }
+
+                                Text {
+                                    text: "Vehicle Messages"
+                                    color: root.text
+                                    font.pixelSize: 14
+                                    font.bold: true
+                                    font.family: ScreenTools.normalFontFamily
+                                }
+
+                                Item { Layout.fillWidth: true }
+
+                                Rectangle {
+                                    Layout.preferredWidth: 20
+                                    Layout.preferredHeight: 20
+                                    radius: 10
+                                    color: "#202734"
+                                    border.color: "#5b6574"
+                                    border.width: 1
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "x"
+                                        color: root.text
+                                        font.pixelSize: 10
+                                        font.bold: true
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.modernVehicleMessagesOpen = false
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                color: "#0f141b"
+                                border.color: "#2b3442"
+                                border.width: 1
+                                radius: 2
+
+                                ScrollView {
+                                    anchors.fill: parent
+                                    anchors.margins: 6
+                                    clip: true
+
+                                    TextArea {
+                                        id: modernVehicleMessageArea
+                                        width: parent.width
+                                        readOnly: true
+                                        wrapMode: TextEdit.Wrap
+                                        textFormat: TextEdit.RichText
+                                        color: root.text
+                                        selectionColor: root.gold
+                                        selectedTextColor: "#0a0e14"
+                                        background: null
+                                        text: root.activeVehicle ? root.formatVehicleMessageHtml(root.activeVehicle.formattedMessages) : ""
+
+                                        Connections {
+                                            target: root.activeVehicle
+                                            ignoreUnknownSignals: true
+
+                                            function onNewFormattedMessage(formattedMessage) {
+                                                root.recordVehicleWarning(formattedMessage)
+                                                modernVehicleMessageArea.insert(0, root.formatVehicleMessageHtml(formattedMessage))
+                                            }
+
+                                            function onFormattedMessagesChanged() {
+                                                if (root.activeVehicle) {
+                                                    root.recordVehicleWarning(root.activeVehicle.formattedMessages)
+                                                }
+                                                modernVehicleMessageArea.text = root.activeVehicle ? root.formatVehicleMessageHtml(root.activeVehicle.formattedMessages) : ""
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                ModernSettingsAction {
+                                    Layout.preferredWidth: 82
+                                    label: "CLEAR"
+                                    tone: root.dim
+                                    enabled: !!root.activeVehicle
+                                    onClicked: {
+                                        if (root.activeVehicle) {
+                                            root.activeVehicle.clearMessages()
+                                        }
+                                    }
+                                }
+
+                                Item { Layout.fillWidth: true }
+
+                                Text {
+                                    text: qsTr("%1 messages").arg(root.messageCountText())
+                                    color: root.dim
+                                    font.pixelSize: 10
+                                    font.family: "monospace"
+                                }
+                            }
+                        }
                     }
 
                     Rectangle {
@@ -4009,7 +4901,9 @@ Item {
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 anchors.rightMargin: 10
                                                 checked: !!modelData.rawValue
-                                                onToggled: modelData.rawValue = checked
+                                                onToggled: function() {
+                                                    modelData.rawValue = checked
+                                                }
                                             }
                                         }
                                     }
@@ -4190,9 +5084,9 @@ Item {
                         anchors.bottom: parent.bottom
                         anchors.bottomMargin: 14
                         width: Math.min(parent.width * 0.42, 620)
-                        visible: root.missionCoordinates.length > 0
+                        visible: root.missionTimelineAvailable()
                         maxIndex: root.missionCoordinates.length - 1
-                        currentIndex: root.missionScrubIndex
+                        currentIndex: root.missionTimelineDisplayedIndex()
                         function onScrubbed(scrubIndex) { root.focusMissionWaypoint(scrubIndex, true) }
                     }
 
@@ -4231,6 +5125,8 @@ Item {
                                 font.letterSpacing: 1
                             }
                         }
+
+                        visible: root.missionTimelineAvailable()
                     }
 
                     Rectangle {
@@ -4337,82 +5233,6 @@ Item {
                         }
                     }
 
-                    Column {
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.margins: 12
-                        spacing: 4
-
-                        Repeater {
-                            model: root.modernMapTypeOptions.length
-                            delegate: Rectangle {
-                                required property int index
-                                property var mapItem: root.modernMapTypeOptions[index] || ({})
-                                property string mapLabel: mapItem.label || ""
-                                property string mapKey: mapItem.key || ""
-                                width: 112
-                                height: 28
-                                property bool active: root.selectedMapKind === mapKey
-                                property bool available: root.findMapType(mapKey) !== null
-                                color: active ? "#211c10" : "#0c1017"
-                                border.color: active ? root.gold : root.border
-                                opacity: available ? 1 : 0.48
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: parent.mapLabel
-                                    color: parent.active ? root.gold : root.dim
-                                    font.pixelSize: 10
-                                    font.bold: true
-                                    font.letterSpacing: 1
-                                    font.family: ScreenTools.normalFontFamily
-                                }
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    enabled: parent.available
-                                    onClicked: root.setMapType(parent.mapKey)
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            width: 112
-                            height: 30
-                            color: root.modernSettingsOpen ? "#211c10" : "#0c1017"
-                            border.color: root.modernSettingsOpen ? root.gold : root.border
-                            border.width: root.modernSettingsOpen ? 2 : 1
-
-                            Row {
-                                anchors.centerIn: parent
-                                spacing: 7
-
-                                Text {
-                                    text: "\u2699"
-                                    color: root.gold
-                                    font.pixelSize: 13
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-
-                                Text {
-                                    text: "SETTINGS"
-                                    color: root.gold
-                                    font.pixelSize: 10
-                                    font.bold: true
-                                    font.letterSpacing: 1
-                                    font.family: "monospace"
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root.modernSettingsOpen = !root.modernSettingsOpen
-                            }
-                        }
-                    }
-
                     Rectangle {
                         id: modernSettingsPanel
                         anchors.top: parent.top
@@ -4442,8 +5262,31 @@ Item {
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 24
+                                Layout.preferredHeight: 28
                                 spacing: 8
+
+                                Rectangle {
+                                    Layout.preferredWidth: 112
+                                    Layout.fillHeight: true
+                                    color: "transparent"
+                                    border.color: "#1e242e"
+                                    border.width: 1
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "< EXIT SETTINGS"
+                                        color: root.text
+                                        font.pixelSize: 10
+                                        font.bold: true
+                                        font.family: "Barlow Condensed"
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.modernSettingsOpen = false
+                                    }
+                                }
 
                                 Text {
                                     Layout.fillWidth: true
@@ -4453,27 +5296,6 @@ Item {
                                     font.bold: true
                                     font.letterSpacing: 1
                                     font.family: "monospace"
-                                }
-
-                                Rectangle {
-                                    Layout.preferredWidth: 24
-                                    Layout.preferredHeight: 24
-                                    color: "transparent"
-                                    border.color: root.border
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "X"
-                                        color: root.dim
-                                        font.pixelSize: 10
-                                        font.bold: true
-                                    }
-
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: root.modernSettingsOpen = false
-                                    }
                                 }
                             }
 
@@ -4764,6 +5586,8 @@ Item {
                     }
 
                     Column {
+                        id: mapZoomControls
+
                         anchors.left: parent.left
                         anchors.bottom: parent.bottom
                         anchors.leftMargin: 8
@@ -4787,13 +5611,59 @@ Item {
                             Text { anchors.centerIn: parent; text: "-"; color: root.text; font.pixelSize: 18 }
                             MouseArea { anchors.fill: parent; onClicked: modernMap.zoomLevel -= 1 }
                         }
-                    }
 
                         Rectangle {
-                            id: mapScaleFrame
-                            anchors.left: parent.left
-                            anchors.top: parent.top
-                            anchors.leftMargin: 64
+                            width: 32
+                            height: 32
+                            color: root.modernMapToolsOpen ? "#1a1609" : "#0b0e14"
+                            border.color: root.modernMapToolsOpen ? root.gold : root.border
+                            border.width: 1
+                            Text { anchors.centerIn: parent; text: "L"; color: root.modernMapToolsOpen ? root.gold : root.text; font.pixelSize: 13; font.bold: true; font.family: "monospace" }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.modernMapToolsOpen = !root.modernMapToolsOpen
+                            }
+                        }
+
+                        Rectangle {
+                            width: 32
+                            height: 32
+                            color: root.modernDiagnosticsOpen ? "#111827" : "#0b0e14"
+                            border.color: root.modernDiagnosticsOpen ? root.blue : root.border
+                            border.width: 1
+                            Text { anchors.centerIn: parent; text: "D"; color: root.modernDiagnosticsOpen ? root.blue : root.text; font.pixelSize: 13; font.bold: true; font.family: "monospace" }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.modernDiagnosticsOpen = !root.modernDiagnosticsOpen
+                            }
+                        }
+                    }
+
+                    ModernMapToolsPanel {
+                        anchors.left: parent.left
+                        anchors.bottom: parent.bottom
+                        anchors.leftMargin: 46
+                        anchors.bottomMargin: 42
+                        width: 184
+                        visible: root.modernMapToolsOpen
+                    }
+
+                    ModernDiagnosticsPanel {
+                        anchors.left: parent.left
+                        anchors.bottom: parent.bottom
+                        anchors.leftMargin: 238
+                        anchors.bottomMargin: 42
+                        width: 236
+                        visible: root.modernDiagnosticsOpen
+                    }
+
+                    Rectangle {
+                        id: mapScaleFrame
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.leftMargin: 64
                         anchors.topMargin: 44
                         width: 112
                         height: 34
@@ -4806,76 +5676,345 @@ Item {
                         }
                     }
 
-                    ColumnLayout {
+                    Item {
+                        id: modernHudCluster
                         anchors.right: parent.right
                         anchors.bottom: parent.bottom
                         anchors.rightMargin: 18
                         anchors.bottomMargin: 42
-                        spacing: 8
+                        width: 330
+                        height: 304
+                        visible: root.activeModernSection === "fly"
+
+                        Timer {
+                            interval: 180
+                            repeat: true
+                            running: modernHudCluster.visible
+                            onTriggered: {
+                                headingTapeCanvas.requestPaint()
+                                hudAttitudeCanvas.requestPaint()
+                                hudCompassCanvas.requestPaint()
+                            }
+                        }
 
                         Rectangle {
                             id: hudHeadingTape
-                            Layout.preferredWidth: 220
-                            Layout.preferredHeight: 42
-                            color: "#0b0e14"
-                            border.color: root.border
+                            anchors.top: parent.top
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: 220
+                            height: 42
+                            color: "#0b0f15"
+                            border.color: "#334155"
+                            border.width: 1
 
-                            Row {
-                                anchors.centerIn: parent
-                                spacing: 18
-                                Repeater {
-                                    model: ["050", "060", "070", "080", "090"]
-                                    delegate: Text {
-                                        required property int index
-                                        required property string modelData
-                                        text: modelData
-                                        color: index === 2 ? root.gold : root.text
-                                        font.pixelSize: 10
-                                        font.family: ScreenTools.normalFontFamily
+                            Canvas {
+                                id: headingTapeCanvas
+                                anchors.fill: parent
+                                anchors.margins: 4
+
+                                onPaint: {
+                                    const c = getContext("2d")
+                                    c.reset()
+                                    c.clearRect(0, 0, width, height)
+                                    const centerX = width / 2
+                                    const heading = root.headingDegreesValue()
+                                    const pixelsPerDegree = width / 50
+                                    const bottomY = height - 4
+
+                                    c.strokeStyle = "rgba(129,148,179,0.75)"
+                                    c.lineWidth = 1
+
+                                    for (let deg = -20; deg <= 20; deg += 5) {
+                                        const x = centerX + deg * pixelsPerDegree
+                                        const absolute = ((Math.round(heading + deg) % 360) + 360) % 360
+                                        const major = deg % 10 === 0
+                                        const tickTop = major ? 16 : 22
+                                        c.beginPath()
+                                        c.moveTo(x, tickTop)
+                                        c.lineTo(x, bottomY)
+                                        c.stroke()
+
+                                        if (major) {
+                                            c.fillStyle = "#dbe6f3"
+                                            c.font = "bold 10px monospace"
+                                            c.textAlign = "center"
+                                            c.fillText(("000" + absolute).slice(-3), x, 11)
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                anchors.top: parent.top
+                                width: 44
+                                height: parent.height
+                                color: Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.14)
+                                border.color: Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.78)
+                                border.width: 1
+
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.top: parent.top
+                                    anchors.topMargin: 5
+                                    text: root.normalizedHeadingText()
+                                    color: root.text
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                    font.family: "monospace"
+                                }
+
+                                Canvas {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.bottom: parent.bottom
+                                    anchors.bottomMargin: 4
+                                    width: 12
+                                    height: 8
+
+                                    onPaint: {
+                                        const c = getContext("2d")
+                                        c.reset()
+                                        c.clearRect(0, 0, width, height)
+                                        c.fillStyle = root.gold
+                                        c.beginPath()
+                                        c.moveTo(width / 2, height)
+                                        c.lineTo(0, 0)
+                                        c.lineTo(width, 0)
+                                        c.closePath()
+                                        c.fill()
                                     }
                                 }
                             }
                         }
 
-                        Canvas {
-                            Layout.preferredWidth: 220
-                            Layout.preferredHeight: 220
+                        Rectangle {
+                            id: speedBox
+                            anchors.left: parent.left
+                            anchors.bottom: hudCircle.bottom
+                            anchors.bottomMargin: 74
+                            width: 46
+                            height: 70
+                            color: "#0b0f15"
+                            border.color: "#2a3342"
+                            border.width: 1
 
-                            onPaint: {
-                                const c = getContext("2d")
-                                c.reset()
-                                const cx = width / 2
-                                const cy = height / 2
-                                const r = 104
-                                c.beginPath()
-                                c.arc(cx, cy, r, 0, Math.PI * 2)
-                                c.clip()
-                                c.fillStyle = "#225b8f"
-                                c.fillRect(0, 0, width, cy)
-                                c.fillStyle = "#5e3f1f"
-                                c.fillRect(0, cy, width, height)
-                                c.strokeStyle = "white"
-                                c.lineWidth = 2
-                                c.beginPath()
-                                c.moveTo(0, cy)
-                                c.lineTo(width, cy - 4)
-                                c.stroke()
-                                c.strokeStyle = "rgba(255,255,255,.72)"
-                                c.lineWidth = 2
-                                c.beginPath()
-                                c.moveTo(cx - 54, cy)
-                                c.lineTo(cx - 18, cy)
-                                c.moveTo(cx + 18, cy)
-                                c.lineTo(cx + 54, cy)
-                                c.moveTo(cx - 18, cy)
-                                c.lineTo(cx, cy + 12)
-                                c.lineTo(cx + 18, cy)
-                                c.stroke()
-                                c.beginPath()
-                                c.arc(cx, cy, r, 0, Math.PI * 2)
-                                c.strokeStyle = root.border
-                                c.lineWidth = 3
-                                c.stroke()
+                            Column {
+                                anchors.centerIn: parent
+                                spacing: 2
+
+                                Text {
+                                    text: root.hudSpeedLabel()
+                                    color: root.dim
+                                    font.pixelSize: 9
+                                    font.bold: true
+                                    font.family: "monospace"
+                                }
+
+                                Text {
+                                    text: root.hudSpeedText()
+                                    color: root.text
+                                    font.pixelSize: 13
+                                    font.bold: true
+                                    font.family: "monospace"
+                                }
+
+                                Text {
+                                    text: "m/s"
+                                    color: root.dim
+                                    font.pixelSize: 8
+                                    font.family: "monospace"
+                                }
+                            }
+                        }
+
+                        Item {
+                            id: hudCircle
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.bottom: parent.bottom
+                            width: 220
+                            height: 220
+                            Rectangle {
+                                id: hudCircleFrame
+                                anchors.fill: parent
+                                radius: width / 2
+                                color: "#0c1118"
+                                border.color: "#516377"
+                                border.width: 2
+                            }
+
+                            Item {
+                                id: hudCircleSource
+                                anchors.fill: parent
+                                visible: false
+
+                                CustomArtificialHorizon {
+                                    id: modernHudHorizon
+                                    x: -(hudCircle.width * 0.3)
+                                    y: -(hudCircle.height * 0.3)
+                                    width: hudCircle.width * 1.6
+                                    height: hudCircle.height * 1.6
+                                    rollAngle: root.hudRollAngle()
+                                    pitchAngle: root.hudPitchAngle()
+                                    skyColor1: "#1f4d82"
+                                    skyColor2: "#3d77b8"
+                                    groundColor1: "#82552a"
+                                    groundColor2: "#70451d"
+                                }
+
+                                Canvas {
+                                    id: hudAttitudeCanvas
+                                    anchors.fill: parent
+
+                                    onPaint: {
+                                        const c = getContext("2d")
+                                        c.reset()
+                                        c.clearRect(0, 0, width, height)
+
+                                        const cx = width / 2
+                                        const cy = height / 2
+                                        const roll = -root.hudRollAngle() * Math.PI / 180
+                                        const pitchClamp = 35
+                                        const pitch = Math.max(-pitchClamp, Math.min(pitchClamp, root.hudPitchAngle()))
+                                        const pitchOffset = (pitch / pitchClamp) * (height * 0.18)
+                                        const marks = [30, 20, 10, -10, -20, -30]
+
+                                        c.save()
+                                        c.translate(cx, cy)
+                                        c.rotate(roll)
+                                        c.translate(0, pitchOffset)
+
+                                        c.strokeStyle = "#dbe7f5"
+                                        c.fillStyle = "#dbe7f5"
+                                        c.lineWidth = 2
+                                        c.font = "bold 11px monospace"
+                                        c.textAlign = "center"
+
+                                        for (let i = 0; i < marks.length; i++) {
+                                            const mark = marks[i]
+                                            const y = (-mark / pitchClamp) * (height * 0.18)
+                                            const lineWidth = Math.abs(mark) === 10 ? width * 0.22 : width * 0.17
+                                            c.beginPath()
+                                            c.moveTo(-lineWidth / 2, y)
+                                            c.lineTo(lineWidth / 2, y)
+                                            c.stroke()
+                                            c.fillText(String(Math.abs(mark)), -lineWidth / 2 - 18, y + 4)
+                                            c.fillText(String(Math.abs(mark)), lineWidth / 2 + 18, y + 4)
+                                        }
+
+                                        c.beginPath()
+                                        c.moveTo(-width * 0.39, 0)
+                                        c.lineTo(width * 0.39, 0)
+                                        c.strokeStyle = "#f2f7ff"
+                                        c.stroke()
+                                        c.restore()
+
+                                        c.strokeStyle = "#f2f7ff"
+                                        c.lineWidth = 3
+                                        c.beginPath()
+                                        c.moveTo(cx - 54, cy)
+                                        c.lineTo(cx - 18, cy)
+                                        c.moveTo(cx + 18, cy)
+                                        c.lineTo(cx + 54, cy)
+                                        c.moveTo(cx - 18, cy)
+                                        c.lineTo(cx, cy + 12)
+                                        c.lineTo(cx + 18, cy)
+                                        c.stroke()
+
+                                        c.strokeStyle = root.gold
+                                        c.lineWidth = 3
+                                        c.beginPath()
+                                        c.moveTo(cx, cy - 2)
+                                        c.lineTo(cx, cy + 8)
+                                        c.stroke()
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                id: hudCircleMask
+                                anchors.fill: parent
+                                radius: width / 2
+                                visible: false
+                                color: "white"
+                            }
+
+                            OpacityMask {
+                                anchors.fill: parent
+                                source: hudCircleSource
+                                maskSource: hudCircleMask
+                            }
+                        }
+
+                        Rectangle {
+                            id: hudCompass
+                            anchors.right: hudCircle.right
+                            anchors.bottom: hudCircle.bottom
+                            width: 58
+                            height: 58
+                            radius: width / 2
+                            color: "#0b0f15"
+                            border.color: "#2a3342"
+                            border.width: 1
+
+                            Canvas {
+                                id: hudCompassCanvas
+                                anchors.fill: parent
+                                anchors.margins: 4
+
+                                onPaint: {
+                                    const c = getContext("2d")
+                                    c.reset()
+                                    c.clearRect(0, 0, width, height)
+                                    const cx = width / 2
+                                    const cy = height / 2
+                                    const r = Math.min(width, height) * 0.46
+                                    const heading = root.headingDegreesValue()
+
+                                    c.strokeStyle = "rgba(255,255,255,0.24)"
+                                    c.lineWidth = 1
+                                    c.beginPath()
+                                    c.arc(cx, cy, r, 0, Math.PI * 2)
+                                    c.stroke()
+
+                                    for (let deg = 0; deg < 360; deg += 30) {
+                                        const rel = (deg - heading) * Math.PI / 180
+                                        const inner = r * (deg % 90 === 0 ? 0.58 : 0.72)
+                                        const outer = r * 0.94
+                                        c.beginPath()
+                                        c.moveTo(cx + Math.sin(rel) * inner, cy - Math.cos(rel) * inner)
+                                        c.lineTo(cx + Math.sin(rel) * outer, cy - Math.cos(rel) * outer)
+                                        c.stroke()
+                                    }
+
+                                    c.fillStyle = root.gold
+                                    c.beginPath()
+                                    c.moveTo(cx, cy - r * 0.96)
+                                    c.lineTo(cx - 4, cy - r * 0.78)
+                                    c.lineTo(cx + 4, cy - r * 0.78)
+                                    c.closePath()
+                                    c.fill()
+                                }
+                            }
+
+                            Column {
+                                anchors.centerIn: parent
+                                spacing: 0
+
+                                Text {
+                                    text: root.normalizedHeadingText()
+                                    color: root.text
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                    font.family: "monospace"
+                                }
+
+                                Text {
+                                    text: "HDG"
+                                    color: root.gold
+                                    font.pixelSize: 7
+                                    font.bold: true
+                                    font.family: "monospace"
+                                }
                             }
                         }
                     }
@@ -4891,10 +6030,10 @@ Item {
                 subtitle: "Modern Briech mission design workspace"
                 accentColor: root.gold
                 metrics: [
-                    { label: "MISSION", value: "DRAFT" },
+                    { label: "MISSION", value: root.missionTimelineStatusText() },
                     { label: "WAYPOINTS", value: root.missionCoordinates.length },
                     { label: "AIRSPACE", value: root.visibleRiskZones().length + " ZONES" },
-                    { label: "UPLOAD", value: "READY" }
+                    { label: "UPLOAD", value: root.activeVehicle ? "VEHICLE" : "NO LINK" }
                 ]
             }
 
@@ -5015,41 +6154,18 @@ Item {
         }
     }
 
-    component ModernZoneLabel: Rectangle {
-        id: modernZoneLabel
-        property alias text: zoneLabelText.text
-        property color borderColor: root.gold
-        property color textColor: root.gold
-
-        width: Math.max(68, zoneLabelText.implicitWidth + 18)
-        height: 22
-        radius: 4
-        color: "#cc080a0e"
-        border.color: borderColor
-        border.width: 1
-
-        Text {
-            id: zoneLabelText
-            anchors.centerIn: parent
-            color: modernZoneLabel.textColor
-            font.pixelSize: 9
-            font.bold: true
-            font.family: ScreenTools.normalFontFamily
-            font.letterSpacing: 1
-        }
-    }
-
     component ModernWaypointMarker: Rectangle {
         id: waypointMarker
         property int number: 1
         property bool highlight: false
+        property bool secondaryHighlight: false
 
         width: waypointMarker.highlight ? 24 : 20
         height: width
         radius: width / 2
-        color: waypointMarker.highlight ? root.warn : root.blue
+        color: waypointMarker.highlight ? root.warn : (waypointMarker.secondaryHighlight ? root.gold : root.blue)
         border.color: "white"
-        border.width: waypointMarker.highlight ? 2 : 1
+        border.width: waypointMarker.highlight || waypointMarker.secondaryHighlight ? 2 : 1
 
         Text {
             anchors.centerIn: parent
@@ -5079,9 +6195,9 @@ Item {
                     required property var modelData
                     width: parent.width
                     height: 58
-                    radius: 4
-                    color: "#11151c"
-                    border.color: toastCard.modelData.tone === "ok" ? "#22c55e" : toastCard.modelData.tone === "warn" ? "#f59e0b" : "#2a3340"
+                    radius: 2
+                    color: root.modernGlassStrong
+                    border.color: toastCard.modelData.tone === "ok" ? "#22c55e" : toastCard.modelData.tone === "warn" ? "#f59e0b" : root.modernHairline
                     border.width: 1
 
                     Rectangle {
@@ -5125,6 +6241,444 @@ Item {
                         color: "#6a7585"
                         font.pixelSize: 12
                         font.bold: true
+                    }
+                }
+            }
+        }
+    }
+
+    component ModernFlightAlertStack: Item {
+        id: flightAlertStack
+
+        signal dismissRequested(string key, string kind)
+
+        property var model: []
+
+        visible: model && model.length > 0
+        implicitHeight: alertColumn.implicitHeight
+        z: QGroundControl.zOrderWidgets + 6
+
+        Column {
+            id: alertColumn
+            anchors.left: parent.left
+            anchors.right: parent.right
+            spacing: 8
+
+            Repeater {
+                model: flightAlertStack.model || []
+
+                delegate: Rectangle {
+                    id: alertCard
+
+                    required property var modelData
+
+                    width: parent.width
+                    height: 64
+                    color: Qt.rgba(0.035, 0.045, 0.065, 0.88)
+                    border.color: Qt.rgba(1, 1, 1, 0.08)
+                    border.width: 1
+                    radius: 2
+                    clip: true
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 3
+                        color: alertCard.modelData.tone || root.warn
+                    }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 14
+                        anchors.rightMargin: 28
+                        anchors.topMargin: 9
+                        anchors.bottomMargin: 8
+                        spacing: 8
+
+                        Item {
+                            Layout.preferredWidth: 16
+                            Layout.preferredHeight: 16
+                            Layout.alignment: Qt.AlignTop
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "!"
+                                color: alertCard.modelData.kind === "battery" ? "#9ca3af" : "#ffffff"
+                                font.pixelSize: 14
+                                font.bold: true
+                                font.family: "monospace"
+                            }
+
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: 13
+                                height: 13
+                                rotation: 45
+                                color: "transparent"
+                                border.color: alertCard.modelData.kind === "battery" ? "#9ca3af" : "#ffffff"
+                                border.width: 1
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: alertCard.modelData.title || ""
+                                color: "#f8fafc"
+                                font.pixelSize: 12
+                                font.bold: true
+                                font.family: "Barlow Condensed"
+                                font.letterSpacing: 1
+                                elide: Text.ElideRight
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: alertCard.modelData.detail || ""
+                                color: "#9aa3b2"
+                                font.pixelSize: 9
+                                font.bold: true
+                                font.family: "monospace"
+                                elide: Text.ElideRight
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: alertCard.modelData.time || ""
+                                color: "#667085"
+                                font.pixelSize: 9
+                                font.family: "monospace"
+                                elide: Text.ElideRight
+                            }
+                        }
+                    }
+
+                    Text {
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.rightMargin: 11
+                        anchors.topMargin: 10
+                        text: "x"
+                        color: closeMouse.containsMouse ? root.text : "#475569"
+                        font.pixelSize: 16
+                        font.family: "monospace"
+                    }
+
+                    MouseArea {
+                        id: closeMouse
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        width: 32
+                        height: 32
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: flightAlertStack.dismissRequested(alertCard.modelData.key || "", alertCard.modelData.kind || "")
+                    }
+                }
+            }
+        }
+    }
+
+    component ModernMapToolsPanel: Rectangle {
+        id: mapToolsPanel
+
+        color: root.modernGlassStrong
+        border.color: root.modernGoldHairline
+        border.width: 1
+        radius: 2
+        implicitHeight: mapToolsColumn.implicitHeight + 22
+        z: QGroundControl.zOrderWidgets + 5
+
+        ColumnLayout {
+            id: mapToolsColumn
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 10
+            spacing: 8
+
+            Text {
+                Layout.fillWidth: true
+                text: "MAP / LAYERS"
+                color: root.gold
+                font.pixelSize: 10
+                font.bold: true
+                font.letterSpacing: 1
+                font.family: "monospace"
+            }
+
+            Repeater {
+                model: root.modernMapLayerModel()
+
+                delegate: Rectangle {
+                    id: layerRow
+                    required property var modelData
+
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 28
+                    color: layerRow.modelData.active ? root.modernGoldFill : root.modernGlassSoft
+                    border.color: layerRow.modelData.active ? root.gold : root.modernHairline
+                    border.width: 1
+                    opacity: layerRow.modelData.available ? 1.0 : 0.38
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: 10
+                        text: layerRow.modelData.active ? "[x]" : "[ ]"
+                        color: layerRow.modelData.active ? root.gold : root.dim
+                        font.pixelSize: 10
+                        font.family: "monospace"
+                    }
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: 30
+                        text: layerRow.modelData.label
+                        color: layerRow.modelData.active ? root.gold : root.text
+                        font.pixelSize: 10
+                        font.bold: true
+                        font.family: "monospace"
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: layerRow.modelData.available
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: root.setModernMapKind(layerRow.modelData.key)
+                    }
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.modernHairline }
+
+            ModernToggleRow {
+                Layout.fillWidth: true
+                label: "WATERMARK"
+                checked: root.modernWatermarkEnabled
+                tone: root.gold
+                onToggled: function(newChecked) {
+                    root.modernWatermarkEnabled = newChecked
+                }
+            }
+
+            ModernToggleRow {
+                Layout.fillWidth: true
+                label: "AIR TILES"
+                checked: root.openAipTileOverlayEnabled
+                enabled: root.openAipToken.length > 0
+                tone: root.blue
+                onToggled: function(newChecked) {
+                    root.openAipTileOverlayEnabled = newChecked
+                    root.airspaceTileRevision++
+                }
+            }
+
+            ModernSettingsAction {
+                Layout.fillWidth: true
+                label: "MAP SETTINGS"
+                tone: root.text
+                onClicked: root.openFullSettings()
+            }
+        }
+    }
+
+    component ModernDiagnosticsPanel: Rectangle {
+        color: root.modernGlassStrong
+        border.color: Qt.rgba(root.blue.r, root.blue.g, root.blue.b, 0.55)
+        border.width: 1
+        radius: 2
+        implicitHeight: diagnosticsColumn.implicitHeight + 22
+        z: QGroundControl.zOrderWidgets + 5
+
+        ColumnLayout {
+            id: diagnosticsColumn
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 10
+            spacing: 8
+
+            Text {
+                Layout.fillWidth: true
+                text: "MODERN DIAGNOSTICS"
+                color: root.blue
+                font.pixelSize: 10
+                font.bold: true
+                font.letterSpacing: 1
+                font.family: "monospace"
+            }
+
+            Repeater {
+                model: root.modernDiagnosticsModel()
+
+                delegate: RowLayout {
+                    id: diagnosticRow
+                    required property var modelData
+
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Text {
+                        Layout.preferredWidth: 78
+                        text: diagnosticRow.modelData.label
+                        color: root.dim
+                        font.pixelSize: 9
+                        font.bold: true
+                        font.family: "monospace"
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: diagnosticRow.modelData.value
+                        color: diagnosticRow.modelData.tone
+                        font.pixelSize: 9
+                        font.bold: true
+                        font.family: "monospace"
+                        elide: Text.ElideRight
+                    }
+                }
+            }
+        }
+    }
+
+    component ModernToggleRow: Rectangle {
+        id: toggleRow
+
+        signal toggled(bool checked)
+
+        property string label: ""
+        property bool checked: false
+        property color tone: root.gold
+
+        Layout.preferredHeight: 28
+        color: "#080c12"
+        border.color: checked ? tone : "#1f2631"
+        border.width: 1
+        opacity: enabled ? 1.0 : 0.38
+
+        Text {
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: 10
+            text: toggleRow.checked ? "■" : "□"
+            color: toggleRow.checked ? toggleRow.tone : root.dim
+            font.pixelSize: 10
+            font.family: "monospace"
+        }
+
+        Text {
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: 30
+            text: toggleRow.label
+            color: toggleRow.checked ? toggleRow.tone : root.text
+            font.pixelSize: 10
+            font.bold: true
+            font.family: "monospace"
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            enabled: toggleRow.enabled
+            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+            onClicked: toggleRow.toggled(!toggleRow.checked)
+        }
+    }
+
+    component ModernWatermarkLayer: Item {
+        id: watermarkLayer
+
+        property url logoSource: "qrc:/Briech/res/logoWatermark.png"
+        property var marks: [
+            { x: 0.06, y: 0.05, w: 410, rot: 7,  dur: 28000, delay: 0,    drift: 22, opacity: 0.28 },
+            { x: 0.64, y: 0.07, w: 370, rot: 8,  dur: 26000, delay: 3000, drift: 20, opacity: 0.24 },
+            { x: 0.15, y: 0.25, w: 430, rot: 6,  dur: 31000, delay: 1200, drift: 24, opacity: 0.25 },
+            { x: 0.42, y: 0.34, w: 390, rot: 8,  dur: 29000, delay: 4600, drift: 20, opacity: 0.23 },
+            { x: 0.72, y: 0.36, w: 400, rot: -6, dur: 27000, delay: 2200, drift: 22, opacity: 0.24 },
+            { x: 0.10, y: 0.62, w: 430, rot: 7,  dur: 30000, delay: 5200, drift: 26, opacity: 0.24 },
+            { x: 0.52, y: 0.67, w: 450, rot: 8,  dur: 32000, delay: 1600, drift: 24, opacity: 0.23 },
+            { x: 0.76, y: 0.76, w: 390, rot: 4,  dur: 25000, delay: 6400, drift: 18, opacity: 0.21 }
+        ]
+
+        clip: true
+
+        Repeater {
+            model: watermarkLayer.marks
+
+            Item {
+                id: watermarkMark
+
+                readonly property var markData: modelData
+                property real driftOffset: -markData.drift
+
+                width: Math.min(markData.w, watermarkLayer.width * 0.34)
+                height: width * 0.30
+                x: watermarkLayer.width * markData.x + driftOffset
+                y: watermarkLayer.height * markData.y + (driftOffset * 0.22)
+                opacity: markData.opacity
+                rotation: markData.rot
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: "#f5f7fb"
+                    opacity: 0.24
+                    radius: 2
+                    border.color: Qt.rgba(1, 1, 1, 0.10)
+                    border.width: 1
+                }
+
+                Image {
+                    anchors.centerIn: parent
+                    width: parent.width * 0.76
+                    height: parent.height * 0.58
+                    source: watermarkLayer.logoSource
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    mipmap: true
+                    opacity: 0.78
+                }
+
+                SequentialAnimation on driftOffset {
+                    running: watermarkLayer.visible
+                    loops: Animation.Infinite
+
+                    PauseAnimation { duration: watermarkMark.markData.delay }
+                    NumberAnimation {
+                        from: -watermarkMark.markData.drift
+                        to: watermarkMark.markData.drift
+                        duration: watermarkMark.markData.dur
+                        easing.type: Easing.InOutSine
+                    }
+                    NumberAnimation {
+                        from: watermarkMark.markData.drift
+                        to: -watermarkMark.markData.drift
+                        duration: watermarkMark.markData.dur
+                        easing.type: Easing.InOutSine
+                    }
+                }
+
+                SequentialAnimation on opacity {
+                    running: watermarkLayer.visible
+                    loops: Animation.Infinite
+
+                    PauseAnimation { duration: watermarkMark.markData.delay }
+                    NumberAnimation {
+                        from: watermarkMark.markData.opacity * 0.72
+                        to: watermarkMark.markData.opacity
+                        duration: Math.max(6000, watermarkMark.markData.dur * 0.35)
+                        easing.type: Easing.InOutSine
+                    }
+                    NumberAnimation {
+                        from: watermarkMark.markData.opacity
+                        to: watermarkMark.markData.opacity * 0.72
+                        duration: Math.max(6000, watermarkMark.markData.dur * 0.35)
+                        easing.type: Easing.InOutSine
                     }
                 }
             }
@@ -5743,8 +7297,8 @@ Item {
 
         Layout.preferredHeight: 26
         opacity: enabled ? 1.0 : 0.38
-        color: active ? "rgba(201,168,76,0.10)" : (hovered ? "rgba(201,168,76,0.06)" : "rgba(15,18,24,0.80)")
-        border.color: active ? "rgba(201,168,76,0.85)" : (hovered ? "rgba(201,168,76,0.45)" : "rgba(201,168,76,0.22)")
+        color: active ? Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.10) : (hovered ? Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.06) : Qt.rgba(15 / 255, 18 / 255, 24 / 255, 0.80))
+        border.color: active ? Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.85) : (hovered ? Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.45) : Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.22))
         border.width: 1
         radius: 2
 
@@ -5812,6 +7366,89 @@ Item {
         }
     }
 
+    component ModernDataPanel: Rectangle {
+        id: dataPanel
+
+        property string title: ""
+        property var model: []
+
+        Layout.preferredHeight: 104
+        color: root.modernGlass
+        border.color: root.modernGoldHairline
+        border.width: 1
+        radius: 2
+        layer.enabled: true
+        layer.smooth: true
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 12
+            spacing: 8
+
+            Text {
+                Layout.fillWidth: true
+                text: dataPanel.title
+                color: root.gold
+                font.pixelSize: 10
+                font.bold: true
+                font.letterSpacing: 1
+                font.family: "monospace"
+            }
+
+            GridLayout {
+                Layout.fillWidth: true
+                columns: 4
+                columnSpacing: 8
+                rowSpacing: 6
+
+                Repeater {
+                    model: dataPanel.model || []
+
+                    delegate: Rectangle {
+                        id: dataMetric
+                        required property var modelData
+
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 48
+                        color: root.modernGlassSoft
+                        border.color: root.modernHairline
+                        border.width: 1
+                        radius: 2
+
+                        Column {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 10
+                            spacing: 3
+
+                            Text {
+                                width: parent.width
+                                text: dataMetric.modelData.label
+                                color: root.dim
+                                font.pixelSize: 8
+                                font.bold: true
+                                font.family: "monospace"
+                                elide: Text.ElideRight
+                            }
+
+                            Text {
+                                width: parent.width
+                                text: dataMetric.modelData.value
+                                color: dataMetric.modelData.tone || root.text
+                                font.pixelSize: 12
+                                font.bold: true
+                                font.family: "Barlow Condensed"
+                                elide: Text.ElideRight
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     component ModernSettingsAction: Rectangle {
         id: settingsAction
 
@@ -5822,8 +7459,8 @@ Item {
 
         Layout.preferredHeight: 30
         opacity: enabled ? 1.0 : 0.38
-        color: hovered && enabled ? Qt.rgba(tone.r, tone.g, tone.b, 0.14) : "#080c12"
-        border.color: tone
+        color: hovered && enabled ? Qt.rgba(tone.r, tone.g, tone.b, 0.14) : root.modernGlass
+        border.color: hovered && enabled ? tone : Qt.rgba(tone.r, tone.g, tone.b, 0.46)
         border.width: 1
         radius: 2
 
@@ -5990,8 +7627,59 @@ Item {
                 Item { Layout.fillWidth: true }
 
                 Text {
-                    text: "WP " + (Math.min(currentIndex, _safeMaxIndex) + 1) + " / " + _waypointCount
+                    text: root.missionWaypointProgressText() + " | " + root.missionTimelineSequenceText()
                     color: root.dim
+                    font.pixelSize: 9
+                    font.family: "monospace"
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
+
+                Text {
+                    text: root.missionTimelineStatusText()
+                    color: root.missionTimelineComplete() ? root.ok : (root.missionTimelineInspectionMode ? root.warn : root.text)
+                    font.pixelSize: 9
+                    font.bold: true
+                    font.family: "monospace"
+                }
+
+                Text {
+                    text: qsTr("CUR %1").arg(root.missionCurrentWaypointLabel())
+                    color: root.text
+                    font.pixelSize: 9
+                    font.family: "monospace"
+                }
+
+                Text {
+                    text: qsTr("NEXT %1").arg(root.missionNextWaypointLabel())
+                    color: root.gold
+                    font.pixelSize: 9
+                    font.family: "monospace"
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Text {
+                    text: qsTr("REM %1").arg(root.formatMissionDistance(root.missionRemainingDistanceMeters()))
+                    color: root.text
+                    font.pixelSize: 9
+                    font.family: "monospace"
+                }
+
+                Text {
+                    text: qsTr("ETA %1").arg(root.formatMissionEta(root.missionEtaSeconds()))
+                    color: root.text
+                    font.pixelSize: 9
+                    font.family: "monospace"
+                }
+
+                Text {
+                    text: qsTr("HOME %1").arg(root.missionBatteryAtHomeEstimateText())
+                    color: root.ok
+                    visible: root.missionBatteryAtHomeEstimateText() !== "--"
                     font.pixelSize: 9
                     font.family: "monospace"
                 }
@@ -6304,8 +7992,8 @@ Item {
 
         Layout.preferredWidth: 96
         Layout.fillHeight: true
-        color: active ? "#151922" : (mouseArea.containsMouse ? "#111720" : "#0b0f15")
-        border.color: active ? "#303641" : "#171d27"
+        color: active ? root.modernGoldFill : (mouseArea.containsMouse ? root.modernGlassSoft : root.modernGlassStrong)
+        border.color: active ? root.modernGoldHairline : root.modernHairline
         border.width: 1
 
         Rectangle {
@@ -6335,7 +8023,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: iconFallback
                 visible: navIcon.status !== Image.Ready
-                color: (active || mouseArea.containsMouse) ? root.gold : root.dim
+                color: active ? "#ffffff" : (mouseArea.containsMouse ? root.gold : root.dim)
                 font.pixelSize: 11
                 font.bold: true
                 font.family: "Barlow Condensed"
@@ -6345,8 +8033,8 @@ Item {
                 id: labelText
                 anchors.verticalCenter: parent.verticalCenter
                 text: label
-                color: (active || mouseArea.containsMouse) ? "#ffffff" : root.dim
-                font.pixelSize: 15
+                color: active ? "#ffffff" : (mouseArea.containsMouse ? root.text : root.dim)
+                font.pixelSize: 14
                 font.family: "Barlow Condensed"
                 font.bold: true
                 font.letterSpacing: 1
