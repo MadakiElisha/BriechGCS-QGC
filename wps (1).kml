@@ -1,0 +1,453 @@
+<?xml version="1.0" encoding="utf-16"?>
+<Document xmlns="http://www.opengis.net/kml/2.2">
+  <Placemark>
+    <name>WP H Alt: 0.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8552821,10.6506847,0.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 2 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8589878,10.6532695,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 3 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8610907,10.6552517,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 4 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8625498,10.6581196,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 5 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8612623,10.6609454,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 6 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8588161,10.6613249,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 7 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8561983,10.6608188,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 8 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.854353,10.6599753,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 9 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8526363,10.6589631,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 10 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8513489,10.6573605,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 11 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8503618,10.6558,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 12 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8498039,10.6539443,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 13 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8493319,10.652426,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 14 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.849246,10.6505702,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 15 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8501472,10.6491362,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 16 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8516064,10.6476179,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 17 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8528509,10.6469852,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 18 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8551683,10.6468165,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 19 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8573999,10.6474914,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 20 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.860404,10.6482505,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 21 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8620777,10.6500641,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 22 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8642235,10.6518777,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 23 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8661118,10.6546191,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 24 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.867485,10.6579931,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 25 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8668842,10.660861,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 26 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8654251,10.6640663,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 27 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8613911,10.6660063,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 28 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8570137,10.6663436,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 29 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8534946,10.6649941,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 30 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8499756,10.6619575,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 31 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.847229,10.6594271,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 32 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8454266,10.6558,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 33 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8444824,10.6514981,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 34 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8457699,10.6475335,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 35 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8486023,10.6439063,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 36 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8525505,10.6424723,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 37 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8589878,10.6417131,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 38 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8643093,10.6430628,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 39 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8691158,10.6461839,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 40 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8733215,10.6515824,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 41 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8752098,10.6584149,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WP 42 Alt: 100.09</name>
+    <Point>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8734932,10.6668497,100.09
+</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>WPs</name>
+    <Style id="yellowLineGreenPoly">
+      <LineStyle>
+        <color>ff00ffff</color>
+        <width>4</width>
+      </LineStyle>
+    </Style>
+    <LineString>
+      <extrude>false</extrude>
+      <tessellate>true</tessellate>
+      <altitudeMode>absolute</altitudeMode>
+      <coordinates>6.8552821,10.6506847,0.09
+6.8589878,10.6532695,100.09
+6.8610907,10.6552517,100.09
+6.8625498,10.6581196,100.09
+6.8612623,10.6609454,100.09
+6.8588161,10.6613249,100.09
+6.8561983,10.6608188,100.09
+6.854353,10.6599753,100.09
+6.8526363,10.6589631,100.09
+6.8513489,10.6573605,100.09
+6.8503618,10.6558,100.09
+6.8498039,10.6539443,100.09
+6.8493319,10.652426,100.09
+6.849246,10.6505702,100.09
+6.8501472,10.6491362,100.09
+6.8516064,10.6476179,100.09
+6.8528509,10.6469852,100.09
+6.8551683,10.6468165,100.09
+6.8573999,10.6474914,100.09
+6.860404,10.6482505,100.09
+6.8620777,10.6500641,100.09
+6.8642235,10.6518777,100.09
+6.8661118,10.6546191,100.09
+6.867485,10.6579931,100.09
+6.8668842,10.660861,100.09
+6.8654251,10.6640663,100.09
+6.8613911,10.6660063,100.09
+6.8570137,10.6663436,100.09
+6.8534946,10.6649941,100.09
+6.8499756,10.6619575,100.09
+6.847229,10.6594271,100.09
+6.8454266,10.6558,100.09
+6.8444824,10.6514981,100.09
+6.8457699,10.6475335,100.09
+6.8486023,10.6439063,100.09
+6.8525505,10.6424723,100.09
+6.8589878,10.6417131,100.09
+6.8643093,10.6430628,100.09
+6.8691158,10.6461839,100.09
+6.8733215,10.6515824,100.09
+6.8752098,10.6584149,100.09
+6.8734932,10.6668497,100.09
+</coordinates>
+    </LineString>
+  </Placemark>
+  <Placemark>
+    <name>onground</name>
+    <Style id="yellowLineGreenPoly">
+      <LineStyle>
+        <color>7f00ffff</color>
+        <width>4</width>
+      </LineStyle>
+    </Style>
+    <LineString>
+      <extrude>false</extrude>
+      <tessellate>true</tessellate>
+      <altitudeMode>clampToGround</altitudeMode>
+      <coordinates>6.8552821,10.6506847,0.09
+6.8589878,10.6532695,100.09
+6.8610907,10.6552517,100.09
+6.8625498,10.6581196,100.09
+6.8612623,10.6609454,100.09
+6.8588161,10.6613249,100.09
+6.8561983,10.6608188,100.09
+6.854353,10.6599753,100.09
+6.8526363,10.6589631,100.09
+6.8513489,10.6573605,100.09
+6.8503618,10.6558,100.09
+6.8498039,10.6539443,100.09
+6.8493319,10.652426,100.09
+6.849246,10.6505702,100.09
+6.8501472,10.6491362,100.09
+6.8516064,10.6476179,100.09
+6.8528509,10.6469852,100.09
+6.8551683,10.6468165,100.09
+6.8573999,10.6474914,100.09
+6.860404,10.6482505,100.09
+6.8620777,10.6500641,100.09
+6.8642235,10.6518777,100.09
+6.8661118,10.6546191,100.09
+6.867485,10.6579931,100.09
+6.8668842,10.660861,100.09
+6.8654251,10.6640663,100.09
+6.8613911,10.6660063,100.09
+6.8570137,10.6663436,100.09
+6.8534946,10.6649941,100.09
+6.8499756,10.6619575,100.09
+6.847229,10.6594271,100.09
+6.8454266,10.6558,100.09
+6.8444824,10.6514981,100.09
+6.8457699,10.6475335,100.09
+6.8486023,10.6439063,100.09
+6.8525505,10.6424723,100.09
+6.8589878,10.6417131,100.09
+6.8643093,10.6430628,100.09
+6.8691158,10.6461839,100.09
+6.8733215,10.6515824,100.09
+6.8752098,10.6584149,100.09
+6.8734932,10.6668497,100.09
+</coordinates>
+    </LineString>
+  </Placemark>
+</Document>
