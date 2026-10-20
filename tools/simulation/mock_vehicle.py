@@ -91,7 +91,11 @@ class MockVehicle:
         self.state = VehicleState()
         self.running = False
         self.connection = None
-        self.start_time = time.time()
+        self.udp_output_only = False
+        # MAVLink timestamps must be monotonic. Wall-clock time can step
+        # backwards (NTP/VM clock correction), which makes flight stacks flag
+        # inconsistent IMU data when the vehicle arms.
+        self.start_time = time.monotonic()
 
         # Mode mapping
         self.modes = {
@@ -107,11 +111,16 @@ class MockVehicle:
 
     def connect_udp(self, host="127.0.0.1", port=14550):
         """Connect via UDP."""
+        # QGC's default UDP link listens on port 14550.  Use an output socket
+        # so the heartbeat is discoverable without competing with QGC for that
+        # port.  pymavlink's udpout socket cannot receive on Windows, so the
+        # command polling path is disabled for this auto-discovery mode.
         self.connection = mavutil.mavlink_connection(
             f"udpout:{host}:{port}",
             source_system=self.system_id,
             source_component=self.component_id,
         )
+        self.udp_output_only = True
         print(f"UDP connection to {host}:{port}")
 
     def connect_tcp(self, host="127.0.0.1", port=5760):
@@ -121,6 +130,7 @@ class MockVehicle:
             source_system=self.system_id,
             source_component=self.component_id,
         )
+        self.udp_output_only = False
         print(f"TCP connection on {host}:{port}")
 
     def send_heartbeat(self):
@@ -149,7 +159,7 @@ class MockVehicle:
             500,  # load (50%)
             voltage,  # voltage_battery (mV)
             -1,  # current_battery
-            self.state.battery_remaining,
+            int(round(self.state.battery_remaining)),
             0,
             0,
             0,
@@ -165,7 +175,7 @@ class MockVehicle:
         alt = int(self.state.alt * 1000)
 
         self.connection.mav.gps_raw_int_send(
-            int((time.time() - self.start_time) * 1e6),
+            int((time.monotonic() - self.start_time) * 1e6),
             self.state.gps_fix,
             lat,
             lon,
@@ -184,28 +194,32 @@ class MockVehicle:
         alt = int(self.state.alt * 1000)
         relative_alt = int(self.state.alt * 1000)
 
+        heading_radians = math.radians(self.state.heading)
+        north_velocity = self.state.groundspeed * math.cos(heading_radians)
+        east_velocity = self.state.groundspeed * math.sin(heading_radians)
+
         self.connection.mav.global_position_int_send(
-            int((time.time() - self.start_time) * 1000),
+            int((time.monotonic() - self.start_time) * 1000),
             lat,
             lon,
             alt,
             relative_alt,
-            int(self.state.groundspeed * 100),  # vx
-            0,  # vy
-            int(self.state.climb_rate * 100),  # vz
+            int(north_velocity * 100),  # vx, north (cm/s)
+            int(east_velocity * 100),   # vy, east (cm/s)
+            int(-self.state.climb_rate * 100),  # vz, down (cm/s)
             int(self.state.heading * 100),
         )
 
     def send_attitude(self):
         """Send attitude."""
         self.connection.mav.attitude_send(
-            int((time.time() - self.start_time) * 1000),
+            int((time.monotonic() - self.start_time) * 1000),
             math.radians(self.state.roll),
             math.radians(self.state.pitch),
             math.radians(self.state.yaw),
             0,
             0,
-            0,  # roll/pitch/yaw rates
+            math.radians(10.0 if self.state.armed else 0.0),
         )
 
     def send_vfr_hud(self):
@@ -231,7 +245,7 @@ class MockVehicle:
             -1,  # current
             -1,  # current consumed
             -1,  # energy consumed
-            self.state.battery_remaining,
+            int(round(self.state.battery_remaining)),
         )
 
     def send_home_position(self):
@@ -254,22 +268,33 @@ class MockVehicle:
 
     def update_simulation(self, dt):
         """Update simulated vehicle state."""
-        # Simulate slow position drift
+        # Generate one physically coherent state before publishing telemetry.
+        # Position, velocity, yaw and yaw-rate all describe the same turn.
         if self.state.armed:
-            self.state.heading = (self.state.heading + 1) % 360
+            turn_rate_degrees_s = 10.0
+            self.state.heading = (self.state.heading + turn_rate_degrees_s * dt) % 360
             self.state.yaw = self.state.heading
+            self.state.groundspeed = 5.0
+            self.state.airspeed = 5.0
 
-            # Simulate slight movement
-            self.state.lat += 0.00001 * math.cos(math.radians(self.state.heading))
-            self.state.lon += 0.00001 * math.sin(math.radians(self.state.heading))
+            distance_meters = self.state.groundspeed * dt
+            heading_radians = math.radians(self.state.heading)
+            self.state.lat += (distance_meters * math.cos(heading_radians)) / 111_320.0
+            longitude_scale = max(1e-6, 111_320.0 * math.cos(math.radians(self.state.lat)))
+            self.state.lon += (distance_meters * math.sin(heading_radians)) / longitude_scale
+        else:
+            self.state.groundspeed = 0.0
+            self.state.airspeed = 0.0
 
         # Battery drain
         if self.state.armed:
-            self.state.battery_remaining = max(0, self.state.battery_remaining - 0.01)
+            self.state.battery_remaining = max(0, self.state.battery_remaining - (0.1 * dt))
             self.state.battery_voltage = 10.5 + (self.state.battery_remaining / 100) * 2.1
 
     def handle_commands(self):
         """Handle incoming MAVLink commands."""
+        if self.udp_output_only:
+            return
         msg = self.connection.recv_match(blocking=False)
         if msg is None:
             return
@@ -353,15 +378,15 @@ class MockVehicle:
         """Main loop."""
         self.running = True
         dt = 1.0 / rate
-        last_heartbeat = 0
-        last_telemetry = 0
+        last_heartbeat = 0.0
+        last_telemetry = time.monotonic()
 
         print(f"Mock vehicle running (System ID: {self.system_id})")
         print("Press Ctrl+C to stop")
 
         try:
             while self.running:
-                now = time.time()
+                now = time.monotonic()
 
                 # Handle incoming commands
                 self.handle_commands()
@@ -373,12 +398,13 @@ class MockVehicle:
 
                 # Send telemetry at specified rate
                 if now - last_telemetry >= dt:
+                    elapsed = max(0.0, now - last_telemetry)
+                    self.update_simulation(elapsed)
                     self.send_sys_status()
                     self.send_gps()
                     self.send_global_position()
                     self.send_attitude()
                     self.send_vfr_hud()
-                    self.update_simulation(dt)
                     last_telemetry = now
 
                 time.sleep(0.01)

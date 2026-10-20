@@ -41,10 +41,12 @@ endif()
 # Feature Set Customization
 # ----------------------------------------------------------------------------
 
-# Build a single flight stack by disabling APM support
-set(QGC_DISABLE_APM_MAVLINK ON CACHE BOOL "Disable APM Dialect" FORCE)
-set(QGC_DISABLE_APM_PLUGIN ON CACHE BOOL "Disable APM Plugin" FORCE)
-set(QGC_DISABLE_APM_PLUGIN_FACTORY ON CACHE BOOL "Disable APM Plugin Factory" FORCE)
+# The Modern simulator uses ArduCopter SITL. Keep the ArduPilot dialect,
+# firmware plugin, and factory available so Vehicle exposes real guided-action
+# capabilities (arm, takeoff, land, RTL, pause, and mission control).
+set(QGC_DISABLE_APM_MAVLINK OFF CACHE BOOL "Disable APM Dialect" FORCE)
+set(QGC_DISABLE_APM_PLUGIN OFF CACHE BOOL "Disable APM Plugin" FORCE)
+set(QGC_DISABLE_APM_PLUGIN_FACTORY OFF CACHE BOOL "Disable APM Plugin Factory" FORCE)
 
 # Implement custom PX4 plugin factory
 set(QGC_DISABLE_PX4_PLUGIN_FACTORY ON CACHE BOOL "Disable PX4 Plugin Factory" FORCE)
