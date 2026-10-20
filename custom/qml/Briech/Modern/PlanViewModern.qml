@@ -9,6 +9,7 @@ import QGroundControl
 import QGroundControl.FlightMap
 import QGroundControl.Controls
 import QGroundControl.UTMSP
+import Custom.Widgets 1.0
 
 
 
@@ -17,14 +18,22 @@ Item {
     anchors.fill: parent
 
     signal exitRequested()
+    signal simulationHomeSuggested(string home)
 
     // Theme defaults (overridden when embedded in BriechModernView)
     property color gold: "#C9A84C"
     property color border: "#252c38"
     property color text: "#d8dde6"
     property color dim: "#6a7585"
+    property color ok: "#22c55e"
+    property color warn: "#f59e0b"
+    property color err: "#ef4444"
 
     // Controllers
+    // The mission controller is owned by BriechModernView. Keeping it there
+    // is important: this Plan view is created/destroyed as the user changes
+    // sections, but the mission must remain available across that navigation.
+    property var planMasterController
     property var _planMasterController: planMasterController
     property var _missionController: planMasterController.missionController
     property var _geoFenceController: planMasterController.geoFenceController
@@ -34,16 +43,80 @@ Item {
     readonly property int _layerFence: 2
     readonly property int _layerRally: 3
     property int _editingLayer: _layerMission
+    property bool simulationPanelOpen: false
+    property string simulationHome: "42.3898,-71.1476,14.0,270.0"
+    property string simulationSpeedup: "1"
+    property bool fitPending: false
+    required property var simulationController
 
-    PlanMasterController {
-        id: planMasterController
-        flyView: false
+    BriechDialog {
+        id: briechDialog
+    }
 
-        Component.onCompleted: {
-            planMasterController.start()
-            root._missionController.setCurrentPlanViewSeqNum(0, true)
+    function showBriechMessage(title, message, tone) {
+        briechDialog.showInfo(title, message, tone || root.gold)
+    }
+
+    function confirmBriechAction(title, message, action, confirmLabel, tone) {
+        briechDialog.showConfirmation(title, message, action,
+                                      confirmLabel || qsTr("CONFIRM"), tone || root.gold)
+    }
+
+    function hasLiveVehicleLink() {
+        const vehicle = QGroundControl.multiVehicleManager.activeVehicle
+        return !!vehicle
+            && !!vehicle.vehicleLinkManager
+            && !vehicle.vehicleLinkManager.communicationLost
+    }
+
+    function connectSimulationLink() {
+        const linkName = "Briech SITL TCP"
+        const configurations = QGroundControl.linkManager.linkConfigurations
+        for (let index = 0; index < configurations.count; index++) {
+            const configuration = configurations.get(index)
+            if (configuration && configuration.name === linkName) {
+                // Avoid a second TCP client while a prior attempt is live.
+                // BriechModernView owns the retry loop for failed attempts.
+                if (configuration.link) {
+                    return
+                }
+                QGroundControl.linkManager.createConnectedLink(configuration)
+                return
+            }
+        }
+
+        const configuration = QGroundControl.linkManager.createConfiguration(LinkConfiguration.TypeTcp, linkName)
+        configuration.host = "127.0.0.1"
+        configuration.port = 5760
+        configuration.dynamic = true
+        QGroundControl.linkManager.createConnectedLink(configuration)
+    }
+
+    MapFitFunctions {
+        id: mapFitFunctions
+        map: editorMap
+        planMasterController: root._planMasterController
+        usePlannedHomePosition: true
+    }
+
+    function fitPlanToMap() {
+        if (!editorMap.mapReady || editorMap.width <= 1 || editorMap.height <= 1) {
+            fitPending = true
+            return
+        }
+
+        fitPending = false
+        if (planMasterController.containsItems) {
+            mapFitFunctions.fitMapViewportToMissionItems()
+        } else if (editorMap.mapReady) {
+            editorMap.center = root.sharedMapCenter()
         }
     }
+
+    // Re-entering Plan creates the visual editor again. Fit the restored
+    // mission immediately so imported/uploaded waypoints are visible without
+    // requiring the operator to press FIT PLAN.
+    Component.onCompleted: Qt.callLater(root.fitPlanToMap)
 
     function sharedMapCenter() {
         return QGroundControl.flightMapPosition.isValid ? QGroundControl.flightMapPosition : QtPositioning.coordinate(9.0765, 7.3986)
@@ -197,6 +270,71 @@ Item {
         }
     }
 
+    function importKmlWaypointsFromFile(filename) {
+        if (planMasterController.containsItems) {
+            confirmBriechAction(qsTr("Import KML Waypoints"),
+                qsTr("Replace the current mission with the KML waypoints? Existing mission items will be removed, but vehicle data is not changed until you upload."),
+                function() { planMasterController.importKmlWaypoints(filename, false) }, qsTr("REPLACE PLAN"), root.warn)
+        } else {
+            planMasterController.importKmlWaypoints(filename, false)
+        }
+    }
+
+    function suggestSimulationHomeFromMission() {
+        if (!_missionController.visualItems || _missionController.visualItems.count < 2) {
+            return
+        }
+        let firstMissionItem = null
+        for (let index = 0; index < _missionController.visualItems.count; index++) {
+            const item = _missionController.visualItems.get(index)
+            if (item && item.specifiesCoordinate && !item.homePosition && !item.isStandaloneCoordinate
+                    && item.coordinate && item.coordinate.isValid) {
+                firstMissionItem = item
+                break
+            }
+        }
+        if (!firstMissionItem) {
+            return
+        }
+        const coordinate = firstMissionItem.coordinate
+        const home = coordinate.latitude.toFixed(7) + "," + coordinate.longitude.toFixed(7) + "," +
+            Math.max(0, Number(coordinate.altitude) || 0).toFixed(2) + ",270.0"
+        simulationHome = home
+        simulationHomeField.text = home
+        simulationHomeSuggested(home)
+    }
+
+    function startSimulationAtMissionHome() {
+        // Resolve the route origin immediately before launch. An import event
+        // can be missed while this view is recreated, but the persistent
+        // mission controller remains authoritative.
+        suggestSimulationHomeFromMission()
+        simulationController.startArduCopter(simulationHomeField.text, Number(simulationSpeedField.text), false)
+    }
+
+    function uploadMission() {
+        if (planMasterController.readyForSaveState() === VisualMissionItem.NotReadyForSaveData) {
+            showBriechMessage(qsTr("Unable to Upload"), qsTr("Complete all mission items before uploading."), root.warn)
+            return
+        }
+
+        switch (_missionController.sendToVehiclePreCheck()) {
+        case MissionController.SendToVehiclePreCheckStateOk:
+            planMasterController.sendToVehicle()
+            break
+        case MissionController.SendToVehiclePreCheckStateNoActiveVehicle:
+            showBriechMessage(qsTr("No Vehicle"), qsTr("Connect the simulator or a vehicle before uploading the mission."), root.warn)
+            break
+        case MissionController.SendToVehiclePreCheckStateActiveMission:
+            showBriechMessage(qsTr("Upload Blocked"), qsTr("Pause the active mission before uploading a new plan."), root.warn)
+            break
+        case MissionController.SendToVehiclePreCheckStateFirwmareVehicleMismatch:
+            confirmBriechAction(qsTr("Vehicle Mismatch"), qsTr("The plan vehicle type differs from the connected vehicle."),
+                function() { planMasterController.sendToVehicle() }, qsTr("UPLOAD ANYWAY"), root.warn)
+            break
+        }
+    }
+
     Connections {
         target: QGroundControl
         ignoreUnknownSignals: true
@@ -279,6 +417,248 @@ Item {
                     }
                 }
             }
+
+            Rectangle {
+                Layout.preferredWidth: 108
+                Layout.preferredHeight: 28
+                color: fitPlanMouse.containsMouse ? Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.14) : Qt.rgba(1, 1, 1, 0.025)
+                border.color: fitPlanMouse.containsMouse ? root.gold : root.border
+                border.width: 1
+                opacity: planMasterController.containsItems ? 1 : 0.45
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "FIT PLAN"
+                    color: fitPlanMouse.containsMouse ? root.gold : root.text
+                    font.pixelSize: 10
+                    font.bold: true
+                    font.family: "monospace"
+                }
+
+                MouseArea {
+                    id: fitPlanMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    enabled: planMasterController.containsItems
+                    onClicked: root.fitPlanToMap()
+                }
+            }
+
+            Rectangle {
+                Layout.preferredWidth: 92
+                Layout.preferredHeight: 28
+                color: simulationPanelOpen ? Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.16) : Qt.rgba(1, 1, 1, 0.025)
+                border.color: simulationPanelOpen ? root.gold : root.border
+                border.width: 1
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "SIMULATION"
+                    color: simulationPanelOpen ? root.gold : root.text
+                    font.pixelSize: 10
+                    font.bold: true
+                    font.family: "monospace"
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: simulationPanelOpen = !simulationPanelOpen
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        id: simulationPanel
+        visible: simulationPanelOpen
+        z: 50
+        anchors.top: topHeader.bottom
+        anchors.bottom: bottomBar.top
+        anchors.right: parent.right
+        width: 390
+        color: "#080c12"
+        border.color: Qt.rgba(root.gold.r, root.gold.g, root.gold.b, 0.72)
+        border.width: 1
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: 3
+            color: root.gold
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 16
+            spacing: 10
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 34
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+
+                    Text {
+                        text: "DEMO FLIGHT"
+                        color: root.gold
+                        font.pixelSize: 14
+                        font.bold: true
+                        font.letterSpacing: 1
+                        font.family: "monospace"
+                    }
+
+                    Text {
+                        text: "ArduPilot SITL · real MAVLink"
+                        color: root.dim
+                        font.pixelSize: 10
+                        font.family: "monospace"
+                    }
+                }
+
+                Text {
+                    text: simulationController.status
+                    color: simulationController.running ? root.ok : (simulationController.busy ? root.gold : (simulationController.lastError.length > 0 ? root.err : root.dim))
+                    font.pixelSize: 9
+                    font.bold: true
+                    font.family: "monospace"
+                }
+
+                Rectangle {
+                    Layout.preferredWidth: 24
+                    Layout.preferredHeight: 24
+                    radius: 12
+                    color: "#111925"
+                    border.color: root.border
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "×"
+                        color: root.text
+                        font.pixelSize: 16
+                        font.bold: true
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: simulationPanelOpen = false
+                    }
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; height: 1; color: root.border }
+
+            Text { text: "AIRCRAFT PROFILE"; color: "#91a0b3"; font.pixelSize: 9; font.bold: true; font.letterSpacing: 1; font.family: "monospace" }
+            ComboBox {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 40
+                model: ["ArduCopter Quad · SITL"]
+                enabled: !simulationController.busy && !simulationController.running
+                currentIndex: 0
+                contentItem: Text {
+                    leftPadding: 12
+                    rightPadding: 34
+                    text: parent.displayText
+                    color: parent.enabled ? root.text : "#8190a2"
+                    verticalAlignment: Text.AlignVCenter
+                    font.pixelSize: 11
+                    font.family: "monospace"
+                    elide: Text.ElideRight
+                }
+                background: Rectangle {
+                    color: "#111925"
+                    border.color: "#344154"
+                    border.width: 1
+                    radius: 2
+                }
+            }
+
+            Text { text: "HOME · LAT,LON,ALT,HEADING"; color: "#91a0b3"; font.pixelSize: 9; font.bold: true; font.letterSpacing: 1; font.family: "monospace" }
+            TextField {
+                id: simulationHomeField
+                Layout.fillWidth: true
+                Layout.preferredHeight: 40
+                text: root.simulationHome
+                selectByMouse: true
+                color: root.text
+                placeholderText: "42.3898,-71.1476,14.0,270.0"
+                placeholderTextColor: "#66758a"
+                font.pixelSize: 11
+                font.family: "monospace"
+                background: Rectangle {
+                    color: "#111925"
+                    border.color: simulationHomeField.activeFocus ? root.gold : "#344154"
+                    border.width: 1
+                    radius: 2
+                }
+            }
+
+            Text { text: "SIMULATION SPEED"; color: "#91a0b3"; font.pixelSize: 9; font.bold: true; font.letterSpacing: 1; font.family: "monospace" }
+            RowLayout {
+                Layout.fillWidth: true
+                TextField {
+                    id: simulationSpeedField
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 40
+                    text: root.simulationSpeedup
+                    validator: DoubleValidator { bottom: 0.1; top: 20.0 }
+                    color: root.text
+                    selectByMouse: true
+                    font.pixelSize: 11
+                    font.family: "monospace"
+                    background: Rectangle {
+                        color: "#111925"
+                        border.color: simulationSpeedField.activeFocus ? root.gold : "#344154"
+                        border.width: 1
+                        radius: 2
+                    }
+                }
+                Text { text: "×"; color: root.dim; font.pixelSize: 12 }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                ModernSettingsAction {
+                    Layout.fillWidth: true
+                    label: simulationController.running ? "SITL RUNNING" : (simulationController.busy ? "STARTING..." : "START SITL")
+                    tone: root.ok
+                    enabled: !simulationController.running && !simulationController.busy
+                    onClicked: root.startSimulationAtMissionHome()
+                }
+
+                ModernSettingsAction {
+                    Layout.fillWidth: true
+                    label: simulationController.running ? "STOP SITL" : "STOP"
+                    tone: root.err
+                    enabled: simulationController.running && !simulationController.busy
+                    onClicked: simulationController.stopArduCopter()
+                }
+            }
+
+                ModernSettingsAction {
+                    Layout.fillWidth: true
+                    label: root.hasLiveVehicleLink() ? "QGC CONNECTED" : "CONNECT QGC TO SITL"
+                    tone: root.blue
+                    enabled: simulationController.running && !root.hasLiveVehicleLink()
+                    onClicked: root.connectSimulationLink()
+                }
+
+            Text {
+                Layout.fillWidth: true
+                visible: simulationController.lastError.length > 0
+                text: simulationController.lastError
+                color: root.err
+                font.pixelSize: 9
+                font.family: "monospace"
+                wrapMode: Text.Wrap
+                maximumLineCount: 3
+                elide: Text.ElideRight
+            }
         }
     }
 
@@ -352,7 +732,12 @@ Item {
                             id: cardHover
                             anchors.fill: parent
                             hoverEnabled: true
-                            onClicked: { if (modelData && modelData.createPlan) modelData.createPlan(editorMap.center) }
+                            onClicked: {
+                                if (modelData && modelData.createPlan) {
+                                    modelData.createPlan(editorMap.center)
+                                    Qt.callLater(root.fitPlanToMap)
+                                }
+                            }
                         }
                     }
                 }
@@ -383,10 +768,11 @@ Item {
                     Text { anchors.centerIn: parent; text: "OPEN..."; color: "#3b82f6"; font.pixelSize: 10; font.bold: true; font.family: ScreenTools.normalFontFamily }
                     MouseArea { anchors.fill: parent; onClicked: {
                         if (planMasterController.dirty) {
-                            mainWindow.showMessageDialog(qsTr("Open Plan"),
+                            confirmBriechAction(qsTr("Open Plan"),
                                 qsTr("You have unsaved/unsent changes. Loading a new Plan will lose these changes. Are you sure?"),
-                                Dialog.Yes | Dialog.Cancel,
-                                function() { planMasterController.loadFromSelectedFile() })
+                                function() {
+                                    planMasterController.loadFromSelectedFile()
+                                }, qsTr("OPEN PLAN"), root.warn)
                         } else {
                             planMasterController.loadFromSelectedFile()
                         }
@@ -444,6 +830,31 @@ Item {
             // ── VEHICLE ──────────────────────────────────────────
             Rectangle { Layout.fillWidth: true; height: 1; color: "#22252a" }
 
+            Rectangle {
+                Layout.fillWidth: true
+                height: 36
+                color: kmlImportMouse.containsMouse ? Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.16) : Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.07)
+                border.color: kmlImportMouse.containsMouse ? root.gold : Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.45)
+                border.width: 1
+                radius: 2
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "IMPORT KML WAYPOINTS..."
+                    color: kmlImportMouse.containsMouse ? root.gold : root.text
+                    font.pixelSize: 10
+                    font.bold: true
+                    font.family: "monospace"
+                }
+
+                MouseArea {
+                    id: kmlImportMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: kmlImportDialog.openForLoad()
+                }
+            }
+
             Text {
                 text: "VEHICLE"
                 color: root.gold
@@ -464,7 +875,7 @@ Item {
                     border.color: "#3b82f6"
                     radius: 3
                     Text { anchors.centerIn: parent; text: "UPLOAD"; color: "#3b82f6"; font.pixelSize: 10; font.bold: true; font.family: ScreenTools.normalFontFamily }
-                    MouseArea { anchors.fill: parent; onClicked: planMasterController.upload() }
+                    MouseArea { anchors.fill: parent; onClicked: root.uploadMission() }
                 }
 
                 Rectangle {
@@ -476,10 +887,11 @@ Item {
                     Text { anchors.centerIn: parent; text: "DOWNLOAD"; color: root.text; font.pixelSize: 10; font.bold: true; font.family: ScreenTools.normalFontFamily }
                     MouseArea { anchors.fill: parent; onClicked: {
                         if (planMasterController.dirty) {
-                            mainWindow.showMessageDialog(qsTr("Download"),
+                            confirmBriechAction(qsTr("Download"),
                                 qsTr("You have unsaved/unsent changes. Downloading from the Vehicle will lose these changes. Are you sure?"),
-                                Dialog.Yes | Dialog.Cancel,
-                                function() { planMasterController.loadFromVehicle() })
+                                function() {
+                                    planMasterController.loadFromVehicle()
+                                }, qsTr("DOWNLOAD"), root.warn)
                         } else {
                             planMasterController.loadFromVehicle()
                         }
@@ -494,15 +906,42 @@ Item {
                     radius: 3
                     Text { anchors.centerIn: parent; text: "CLEAR"; color: "#ef4444"; font.pixelSize: 10; font.bold: true; font.family: ScreenTools.normalFontFamily }
                     MouseArea { anchors.fill: parent; onClicked: {
-                        mainWindow.showMessageDialog(qsTr("Clear"),
+                        confirmBriechAction(qsTr("Clear Plan"),
                             qsTr("Are you sure you want to remove all the items from the plan editor?"),
-                            Dialog.Yes | Dialog.Cancel,
-                            function() { planMasterController.removeAll() })
+                            function() { planMasterController.removeAll() }, qsTr("CLEAR PLAN"), root.err)
                     }}
                 }
             }
 
             Item { Layout.fillHeight: true }
+        }
+    }
+
+    QGCFileDialog {
+        id: kmlImportDialog
+        folder: QGroundControl.settingsManager.appSettings.missionSavePath
+        title: qsTr("Import KML Waypoints")
+        nameFilters: ShapeFileHelper.fileDialogKMLFilters
+
+        onAcceptedForLoad: (file) => {
+            root.importKmlWaypointsFromFile(file)
+            close()
+        }
+    }
+
+    Connections {
+        target: root._planEditorController
+        ignoreUnknownSignals: true
+
+        function onKmlWaypointsImported(count) {
+            root.suggestSimulationHomeFromMission()
+            Qt.callLater(root.fitPlanToMap)
+            showBriechMessage(qsTr("KML Import Complete"),
+                qsTr("Imported %1 waypoint(s) into the mission plan.").arg(count), root.ok)
+        }
+
+        function onKmlWaypointImportFailed(errorMessage) {
+            showBriechMessage(qsTr("KML Import Failed"), errorMessage, root.err)
         }
     }
 
@@ -525,7 +964,12 @@ Item {
 
         onZoomLevelChanged: QGroundControl.flightMapZoom = editorMap.zoomLevel
         onCenterChanged: QGroundControl.flightMapPosition = editorMap.center
-        onMapReadyChanged: root.syncEditorMapFromSharedState()
+        onMapReadyChanged: {
+            root.syncEditorMapFromSharedState()
+            if (root.fitPending || root._missionController.containsItems) {
+                Qt.callLater(root.fitPlanToMap)
+            }
+        }
         onMapClicked: (mouse) => root.handleMapClick(mouse)
 
         // Mission visuals
@@ -535,7 +979,7 @@ Item {
                 map: editorMap
                 opacity: root._editingLayer == root._layerMission ? 1 : 0.5
                 interactive: root._editingLayer == root._layerMission
-                vehicle: planMasterController.controllerVehicle
+                vehicle: root._planMasterController.controllerVehicle
                 onClicked: { root._missionController.setCurrentPlanViewSeqNum(sequenceNumber, false) }
             }
         }
@@ -624,6 +1068,32 @@ Item {
         }
     }
 
+    Connections {
+        target: root._missionController
+        ignoreUnknownSignals: true
+
+        function onContainsItemsChanged() {
+            if (root._missionController.containsItems) {
+                Qt.callLater(root.fitPlanToMap)
+            }
+        }
+
+        function onNewItemsFromVehicle() {
+            Qt.callLater(root.fitPlanToMap)
+        }
+    }
+
+    Connections {
+        target: root._missionController.visualItems
+        ignoreUnknownSignals: true
+
+        function onCountChanged() {
+            if (root._missionController.containsItems) {
+                Qt.callLater(root.fitPlanToMap)
+            }
+        }
+    }
+
     // Right panel (reuses existing PlanViewRightPanel)
     PlanViewRightPanel {
         id: rightPanel
@@ -631,23 +1101,48 @@ Item {
         anchors.right: parent.right
         anchors.bottom: bottomBar.top
         width: Math.min(root.width * 0.3, ScreenTools.defaultFontPixelWidth * 30)
-        planMasterController: planMasterController
+        planMasterController: root._planMasterController
         editorMap: editorMap
     }
 
     // Bottom summary bar
     Rectangle {
         id: bottomBar
-        height: 48
+        height: 86
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         color: "#050509"
         border.color: "#1b1f23"
 
+        TerrainProfile {
+            id: modernTerrainProfile
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 8
+            height: 40
+            visibleWidth: width
+            missionController: root._missionController
+            opacity: 0.85
+        }
+
+        Text {
+            anchors.left: parent.left
+            anchors.top: modernTerrainProfile.bottom
+            anchors.leftMargin: 12
+            anchors.topMargin: 4
+            text: "ELEVATION PROFILE"
+            color: root.gold
+            font.pixelSize: 8
+            font.bold: true
+            font.family: "monospace"
+        }
+
         RowLayout {
             anchors.fill: parent
             anchors.margins: 12
+            anchors.topMargin: 58
             spacing: 18
 
             Text { text: "ALT DIFF: " + root.missionAltitudeDifferenceText(); color: root.dim; font.pixelSize: 12 }
@@ -670,6 +1165,41 @@ Item {
         Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
 
         Column { anchors.centerIn: parent; spacing: 2; Text { text: "IAS"; color: root.dim; font.pixelSize: 10 } Text { text: QGroundControl.multiVehicleManager.activeVehicle ? ("BRCH-" + QGroundControl.multiVehicleManager.activeVehicle.id) : "--"; color: root.gold; font.bold: true } }
+    }
+
+    component ModernSettingsAction: Rectangle {
+        id: settingsAction
+        signal clicked()
+        property string label: ""
+        property color tone: root.gold
+        property bool hovered: false
+
+        Layout.preferredHeight: 30
+        opacity: 1.0
+        color: hovered && enabled ? Qt.rgba(tone.r, tone.g, tone.b, 0.16) : "#111925"
+        border.color: enabled ? (hovered ? tone : Qt.rgba(tone.r, tone.g, tone.b, 0.58)) : "#344154"
+        border.width: 1
+        radius: 2
+
+        Text {
+            anchors.centerIn: parent
+            text: settingsAction.label
+            color: settingsAction.enabled ? settingsAction.tone : "#7f8da0"
+            font.pixelSize: 10
+            font.bold: true
+            font.letterSpacing: 1
+            font.family: "monospace"
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            enabled: settingsAction.enabled
+            hoverEnabled: true
+            cursorShape: settingsAction.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+            onEntered: settingsAction.hovered = true
+            onExited: settingsAction.hovered = false
+            onClicked: settingsAction.clicked()
+        }
     }
 
 }

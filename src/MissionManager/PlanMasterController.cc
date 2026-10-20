@@ -8,6 +8,7 @@
 #include "JsonHelper.h"
 #include "MissionManager.h"
 #include "KMLPlanDomDocument.h"
+#include "KMLHelper.h"
 #include "SurveyPlanCreator.h"
 #include "StructureScanPlanCreator.h"
 #include "CorridorScanPlanCreator.h"
@@ -128,6 +129,12 @@ void PlanMasterController::_activeVehicleChanged(Vehicle* activeVehicle)
         AppSettings* appSettings = SettingsManager::instance()->appSettings();
         appSettings->offlineEditingFirmwareClass()->setRawValue(QGCMAVLink::firmwareClass(_managerVehicle->firmwareType()));
         appSettings->offlineEditingVehicleClass()->setRawValue(QGCMAVLink::vehicleClass(_managerVehicle->vehicleType()));
+
+        // KML has no firmware/type metadata. If it was imported before the
+        // link came up, update the offline editor profile before upload.
+        if (!_flyView && _kmlWaypointPlan) {
+            _controllerVehicle->trackFirmwareVehicleTypeChanges();
+        }
 
         // We use these signals to sequence upload and download to the multiple controller/managers
         connect(_managerVehicle->missionManager(),      &MissionManager::newMissionItemsAvailable,  this, &PlanMasterController::_loadMissionComplete);
@@ -265,11 +272,11 @@ void PlanMasterController::_sendMissionComplete(void)
     if (_sendGeoFence) {
         _sendGeoFence = false;
         _sendRallyPoints = true;
-        if (_geoFenceController.supported()) {
+        if (_geoFenceController.supported() && _geoFenceController.containsItems()) {
             qCDebug(PlanMasterControllerLog) << "PlanMasterController::sendToVehicle start GeoFence sendToVehicle";
             _geoFenceController.sendToVehicle();
         } else {
-            qCDebug(PlanMasterControllerLog) << "PlanMasterController::sendToVehicle GeoFence not supported skipping";
+            qCDebug(PlanMasterControllerLog) << "PlanMasterController::sendToVehicle GeoFence empty or not supported, skipping";
             _sendGeoFenceComplete();
         }
         setDirty(false);
@@ -280,11 +287,11 @@ void PlanMasterController::_sendGeoFenceComplete(void)
 {
     if (_sendRallyPoints) {
         _sendRallyPoints = false;
-        if (_rallyPointController.supported()) {
+        if (_rallyPointController.supported() && _rallyPointController.containsItems()) {
             qCDebug(PlanMasterControllerLog) << "PlanMasterController::sendToVehicle start rally sendToVehicle";
             _rallyPointController.sendToVehicle();
         } else {
-            qCDebug(PlanMasterControllerLog) << "PlanMasterController::sendToVehicle Rally Points not support skipping";
+            qCDebug(PlanMasterControllerLog) << "PlanMasterController::sendToVehicle Rally Points empty or not supported, skipping";
             _sendRallyPointsComplete();
         }
     }
@@ -462,6 +469,38 @@ void PlanMasterController::saveToFile(const QString& filename)
     }
 }
 
+int PlanMasterController::importKmlWaypoints(const QString& filename, bool append)
+{
+    if (filename.isEmpty()) {
+        return -1;
+    }
+
+    QList<QGeoCoordinate> points;
+    QString errorMessage;
+    if (!KMLHelper::loadPointsFromFile(filename, points, errorMessage)) {
+        emit kmlWaypointImportFailed(errorMessage);
+        return -1;
+    }
+
+    if (!append) {
+        _missionController.removeAll();
+    }
+
+    _kmlWaypointPlan = true;
+    if (!_offline) {
+        _controllerVehicle->trackFirmwareVehicleTypeChanges();
+    }
+
+    for (const QGeoCoordinate& point : points) {
+        _missionController.insertSimpleMissionItem(point, -1, false);
+    }
+
+    setManualCreation(true);
+    _missionController.setCurrentPlanViewSeqNum(0, true);
+    emit kmlWaypointsImported(points.count());
+    return points.count();
+}
+
 void PlanMasterController::saveToKml(const QString& filename)
 {
     if (filename.isEmpty()) {
@@ -499,6 +538,7 @@ void PlanMasterController::removeAll(void)
         emit currentPlanFileChanged();
     }
     setManualCreation(false);
+    _kmlWaypointPlan = false;
 }
 
 void PlanMasterController::removeAllFromVehicle(void)

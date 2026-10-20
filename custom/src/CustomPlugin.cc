@@ -1,5 +1,9 @@
 #include "CustomPlugin.h"
 #include "BriechAirspaceManager.h"
+#include "BriechSimulationController.h"
+#include "BriechDetectionController.h"
+#include "BriechEnergyPredictor.h"
+#include "BriechSafetyMonitor.h"
 #include "QmlComponentInfo.h"
 #include "QGCLoggingCategory.h"
 #include "QGCPalette.h"
@@ -269,6 +273,10 @@ void CustomPlugin::paletteOverride(const QString &colorName, QGCPalette::Palette
 QQmlApplicationEngine* CustomPlugin::createQmlApplicationEngine(QObject* parent)
 {
     qmlRegisterType<BriechAirspaceManager>("Custom.Widgets", 1, 0, "BriechAirspaceManager");
+    qmlRegisterType<BriechSimulationController>("Custom.Widgets", 1, 0, "BriechSimulationController");
+    qmlRegisterType<BriechDetectionController>("Custom.Widgets", 1, 0, "BriechDetectionController");
+    qmlRegisterType<BriechEnergyPredictor>("Custom.Widgets", 1, 0, "BriechEnergyPredictor");
+    qmlRegisterType<BriechSafetyMonitor>("Custom.Widgets", 1, 0, "BriechSafetyMonitor");
 
     _qmlEngine = QGCCorePlugin::createQmlApplicationEngine(parent);
     _qmlEngine->addImportPath("qrc:/qml/Custom/Widgets");

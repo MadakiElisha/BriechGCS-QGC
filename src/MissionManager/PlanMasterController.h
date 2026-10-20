@@ -71,6 +71,10 @@ public:
     static void sendPlanToVehicle(Vehicle* vehicle, const QString& filename);
 
     Q_INVOKABLE void loadFromVehicle(void);
+    /// Imports KML Point placemarks as editable mission waypoints.
+    /// @param append false replaces mission items, true appends to the current mission
+    /// @return Number of imported waypoints, or -1 on failure
+    Q_INVOKABLE int importKmlWaypoints(const QString& filename, bool append = false);
     Q_INVOKABLE void sendToVehicle(void);
     Q_INVOKABLE void loadFromFile(const QString& filename);
 
@@ -125,6 +129,8 @@ signals:
     void planCreatorsChanged                (QmlObjectListModel* planCreators);
     void managerVehicleChanged              (Vehicle* managerVehicle);
     void promptForPlanUsageOnVehicleChange  (void);
+    void kmlWaypointsImported              (int count);
+    void kmlWaypointImportFailed           (const QString& errorMessage);
     void manualCreationChanged              ();
 
 private slots:
@@ -155,6 +161,8 @@ private:
     bool                    _loadRallyPoints =          false;
     bool                    _sendGeoFence =             false;
     bool                    _sendRallyPoints =          false;
+    // KML waypoint plans do not carry firmware or vehicle-type metadata.
+    bool                    _kmlWaypointPlan =           false;
     QString                 _currentPlanFile;
     bool                    _deleteWhenSendCompleted =  false;
     bool                    _previousOverallDirty =     false;

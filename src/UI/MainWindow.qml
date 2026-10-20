@@ -664,10 +664,11 @@ ApplicationWindow {
                             anchors.centerIn: parent
                             columns: 2
                             spacing: 2
-                            property bool act: tabRoot.active
+                            property bool act: parent.parent.parent.active
                             Repeater {
                                 model: 4
                                 Rectangle {
+                                    required property int modelData
                                     width:  3; height: 3
                                     color:  parent.act ? theme.yellow : theme.textDim
                                 }
@@ -685,10 +686,11 @@ ApplicationWindow {
                         Row {
                             anchors.centerIn: parent
                             spacing: 2
-                            property bool act: tabRoot.active
+                            property bool act: parent.parent.parent.active
                             Repeater {
                                 model: [10, 7, 13]
                                 Rectangle {
+                                    required property int modelData
                                     width:  3
                                     height: modelData
                                     anchors.bottom: parent ? parent.bottom : undefined

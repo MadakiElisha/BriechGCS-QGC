@@ -13,6 +13,7 @@ Item {
     property var map        ///< Map control to place item in
     property var vehicle    ///< Vehicle associated with this item
     property bool interactive: true    ///< Vehicle associated with this item
+    required property var object       ///< Visual mission item supplied by the Repeater model
 
     signal clicked(int sequenceNumber)
 

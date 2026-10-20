@@ -34,8 +34,23 @@ QDomDocument KMLHelper::_loadFile(const QString &kmlFile, QString &errorString)
         return QDomDocument();
     }
 
+    // Some mission planners write UTF-8 bytes with an incorrect utf-16 XML
+    // declaration. Qt follows that declaration and reports "Start tag
+    // expected" at line 1. Keep real UTF-16 files untouched, but normalize
+    // the declaration when the payload is clearly an un-BOM'ed UTF-8 file.
+    QByteArray data = file.readAll();
+    const bool hasUtf16Bom = data.startsWith("\xFF\xFE") || data.startsWith("\xFE\xFF");
+    if (!hasUtf16Bom) {
+        const QByteArray header = data.left(512).toLower();
+        const QByteArray utf16Encoding = "encoding=\"utf-16\"";
+        const qsizetype encodingIndex = header.indexOf(utf16Encoding);
+        if (encodingIndex >= 0) {
+            data.replace(encodingIndex, utf16Encoding.size(), "encoding=\"utf-8\"");
+        }
+    }
+
     QDomDocument doc;
-    const QDomDocument::ParseResult result = doc.setContent(&file, QDomDocument::ParseOption::Default);
+    const QDomDocument::ParseResult result = doc.setContent(data, QDomDocument::ParseOption::Default);
     if (!result) {
         errorString = QString(_errorPrefix).arg(QString(QT_TRANSLATE_NOOP("KML", "Unable to parse KML file: %1 error: %2 line: %3")).arg(kmlFile).arg(result.errorMessage).arg(result.errorLine));
         return QDomDocument();

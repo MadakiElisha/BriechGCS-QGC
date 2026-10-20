@@ -100,6 +100,14 @@ qt_add_qml_module(CustomModule
 set(CUSTOM_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/BriechAirspaceManager.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/BriechAirspaceManager.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/BriechSimulationController.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/BriechSimulationController.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/BriechDetectionController.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/BriechDetectionController.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/BriechEnergyPredictor.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/BriechEnergyPredictor.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/BriechSafetyMonitor.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/BriechSafetyMonitor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CustomPlugin.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CustomPlugin.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/AutoPilotPlugin/CustomAutoPilotPlugin.cc

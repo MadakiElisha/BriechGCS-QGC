@@ -19,6 +19,16 @@ install(
     BUNDLE  DESTINATION .
 )
 
+# Qt's deployment scanner does not always discover SerialPort when it is
+# linked indirectly through QGC's communications module. Ship it explicitly
+# on Windows so the application starts on systems without a Qt SDK installed.
+if(WIN32 AND TARGET Qt6::SerialPort)
+    install(
+        FILES "$<TARGET_FILE:Qt6::SerialPort>"
+        DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+endif()
+
 # ----------------------------------------------------------------------------
 # Qt Deployment Script Generation
 # ----------------------------------------------------------------------------
@@ -111,21 +121,28 @@ elseif(LINUX)
 # Windows Installation & Installer Creation
 # ----------------------------------------------------------------------------
 elseif(WIN32)
-    # Pass variables to Windows installer creation script
-    install(CODE "
-        set(CMAKE_PROJECT_NAME ${CMAKE_PROJECT_NAME})
-        set(CMAKE_PROJECT_VERSION ${CMAKE_PROJECT_VERSION})
-        set(QGC_ORG_NAME ${QGC_ORG_NAME})
-        set(QGC_WINDOWS_ICON_PATH \"${QGC_WINDOWS_ICON_PATH}\")
-        set(QGC_WINDOWS_INSTALL_HEADER_PATH \"${QGC_WINDOWS_INSTALL_HEADER_PATH}\")
-        if(CMAKE_CROSSCOMPILING)
-            set(QGC_WINDOWS_OUT \"${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}-installer-${CMAKE_HOST_SYSTEM_PROCESSOR}-${CMAKE_SYSTEM_PROCESSOR}.exe\")
-        else()
-            set(QGC_WINDOWS_OUT \"${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}-installer-${CMAKE_SYSTEM_PROCESSOR}.exe\")
-        endif()
-        set(QGC_WINDOWS_INSTALLER_SCRIPT \"${CMAKE_SOURCE_DIR}/deploy/windows/nullsoft_installer.nsi\")
-    ")
-    install(SCRIPT "${CMAKE_SOURCE_DIR}/cmake/install/CreateWinInstaller.cmake")
+    # CPack's WIX generator has its own MSI flow. Do not invoke the legacy
+    # NSIS hook while CPack is staging a WIX package.
+    if(NOT DEFINED QGC_USE_NSIS_INSTALLER)
+        set(QGC_USE_NSIS_INSTALLER ON)
+    endif()
+    if(QGC_USE_NSIS_INSTALLER)
+        # Pass variables to Windows installer creation script
+        install(CODE "
+            set(CMAKE_PROJECT_NAME ${CMAKE_PROJECT_NAME})
+            set(CMAKE_PROJECT_VERSION ${CMAKE_PROJECT_VERSION})
+            set(QGC_ORG_NAME ${QGC_ORG_NAME})
+            set(QGC_WINDOWS_ICON_PATH \"${QGC_WINDOWS_ICON_PATH}\")
+            set(QGC_WINDOWS_INSTALL_HEADER_PATH \"${QGC_WINDOWS_INSTALL_HEADER_PATH}\")
+            if(CMAKE_CROSSCOMPILING)
+                set(QGC_WINDOWS_OUT \"${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}-installer-${CMAKE_HOST_SYSTEM_PROCESSOR}-${CMAKE_SYSTEM_PROCESSOR}.exe\")
+            else()
+                set(QGC_WINDOWS_OUT \"${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}-installer-${CMAKE_SYSTEM_PROCESSOR}.exe\")
+            endif()
+            set(QGC_WINDOWS_INSTALLER_SCRIPT \"${CMAKE_SOURCE_DIR}/deploy/windows/nullsoft_installer.nsi\")
+        ")
+        install(SCRIPT "${CMAKE_SOURCE_DIR}/cmake/install/CreateWinInstaller.cmake")
+    endif()
 
 # ----------------------------------------------------------------------------
 # macOS Installation, Code Signing & DMG Creation

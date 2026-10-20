@@ -4,12 +4,15 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import Qt5Compat.GraphicalEffects
+import QtLocation
 import QtPositioning
 
 import QGroundControl
 import QGroundControl.Controls
 import QGroundControl.FlightMap
 import QGroundControl.FlyView
+// Retained for the legacy, dormant full-screen Viewer3D component below.
+// The Briech payload simulation does not instantiate it.
 import QGroundControl.Viewer3D
 import Custom.Widgets 1.0
 
@@ -20,6 +23,10 @@ Item {
 
     property var activeVehicle: QGroundControl.multiVehicleManager.activeVehicle
     property var _planMasterController: modernPlanController
+    // Mission editing has an independent, persistent controller. This keeps
+    // unsent/imported work separate from the Fly controller lifecycle.
+    property var _planEditorController: modernPlanEditorController
+    property var _simulationController: rootSimulationController
     property var _missionController: modernPlanController.missionController
     property var _visualItems: _missionController.visualItems
     property color gold: BriechTheme.goldAccent
@@ -73,6 +80,7 @@ Item {
     property string payloadVideoMode: "EO"
     property int payloadZoomIndex: 0
     property real payloadZoomLevel: 1
+    property int detectionLockedTrackId: -1
     property real batteryPercent: NaN
     property real riskPulse: 0
     property string pendingVehicleAction: ""
@@ -96,7 +104,49 @@ Item {
         { label: "VEHICLE", key: "vehicle", icon: "/qmlimages/Gears.svg" }
     ]
     property var missionCoordinates: []
+    property var modernMapCursorCoordinate: QtPositioning.coordinate()
     property bool missionTimelineInspectionMode: false
+    property bool simulationFlyPanelOpen: false
+    property bool safetyPanelOpen: false
+    property bool followActiveFlight: false
+    property bool demoFlightActive: false
+    property string demoFlightPhase: ""
+    property int demoFlightRouteIndex: 0
+    property real demoFlightTakeoffAltitude: 0
+    property bool demoFlightTargetDispatched: false
+    property bool demoFlightTakeoffDispatched: false
+    property double demoFlightPhaseStartedAt: 0
+    // A KML plan belongs to the persistent Plan editor. Keep its launch
+    // sequence separate from the generic command-pending state so a mission
+    // cannot be started until its upload, arm and takeoff phases are each
+    // confirmed by SITL telemetry.
+    property string sitlMissionLaunchPhase: ""
+    property double sitlMissionLaunchPhaseStartedAt: 0
+    property real sitlMissionLaunchAltitude: 0
+    property var sitlMissionLaunchRoute: []
+    // ArduCopter may still be completing Guided takeoff when it first reports
+    // the requested altitude. Keep the AUTO hand-off local to SITL, deliberate
+    // and observable instead of requiring the legacy Fly view's Continue action.
+    property double sitlMissionGuidedStableSince: 0
+    property int sitlMissionAutoAttempts: 0
+    property bool sitlBatteryConfigured: false
+    property var demoFlightRoute: []
+    property var demoFlightTrail: []
+    property bool stationReadyPanelOpen: true
+    property string simulationHome: "42.3898,-71.1476,14.0,270.0"
+    property string simulationSpeedup: "1"
+
+    BriechDialog {
+        id: briechDialog
+    }
+
+    function showBriechMessage(title, message, tone) {
+        briechDialog.showInfo(title, message, tone || root.gold)
+    }
+
+    function confirmBriechAction(title, message, action, confirmLabel, tone) {
+        briechDialog.showConfirmation(title, message, action, confirmLabel || qsTr("CONFIRM"), tone || root.gold)
+    }
 
     PlanMasterController {
         id: modernPlanController
@@ -413,13 +463,62 @@ Item {
         return isNaN(estimate) ? "--" : Math.round(estimate) + "%"
     }
 
+    function energyCoordinateMap(coordinate) {
+        if (!coordinate || !coordinate.isValid) {
+            return {}
+        }
+        return { latitude: Number(coordinate.latitude), longitude: Number(coordinate.longitude) }
+    }
+
+    function refreshEnergyPrediction() {
+        if (!activeVehicle || !missionTimelineAvailable()) {
+            rootEnergyPredictor.clear()
+            return
+        }
+        const current = energyCoordinateMap(activeVehicle.coordinate)
+        const home = energyCoordinateMap(activeVehicle.homePosition)
+        if (Object.keys(current).length === 0 || Object.keys(home).length === 0) {
+            rootEnergyPredictor.clear()
+            return
+        }
+        const waypoints = []
+        for (let i = 0; i < missionCoordinates.length; i++) {
+            const waypoint = energyCoordinateMap(missionCoordinateAt(i))
+            if (Object.keys(waypoint).length > 0) {
+                waypoints.push(waypoint)
+            }
+        }
+        const first = batteryHistory.length > 0 ? Number(batteryHistory[0]) : NaN
+        const last = batteryHistory.length > 0 ? Number(batteryHistory[batteryHistory.length - 1]) : NaN
+        const used = !isNaN(first) && !isNaN(last) ? first - last : NaN
+        const flown = activeVehicle.flightDistance ? Number(activeVehicle.flightDistance.rawValue) : NaN
+        const speed = numericFactValue(activeVehicle.groundSpeed, NaN)
+        rootEnergyPredictor.recompute(waypoints, current, home, currentBatteryPercent(), used, flown, speed)
+    }
+
+    function energyPercentText(value) {
+        return isNaN(Number(value)) ? "--" : Math.round(Number(value)) + "%"
+    }
+
     function vehicleHasHealthChecks() {
         return !!activeVehicle && !!activeVehicle.healthAndArmingCheckReport && activeVehicle.healthAndArmingCheckReport.supported
+    }
+
+    function hasLiveVehicleLink() {
+        return !!activeVehicle
+            && !!activeVehicle.vehicleLinkManager
+            && !activeVehicle.vehicleLinkManager.communicationLost
     }
 
     function guidedActionsEnabled() {
         if (!activeVehicle) {
             return false
+        }
+        // ArduPilot SITL does not provide a physical RC receiver. Keep the
+        // normal RC safety gate for real vehicles, but allow the dedicated
+        // local simulator controls to operate without an RC RSSI value.
+        if (_simulationController && _simulationController.running) {
+            return true
         }
         const options = QGroundControl.corePlugin.options
         if (ScreenTools.isDebug || !options.guidedActionsRequireRCRSSI) {
@@ -431,6 +530,9 @@ Item {
     function checklistPassed() {
         if (!activeVehicle) {
             return false
+        }
+        if (_simulationController && _simulationController.running) {
+            return true
         }
         const appSettings = QGroundControl.settingsManager.appSettings
         const checklistAvailable = appSettings.useChecklist.rawValue
@@ -444,13 +546,21 @@ Item {
     function healthAllowsArm() {
         return !!activeVehicle
             && checklistPassed()
-            && (!activeVehicle.healthAndArmingCheckReport.supported || activeVehicle.healthAndArmingCheckReport.canArm)
+            && ((_simulationController && _simulationController.running)
+                || !activeVehicle.healthAndArmingCheckReport.supported
+                || activeVehicle.healthAndArmingCheckReport.canArm)
     }
 
     function healthAllowsTakeoff() {
         return !!activeVehicle
-            && checklistPassed()
-            && (!activeVehicle.healthAndArmingCheckReport.supported || activeVehicle.healthAndArmingCheckReport.canTakeoff)
+            // Once the vehicle is armed, let the flight stack validate the
+            // takeoff command itself. SITL can report canTakeoff=false while
+            // armed and ready, which previously left the control disabled.
+            && (activeVehicle.armed
+                || ((_simulationController && _simulationController.running)
+                    && checklistPassed()
+                    && (!activeVehicle.healthAndArmingCheckReport.supported
+                        || activeVehicle.healthAndArmingCheckReport.canTakeoff)))
     }
 
     function vehicleCanArm() {
@@ -597,6 +707,40 @@ Item {
 
     function flightTimeText() {
         return activeVehicle && activeVehicle.flightTime ? activeVehicle.flightTime.valueString : "--"
+    }
+
+    function requestDetectionTrack(detection) {
+        if (detectionLockedTrackId >= 0 && detectionLockedTrackId !== Number(detection.trackId)) {
+            pushToast(qsTr("Tracking"), qsTr("Break the current tracking lock before selecting another contact."), "warn", 2800)
+            return
+        }
+        if (!activeVehicle || !activeVehicle.gimbalController || !activeVehicle.gimbalController.activeGimbal) {
+            pushToast(qsTr("Tracking"), qsTr("No active gimbal is available on the vehicle."), "warn", 3200)
+            return
+        }
+
+        const trackId = Number(detection.trackId)
+        const pan = (Number(detection.x) + Number(detection.width) * 0.5) * 2 - 1
+        const tilt = -((Number(detection.y) + Number(detection.height) * 0.5) * 2 - 1)
+        confirmBriechAction(qsTr("Lock Contact %1").arg(trackId),
+                             qsTr("Point the active gimbal at %1 (%2%% confidence)?").arg(detection.className).arg(Math.round(Number(detection.confidence) * 100)),
+                             function() {
+                                         if (!activeVehicle || !activeVehicle.gimbalController || !activeVehicle.gimbalController.activeGimbal) {
+                                             pushToast(qsTr("Tracking"), qsTr("Gimbal became unavailable before lock."), "warn", 3200)
+                                             return
+                                         }
+                                         activeVehicle.gimbalController.gimbalOnScreenControl(pan, tilt, true, false, false)
+                                         detectionLockedTrackId = trackId
+                                         pushToast(qsTr("Tracking Lock"), qsTr("Track %1 locked. Break lock before selecting another contact.").arg(trackId), "ok", 3200)
+                             }, qsTr("LOCK TRACK"), root.gold)
+    }
+
+    function breakDetectionTrack() {
+        if (detectionLockedTrackId < 0) {
+            return
+        }
+        detectionLockedTrackId = -1
+        pushToast(qsTr("Tracking Lock"), qsTr("Operator tracking lock released."), "info", 2200)
     }
 
     function flightDistanceText() {
@@ -1013,6 +1157,51 @@ Item {
         return isNaN(value) ? "--" : value + "%"
     }
 
+    function refreshSafetyAssessment() {
+        if (!activeVehicle) {
+            rootSafetyMonitor.evaluate({ connected: false })
+            return
+        }
+
+        const gps = activeVehicle.gps
+        const health = activeVehicle.healthAndArmingCheckReport
+        rootSafetyMonitor.evaluate({
+            connected: true,
+            messagesReceived: Number(activeVehicle.messagesReceived || 0),
+            linkQuality: linkQualityValue(),
+            gpsLock: gps && gps.lock ? Number(gps.lock.rawValue) : 0,
+            satellites: gps && gps.count ? Number(gps.count.rawValue) : 0,
+            hdop: gps && gps.hdop ? Number(gps.hdop.rawValue) : -1,
+            batteryPercent: currentBatteryPercent(),
+            homeLowerPercent: Number(rootEnergyPredictor.homeLowerPercent),
+            homeValid: !!activeVehicle.homePosition && activeVehicle.homePosition.isValid,
+            armed: !!activeVehicle.armed,
+            healthSupported: !!health && health.supported,
+            healthProblems: readinessProblemCount(),
+            canArm: !health || !health.supported || health.canArm,
+            signedLink: !!activeVehicle.mavlinkSigning,
+            simulation: !!root._simulationController && root._simulationController.running
+        })
+    }
+
+    function safetyTone(state) {
+        switch (String(state || "UNKNOWN")) {
+        case "READY": return root.ok
+        case "CAUTION": return root.warn
+        case "UNSAFE": return root.err
+        default: return root.dim
+        }
+    }
+
+    function safetyFindingTone(severity) {
+        switch (String(severity || "info")) {
+        case "ok": return root.ok
+        case "warning": return root.warn
+        case "critical": return root.err
+        default: return root.blue
+        }
+    }
+
     function missionDescriptorText() {
         if (activeVehicle) {
             return qsTr("BRCH-%1 / %2").arg(activeVehicle.id).arg(activeVehicle.coordinate.isValid ? qsTr("Live Session") : qsTr("Link Pending"))
@@ -1192,6 +1381,19 @@ Item {
             && !(activeVehicle.fixedWing && activeVehicle.landing)
     }
 
+    // Mirrors the legacy Fly view: an uploaded mission is available, the
+    // vehicle is already airborne, and it has not yet entered AUTO.
+    function vehicleCanContinueMission() {
+        return !!activeVehicle
+            && guidedActionsEnabled()
+            && activeVehicle.armed
+            && activeVehicle.flying
+            && !!_missionController
+            && _missionController.containsItems
+            && activeVehicle.flightMode !== activeVehicle.missionFlightMode
+            && _missionController.currentMissionIndex < _missionController.missionItemCount - 1
+    }
+
     function telemetryModel() {
         return [
             { k: "ALT", v: altitudeText(), u: "m" },
@@ -1276,6 +1478,7 @@ Item {
             altitudeHistory = []
             batteryHistory = []
             batteryPercent = NaN
+            rootEnergyPredictor.clear()
             return
         }
 
@@ -1289,6 +1492,7 @@ Item {
             batteryHistory = appendSample(batteryHistory, battery, 40)
         }
         batteryPercent = battery
+        root.refreshEnergyPrediction()
     }
 
     function pushToast(title, message, tone, durationMs) {
@@ -2074,8 +2278,125 @@ Item {
         id: planViewComponent
         PlanViewModern {
             anchors.fill: parent
+            planMasterController: root._planEditorController
+            simulationController: root._simulationController
+            onSimulationHomeSuggested: function(home) {
+                root.simulationHome = home
+                if (root._simulationController.running) {
+                    root.pushToast("Simulation home updated", "Stop and restart SITL to apply the imported mission location.", "warn", 4200)
+                }
+            }
             onExitRequested: root.activateModernSection("fly")
         }
+    }
+
+    // Session-level SITL service. This must outlive the Plan view so the
+    // simulated vehicle remains available when the operator switches to Fly.
+    BriechSimulationController {
+        id: rootSimulationController
+    }
+
+    BriechDetectionController {
+        id: rootDetectionController
+    }
+
+    BriechEnergyPredictor {
+        id: rootEnergyPredictor
+    }
+
+    BriechSafetyMonitor {
+        id: rootSafetyMonitor
+    }
+
+    function connectSimulationLink() {
+        const linkName = "Briech SITL TCP"
+        const configurations = QGroundControl.linkManager.linkConfigurations
+        for (let index = 0; index < configurations.count; index++) {
+            const configuration = configurations.get(index)
+            if (configuration && configuration.name === linkName) {
+                // LinkManager does not deduplicate createConnectedLink calls.
+                // A previous attempt which is still connecting owns the link;
+                // a failed/disconnected attempt clears this property, allowing
+                // the retry timer below to make a fresh connection.
+                if (configuration.link) {
+                    return
+                }
+                QGroundControl.linkManager.createConnectedLink(configuration)
+                return
+            }
+        }
+
+        const configuration = QGroundControl.linkManager.createConfiguration(LinkConfiguration.TypeTcp, linkName)
+        configuration.host = "127.0.0.1"
+        configuration.port = 5760
+        configuration.dynamic = true
+        QGroundControl.linkManager.createConnectedLink(configuration)
+    }
+
+    Connections {
+        target: root._simulationController
+        ignoreUnknownSignals: true
+
+        function onRunningChanged() {
+            if (root._simulationController.running) {
+                simulationAutoConnectTimer.restart()
+            }
+        }
+    }
+
+    Timer {
+        id: simulationAutoConnectTimer
+        // Docker reports a container as running before ArduPilot starts its
+        // MAVLink TCP listener. Give it a brief head start, then keep trying
+        // safely until a vehicle heartbeat is received.
+        interval: 1800
+        repeat: false
+        onTriggered: root.connectSimulationLink()
+    }
+
+    Timer {
+        id: simulationLinkRetryTimer
+        interval: 2500
+        repeat: true
+        running: !!root._simulationController
+            && root._simulationController.running
+            && !root.hasLiveVehicleLink()
+        onTriggered: root.connectSimulationLink()
+    }
+
+    Timer {
+        id: sitlBatteryConfigTimer
+        interval: 2000
+        repeat: true
+        running: root._simulationController.running && !root.sitlBatteryConfigured
+        onTriggered: root.configureLocalSITLBattery()
+    }
+
+    Timer {
+        id: demoFlightTimer
+        interval: 500
+        repeat: true
+        running: false
+        onTriggered: root.advanceSITLDemoFlight()
+    }
+
+    Timer {
+        id: sitlMissionLaunchTimer
+        interval: 250
+        repeat: true
+        running: root.sitlMissionLaunchPhase === "upload"
+            || root.sitlMissionLaunchPhase === "arming"
+            || root.sitlMissionLaunchPhase === "takeoff"
+            || root.sitlMissionLaunchPhase === "settling"
+            || root.sitlMissionLaunchPhase === "auto"
+        onTriggered: root.advanceSITLMissionLaunch()
+    }
+
+    PlanMasterController {
+        id: modernPlanEditorController
+        flyView: false
+
+        Component.onCompleted: modernPlanEditorController.start()
     }
 
     Component {
@@ -3398,6 +3719,383 @@ Item {
         }
     }
 
+    function editorMissionCoordinates() {
+        const controller = _planEditorController ? _planEditorController.missionController : null
+        const items = controller ? controller.visualItems : null
+        const coordinates = []
+        for (let index = 0; items && index < items.count; index++) {
+            const item = items.get(index)
+            if (isTimelineMissionItem(item)) {
+                coordinates.push(item.coordinate)
+            }
+        }
+        return coordinates
+    }
+
+    function sitlHomeFromRoute(route) {
+        if (!route || route.length === 0 || !route[0] || !route[0].isValid) {
+            return simulationHome
+        }
+        const origin = route[0]
+        return origin.latitude.toFixed(7) + "," + origin.longitude.toFixed(7) + ","
+            + Math.max(0, Number(origin.altitude) || 0).toFixed(2) + ",270.0"
+    }
+
+    function startSITLForCurrentPlan() {
+        if (_simulationController.running || _simulationController.busy) {
+            return
+        }
+        // Resolve the home at launch time, not only when the KML import event
+        // happened. This prevents a default Boston SITL from being started
+        // after a Kuje (or any other) route has been imported.
+        const route = editorMissionCoordinates()
+        const home = sitlHomeFromRoute(route)
+        simulationHome = home
+        _simulationController.startArduCopter(home, Number(simulationSpeedup), false)
+        if (route.length > 0) {
+            pushToast(qsTr("SITL"), qsTr("Starting at the first mission waypoint."), "info", 2600)
+        }
+    }
+
+    function finishSITLMissionLaunch(message, tone) {
+        sitlMissionLaunchTimer.stop()
+        sitlMissionLaunchPhase = ""
+        sitlMissionLaunchPhaseStartedAt = 0
+        sitlMissionLaunchRoute = []
+        sitlMissionGuidedStableSince = 0
+        sitlMissionAutoAttempts = 0
+        if (message && message.length > 0) {
+            pushToast(qsTr("SITL Mission"), message, tone || "info", 3800)
+        }
+    }
+
+    function requestSITLAutoMissionStart() {
+        if (sitlMissionLaunchPhase !== "auto" || !activeVehicleIsBriechSITL()) {
+            return
+        }
+        sitlMissionAutoAttempts += 1
+        activeVehicle.startMission()
+        if (sitlMissionAutoAttempts === 1) {
+            pushToast(qsTr("SITL Mission"), qsTr("Guided takeoff stabilized. AUTO mission start sent."), "info", 3000)
+        } else {
+            pushToast(qsTr("SITL Mission"), qsTr("AUTO confirmation delayed; retrying mission start (%1/3).").arg(sitlMissionAutoAttempts), "warn", 3000)
+        }
+    }
+
+    function beginSITLMissionTakeoff() {
+        if (!activeVehicle || !activeVehicle.armed) {
+            finishSITLMissionLaunch(qsTr("SITL did not confirm arming. Review the vehicle messages before retrying."), "warn")
+            return
+        }
+        sitlMissionLaunchPhase = "takeoff"
+        sitlMissionLaunchPhaseStartedAt = Date.now()
+        sitlMissionLaunchAltitude = Math.max(Number(activeVehicle.minimumTakeoffAltitudeMeters()), 12)
+        if (activeVehicle.guidedTakeoffSupported) {
+            activeVehicle.guidedModeTakeoff(sitlMissionLaunchAltitude)
+        } else {
+            activeVehicle.startTakeoff()
+        }
+        pushToast(qsTr("SITL Mission"), qsTr("Mission uploaded. Guided takeoff sent; waiting for flight altitude."), "info", 3200)
+    }
+
+    function advanceSITLMissionLaunch() {
+        if (!activeVehicleIsBriechSITL()) {
+            finishSITLMissionLaunch(qsTr("Launch stopped because the local SITL link is no longer active."), "warn")
+            return
+        }
+        const elapsed = Date.now() - sitlMissionLaunchPhaseStartedAt
+        if (sitlMissionLaunchPhase === "upload") {
+            if (elapsed >= 30000) {
+                finishSITLMissionLaunch(qsTr("Mission upload timed out. Review the vehicle messages before retrying."), "warn")
+            }
+            return
+        }
+        if (sitlMissionLaunchPhase === "arming") {
+            if (activeVehicle.armed) {
+                beginSITLMissionTakeoff()
+            } else if (elapsed >= 20000) {
+                finishSITLMissionLaunch(qsTr("SITL did not confirm arming. Review the vehicle messages before retrying."), "warn")
+            }
+            return
+        }
+        if (sitlMissionLaunchPhase === "takeoff") {
+            if (!activeVehicle.flying || !activeVehicle.coordinate.isValid
+                    || Number(activeVehicle.altitudeRelative.value) < sitlMissionLaunchAltitude - 1.5) {
+                if (elapsed >= 30000) {
+                    finishSITLMissionLaunch(qsTr("SITL did not reach mission takeoff altitude. Review the vehicle messages."), "warn")
+                }
+                return
+            }
+            sitlMissionLaunchPhase = "settling"
+            sitlMissionLaunchPhaseStartedAt = Date.now()
+            sitlMissionGuidedStableSince = 0
+            pushToast(qsTr("SITL Mission"), qsTr("Takeoff altitude confirmed. Stabilizing Guided flight before AUTO."), "info", 2600)
+            return
+        }
+        if (sitlMissionLaunchPhase === "settling") {
+            const atTakeoffAltitude = activeVehicle.flying && activeVehicle.coordinate.isValid
+                && Number(activeVehicle.altitudeRelative.value) >= sitlMissionLaunchAltitude - 1.5
+            // For ArduCopter, gotoFlightMode is the QML-exposed Guided mode.
+            const stillGuided = activeVehicle.flightMode === activeVehicle.gotoFlightMode
+            if (!atTakeoffAltitude || !stillGuided) {
+                sitlMissionGuidedStableSince = 0
+                if (elapsed >= 30000) {
+                    finishSITLMissionLaunch(qsTr("SITL did not stabilize in Guided mode before AUTO. Review vehicle messages."), "warn")
+                }
+                return
+            }
+            if (sitlMissionGuidedStableSince === 0) {
+                sitlMissionGuidedStableSince = Date.now()
+                return
+            }
+            if (Date.now() - sitlMissionGuidedStableSince < 1500) {
+                return
+            }
+            sitlMissionLaunchPhase = "auto"
+            sitlMissionLaunchPhaseStartedAt = Date.now()
+            sitlMissionAutoAttempts = 0
+            requestSITLAutoMissionStart()
+            return
+        }
+        if (sitlMissionLaunchPhase === "auto") {
+            if (activeVehicle.flightMode === activeVehicle.missionFlightMode) {
+                followActiveFlight = true
+                showLiveFlight()
+                finishSITLMissionLaunch(qsTr("AUTO confirmed. Vehicle is now following the uploaded mission."), "ok")
+            } else if (sitlMissionAutoAttempts < 3 && elapsed >= sitlMissionAutoAttempts * 2500) {
+                requestSITLAutoMissionStart()
+            } else if (elapsed >= 15000) {
+                finishSITLMissionLaunch(qsTr("SITL did not confirm AUTO after three requests. Review vehicle messages, then retry UPLOAD + AUTO from Briech Modern."), "warn")
+            }
+        }
+    }
+
+    function startSimulationMission() {
+        if (sitlMissionLaunchPhase !== "") {
+            return
+        }
+        if (!activeVehicleIsBriechSITL()) {
+            showBriechMessage(qsTr("SITL Mission Only"), qsTr("Connect the local Briech SITL vehicle before launching a simulated KML mission."), root.warn)
+            return
+        }
+        if (pendingVehicleAction !== "") {
+            pushToast(qsTr("SITL Mission"), qsTr("Wait for the current vehicle command to complete."), "warn", 2600)
+            return
+        }
+
+        const route = editorMissionCoordinates()
+        if (route.length < 2) {
+            showBriechMessage(qsTr("Mission Required"), qsTr("Import at least two KML waypoints in Plan before launching a SITL mission."), root.warn)
+            return
+        }
+        if (!activeVehicle.coordinate || !activeVehicle.coordinate.isValid
+                || activeVehicle.coordinate.distanceTo(route[0]) > 250) {
+            showBriechMessage(qsTr("Restart SITL Required"),
+                qsTr("The active SITL vehicle is not near the imported mission home. Stop SITL, then start it again from Plan so it uses the first KML waypoint as home."), root.warn)
+            return
+        }
+
+        let largestAltitudeStep = 0
+        for (let index = 1; index < route.length; index++) {
+            largestAltitudeStep = Math.max(largestAltitudeStep,
+                                           Math.abs(Number(route[index].altitude) - Number(route[index - 1].altitude)))
+        }
+        if (largestAltitudeStep > 150) {
+            confirmBriechAction(qsTr("Altitude Check"),
+                qsTr("This route contains a %1 m altitude step. Confirm that the KML altitudes are intentional before launch.")
+                    .arg(largestAltitudeStep.toFixed(1)),
+                function() { root.uploadAndLaunchSITLMission(route) }, qsTr("LAUNCH SITL"), root.warn)
+            return
+        }
+        uploadAndLaunchSITLMission(route)
+    }
+
+    function uploadAndLaunchSITLMission(route) {
+        const controller = _planEditorController ? _planEditorController.missionController : null
+        if (!controller || controller.syncInProgress) {
+            pushToast(qsTr("SITL Mission"), qsTr("Mission synchronization is in progress; wait for it to finish."), "warn", 3200)
+            return
+        }
+        if (controller.readyForSaveState() === VisualMissionItem.NotReadyForSaveData) {
+            showBriechMessage(qsTr("Unable to Launch"), qsTr("Complete all mission items before uploading the route."), root.warn)
+            return
+        }
+        if (controller.sendToVehiclePreCheck() !== MissionController.SendToVehiclePreCheckStateOk) {
+            showBriechMessage(qsTr("Unable to Upload"), qsTr("The mission cannot be uploaded while the vehicle is disconnected, incompatible, or already executing a mission."), root.warn)
+            return
+        }
+
+        sitlMissionLaunchRoute = route
+        sitlMissionLaunchPhase = "upload"
+        sitlMissionLaunchPhaseStartedAt = Date.now()
+        _planEditorController.sendToVehicle()
+        pushToast(qsTr("SITL Mission"), qsTr("Uploading %1 route waypoints to SITL.").arg(route.length), "info", 3200)
+    }
+
+    function handleSITLMissionUploadComplete(error) {
+        if (sitlMissionLaunchPhase !== "upload") {
+            return
+        }
+        if (error) {
+            finishSITLMissionLaunch(qsTr("Mission upload failed. Review the vehicle messages before retrying."), "warn")
+            return
+        }
+        if (!activeVehicleIsBriechSITL()) {
+            finishSITLMissionLaunch(qsTr("Mission uploaded, but the SITL link is no longer active."), "warn")
+            return
+        }
+        sitlMissionLaunchPhase = "arming"
+        sitlMissionLaunchPhaseStartedAt = Date.now()
+        if (activeVehicle.armed) {
+            beginSITLMissionTakeoff()
+        } else if (vehicleCanArm()) {
+            activeVehicle.armed = true
+            pushToast(qsTr("SITL Mission"), qsTr("Mission uploaded. Arm command sent; awaiting confirmation."), "info", 3000)
+        } else {
+            finishSITLMissionLaunch(qsTr("Mission uploaded, but SITL is not ready to arm. Review preflight messages."), "warn")
+        }
+    }
+
+    function activeVehicleIsBriechSITL() {
+        if (!root._simulationController.running || !hasLiveVehicleLink()) {
+            return false
+        }
+        const linkNames = activeVehicle.vehicleLinkManager.linkNames
+        return linkNames && linkNames.indexOf("Briech SITL TCP") !== -1
+    }
+
+    function configureLocalSITLBattery() {
+        // The Docker copter model has no simulated battery sensor. Disable
+        // only that local SITL monitor so a synthetic 0% reading cannot
+        // raise a failsafe or mask the demo route. Hardware is never touched.
+        if (sitlBatteryConfigured || !activeVehicleIsBriechSITL()) {
+            return
+        }
+        const batteryMonitor = activeVehicle.getParameterFact(-1, "BATT_MONITOR", false)
+        if (!batteryMonitor) {
+            return
+        }
+        sitlBatteryConfigured = true
+        if (Number(batteryMonitor.rawValue) !== 0) {
+            batteryMonitor.rawValue = 0
+        }
+        pushToast(qsTr("SITL"), qsTr("Local simulated battery monitor disabled; hardware battery monitoring is unchanged."), "info", 3200)
+    }
+
+    function demoRouteFrom(origin) {
+        // A compact 45 m square keeps the demo close to the SITL home point
+        // while producing obvious lateral movement on the live map.
+        return [
+            origin.atDistanceAndAzimuth(45, 0),
+            origin.atDistanceAndAzimuth(45, 90),
+            origin.atDistanceAndAzimuth(45, 180),
+            origin.atDistanceAndAzimuth(45, 270)
+        ]
+    }
+
+    function finishSITLDemoFlight(message, tone) {
+        demoFlightTimer.stop()
+        demoFlightActive = false
+        demoFlightPhase = ""
+        demoFlightPhaseStartedAt = 0
+        if (message && message.length > 0) {
+            pushToast(qsTr("Demo Flight"), message, tone || "info", 3200)
+        }
+    }
+
+    function advanceSITLDemoFlight() {
+        if (!demoFlightActive || !activeVehicleIsBriechSITL()) {
+            finishSITLDemoFlight(qsTr("Demo route stopped because the local SITL link is no longer active."), "warn")
+            return
+        }
+        if (demoFlightPhase === "arming") {
+            if (activeVehicle.armed) {
+                demoFlightPhase = "takeoff"
+                demoFlightPhaseStartedAt = Date.now()
+            } else if (Date.now() - demoFlightPhaseStartedAt >= 20000) {
+                finishSITLDemoFlight(qsTr("SITL did not confirm arming. Review the vehicle messages for a pre-arm reason."), "warn")
+                return
+            } else {
+                return
+            }
+        }
+
+        if (demoFlightPhase === "takeoff" && !demoFlightTakeoffDispatched) {
+            if (activeVehicle.guidedTakeoffSupported) {
+                activeVehicle.guidedModeTakeoff(demoFlightTakeoffAltitude)
+            } else {
+                activeVehicle.startTakeoff()
+            }
+            demoFlightTakeoffDispatched = true
+            demoFlightPhaseStartedAt = Date.now()
+            pushToast(qsTr("Demo Flight"), qsTr("SITL armed. Takeoff command sent; awaiting altitude."), "info", 2600)
+        }
+
+        if (!activeVehicle.flying || !activeVehicle.coordinate.isValid) {
+            if (demoFlightPhase === "takeoff" && Date.now() - demoFlightPhaseStartedAt >= 20000) {
+                finishSITLDemoFlight(qsTr("SITL did not enter flight after takeoff. Review the vehicle messages."), "warn")
+            }
+            return
+        }
+
+        if (demoFlightPhase === "takeoff") {
+            if (Number(activeVehicle.altitudeRelative.value) < demoFlightTakeoffAltitude - 1.5) {
+                return
+            }
+            demoFlightPhase = "route"
+        }
+
+        if (demoFlightRouteIndex >= demoFlightRoute.length) {
+            activeVehicle.guidedModeRTL(false)
+            finishSITLDemoFlight(qsTr("Route complete. SITL return-to-launch command sent."), "ok")
+            return
+        }
+
+        const target = demoFlightRoute[demoFlightRouteIndex]
+        if (!target || !target.isValid) {
+            finishSITLDemoFlight(qsTr("Demo route contains an invalid waypoint."), "warn")
+            return
+        }
+        if (activeVehicle.coordinate.distanceTo(target) < 7) {
+            demoFlightRouteIndex++
+            demoFlightTargetDispatched = false
+            return
+        }
+        if (!demoFlightTargetDispatched) {
+            activeVehicle.guidedModeGotoLocation(target, 0)
+            demoFlightTargetDispatched = true
+        }
+    }
+
+    function startSITLDemoFlight() {
+        if (!activeVehicleIsBriechSITL()) {
+            showBriechMessage(qsTr("SITL Demo Only"), qsTr("The animated demo route is available only for the local Briech SITL TCP vehicle. Real aircraft never receive automated demo commands."), root.warn)
+            return
+        }
+        if (!activeVehicle.coordinate.isValid || !vehicleCanArm()) {
+            showBriechMessage(qsTr("Demo Flight Unavailable"), qsTr("Wait for a valid SITL position and passing preflight checks before starting the demo route."), root.warn)
+            return
+        }
+
+        demoFlightTakeoffAltitude = Math.max(Number(activeVehicle.minimumTakeoffAltitudeMeters()), 12)
+        demoFlightRoute = demoRouteFrom(activeVehicle.coordinate)
+        demoFlightTrail = [activeVehicle.coordinate]
+        demoFlightRouteIndex = 0
+        demoFlightTargetDispatched = false
+        demoFlightTakeoffDispatched = false
+        demoFlightPhase = activeVehicle.armed ? "takeoff" : "arming"
+        demoFlightPhaseStartedAt = Date.now()
+        demoFlightActive = true
+        followActiveFlight = true
+        showLiveFlight()
+
+        if (!activeVehicle.armed) {
+            activeVehicle.armed = true
+        }
+        demoFlightTimer.start()
+        pushToast(qsTr("Demo Flight"), activeVehicle.armed ? qsTr("SITL is armed; preparing takeoff.") : qsTr("Arm command sent to SITL; awaiting confirmation."), "info", 3600)
+    }
+
     function riskZoneTone(kind) {
         switch (kind) {
         case "nfz":
@@ -3739,6 +4437,8 @@ Item {
 
     function centerOnVehicle() {
         if (activeVehicle && activeVehicle.coordinate.isValid) {
+            followActiveFlight = true
+            modernMap._disableVehicleTracking = false
             modernMap.center = activeVehicle.coordinate
             modernMap.zoomLevel = Math.max(modernMap.zoomLevel, 16)
         } else if (modernMap.gcsPosition.isValid) {
@@ -3752,12 +4452,29 @@ Item {
         QGroundControl.flightMapZoom = modernMap.zoomLevel
     }
 
-    function confirmVehicleAction(title, message, action) {
-        if (!activeVehicle) {
-            mainWindow.showMessageDialog(qsTr("No Vehicle"), qsTr("Connect to a vehicle before using this action."))
+    function showLiveFlight() {
+        if (!activeVehicle || !activeVehicle.flying) {
             return
         }
-        mainWindow.showMessageDialog(title, message, Dialog.Yes | Dialog.No, action)
+        activateModernSection("fly")
+        // Centre once when flight begins, then leave the viewport stable so
+        // the icon visibly travels across the map. This also prevents an
+        // unstable simulator clock from repeatedly reloading map tiles.
+        followActiveFlight = false
+        if (activeVehicle.coordinate.isValid) {
+            modernMap._disableVehicleTracking = false
+            modernMap.center = activeVehicle.coordinate
+            modernMap.zoomLevel = Math.max(modernMap.zoomLevel, 16)
+        }
+        pushToast(qsTr("Live Flight"), qsTr("Tracking the vehicle's reported position and altitude. Open 3D VIEW when needed."), "info", 2600)
+    }
+
+    function confirmVehicleAction(title, message, action) {
+        if (!activeVehicle) {
+            showBriechMessage(qsTr("No Vehicle"), qsTr("Connect to a vehicle before using this action."), root.warn)
+            return
+        }
+        confirmBriechAction(title, message, action, qsTr("CONFIRM"), root.gold)
     }
 
     function beginPendingVehicleAction(action) {
@@ -3794,6 +4511,7 @@ Item {
         case "land": return activeVehicle.landing || activeVehicle.flightMode === activeVehicle.landFlightMode
         case "rtl": return activeVehicle.flightMode === activeVehicle.rtlFlightMode || activeVehicle.flightMode === activeVehicle.smartRTLFlightMode
         case "pause": return activeVehicle.flightMode === activeVehicle.pauseFlightMode
+        case "continueMission": return activeVehicle.flightMode === activeVehicle.missionFlightMode
         default: return false
         }
     }
@@ -3806,6 +4524,7 @@ Item {
         case "land": return qsTr("Landing mode confirmed.")
         case "rtl": return qsTr("Return-to-launch mode confirmed.")
         case "pause": return qsTr("Pause mode confirmed.")
+        case "continueMission": return qsTr("AUTO mission mode confirmed.")
         default: return qsTr("Vehicle state confirmed.")
         }
     }
@@ -3830,7 +4549,7 @@ Item {
 
     function armVehicle() {
         if (!activeVehicle) {
-            mainWindow.showMessageDialog(qsTr("No Vehicle"), qsTr("Connect to a vehicle before using this action."))
+            showBriechMessage(qsTr("No Vehicle"), qsTr("Connect to a vehicle before using this action."), root.warn)
             return
         }
         if (activeVehicle.armed) {
@@ -3838,7 +4557,7 @@ Item {
             return
         }
         if (!vehicleCanArm()) {
-            mainWindow.showMessageDialog(qsTr("Arm Unavailable"), qsTr("The enforced checklist, health checks, or required RC link checks are not passing."))
+            showBriechMessage(qsTr("Arm Unavailable"), qsTr("The enforced checklist, health checks, or required RC link checks are not passing."), root.warn)
             return
         }
         confirmVehicleAction(qsTr("Arm Vehicle"), qsTr("Arm the active vehicle?"), function() {
@@ -3852,7 +4571,7 @@ Item {
 
     function disarmVehicle() {
         if (!activeVehicle) {
-            mainWindow.showMessageDialog(qsTr("No Vehicle"), qsTr("Connect to a vehicle before using this action."))
+            showBriechMessage(qsTr("No Vehicle"), qsTr("Connect to a vehicle before using this action."), root.warn)
             return
         }
         if (!activeVehicle.armed) {
@@ -3860,7 +4579,7 @@ Item {
             return
         }
         if (activeVehicle.flying) {
-            mainWindow.showMessageDialog(qsTr("Disarm Unavailable"), qsTr("Disarm is blocked while the vehicle is airborne. Use Land or RTL first."))
+            showBriechMessage(qsTr("Disarm Unavailable"), qsTr("Disarm is blocked while the vehicle is airborne. Use Land or RTL first."), root.warn)
             return
         }
         confirmVehicleAction(qsTr("Disarm Vehicle"), qsTr("Disarm the active vehicle?"), function() {
@@ -3874,7 +4593,7 @@ Item {
 
     function takeoffVehicle() {
         if (!vehicleCanTakeoff()) {
-            mainWindow.showMessageDialog(qsTr("Takeoff Unavailable"), qsTr("Takeoff requires a connected vehicle, passing preflight checks, and firmware takeoff support."))
+            showBriechMessage(qsTr("Takeoff Unavailable"), qsTr("Takeoff requires a connected vehicle, passing preflight checks, and firmware takeoff support."), root.warn)
             return
         }
         const takeoffAltitude = activeVehicle.minimumTakeoffAltitudeMeters()
@@ -3891,9 +4610,23 @@ Item {
         })
     }
 
+    function continueMission() {
+        if (!vehicleCanContinueMission()) {
+            showBriechMessage(qsTr("Continue Mission Unavailable"), qsTr("Continue Mission requires an armed, airborne vehicle with an uploaded mission that is not already in AUTO."), root.warn)
+            return
+        }
+        confirmVehicleAction(qsTr("Continue Mission"), qsTr("Continue the uploaded mission from the current waypoint? The vehicle will enter AUTO mode."), function() {
+            if (!vehicleCanContinueMission() || !beginPendingVehicleAction("continueMission")) {
+                return
+            }
+            activeVehicle.startMission()
+            pushToast(qsTr("Vehicle Command"), qsTr("AUTO mission continue sent; awaiting mode confirmation."), "info", 2600)
+        })
+    }
+
     function landVehicle() {
         if (!vehicleCanLand()) {
-            mainWindow.showMessageDialog(qsTr("Land Unavailable"), qsTr("Land requires an armed guided vehicle, is unavailable for fixed-wing vehicles here, and is hidden when Land mode is already active."))
+            showBriechMessage(qsTr("Land Unavailable"), qsTr("Land requires an armed guided vehicle, is unavailable for fixed-wing vehicles here, and is hidden when Land mode is already active."), root.warn)
             return
         }
         confirmVehicleAction(qsTr("Land"), qsTr("Command land now?"), function() {
@@ -3907,7 +4640,7 @@ Item {
 
     function rtlVehicle() {
         if (!vehicleCanRTL()) {
-            mainWindow.showMessageDialog(qsTr("RTL Unavailable"), qsTr("Return to launch is only available while the active vehicle is armed and guided commands are supported."))
+            showBriechMessage(qsTr("RTL Unavailable"), qsTr("Return to launch is only available while the active vehicle is armed and guided commands are supported."), root.warn)
             return
         }
         confirmVehicleAction(qsTr("Return To Launch"), qsTr("Command return to launch?"), function() {
@@ -3921,7 +4654,7 @@ Item {
 
     function pauseVehicle() {
         if (!vehicleCanPause()) {
-            mainWindow.showMessageDialog(qsTr("Pause Unavailable"), qsTr("Pause is only available on connected vehicles that support guided pause."))
+            showBriechMessage(qsTr("Pause Unavailable"), qsTr("Pause is only available on connected vehicles that support guided pause."), root.warn)
             return
         }
         confirmVehicleAction(qsTr("Pause"), qsTr("Pause at current position?"), function() {
@@ -3971,6 +4704,15 @@ Item {
         repeat: true
         running: root.activeModernSection === "fly" && !!root.activeVehicle
         onTriggered: root.refreshTelemetrySamples()
+    }
+
+    Timer {
+        id: safetyAssessmentTimer
+        interval: 1000
+        repeat: true
+        running: root.activeModernSection === "fly"
+        triggeredOnStart: true
+        onTriggered: root.refreshSafetyAssessment()
     }
 
     Timer {
@@ -4034,6 +4776,17 @@ Item {
             if (!root.missionTimelineInspectionMode) {
                 root.syncMissionScrubIndexToLive()
             }
+        }
+    }
+
+    // MissionManager reports the result of the actual MAVLink mission
+    // transfer. Waiting for this signal prevents AUTO from being requested
+    // against an empty or still-uploading SITL mission.
+    Connections {
+        target: root.activeVehicle ? root.activeVehicle.missionManager : null
+        ignoreUnknownSignals: true
+        function onSendComplete(error) {
+            root.handleSITLMissionUploadComplete(error)
         }
     }
 
@@ -4102,17 +4855,58 @@ Item {
             }
             root.syncMissionCoordinates()
             root.syncMissionScrubIndexToLive()
+            root.followActiveFlight = false
+            root.sitlBatteryConfigured = false
+            root.configureLocalSITLBattery()
+            if (root.activeVehicle && root.activeVehicle.flying) {
+                Qt.callLater(root.showLiveFlight)
+            }
+        }
+    }
+
+    Connections {
+        target: root.activeVehicle
+        ignoreUnknownSignals: true
+
+        function onCoordinateChanged() {
+            if (!root.demoFlightActive || !root.activeVehicle || !root.activeVehicle.coordinate.isValid) {
+                return
+            }
+            const nextCoordinate = root.activeVehicle.coordinate
+            const trail = root.demoFlightTrail.slice(0)
+            if (trail.length === 0 || trail[trail.length - 1].distanceTo(nextCoordinate) >= 1.5) {
+                trail.push(nextCoordinate)
+                // Keep the live trail bounded for long-running simulator sessions.
+                if (trail.length > 600) {
+                    trail.shift()
+                }
+                root.demoFlightTrail = trail
+            }
+        }
+
+        function onFlyingChanged(flying) {
+            if (flying) {
+                root.showLiveFlight()
+            } else {
+                root.followActiveFlight = false
+                if (root.demoFlightActive) {
+                    root.finishSITLDemoFlight(qsTr("Vehicle is no longer airborne; demo route stopped."), "info")
+                }
+            }
         }
     }
 
     Repeater {
         model: root._visualItems
-        delegate: Connections {
+        delegate: Item {
             required property var modelData
+
+            Connections {
             target: modelData
             ignoreUnknownSignals: true
             function onCoordinateChanged() { root.syncMissionCoordinates() }
             function onSpecifiesCoordinateChanged() { root.syncMissionCoordinates() }
+            }
         }
     }
 
@@ -4140,9 +4934,13 @@ Item {
 
     Component.onCompleted: {
         refreshTelemetrySamples()
+        refreshSafetyAssessment()
         activeModernSection = "fly"
         Qt.callLater(syncFlyMapFromSharedState)
         Qt.callLater(loadDefaultRealRiskData)
+        if (activeVehicle && activeVehicle.flying) {
+            Qt.callLater(showLiveFlight)
+        }
     }
 
     ColumnLayout {
@@ -4151,7 +4949,7 @@ Item {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 50
+            Layout.preferredHeight: 30
             color: "#040507"
 
             Rectangle {
@@ -4170,8 +4968,8 @@ Item {
                 spacing: 8
 
                 Image {
-                    Layout.preferredWidth: 28
-                    Layout.preferredHeight: 28
+                    Layout.preferredWidth: 20
+                    Layout.preferredHeight: 20
                     source: "qrc:/Briech/res/logoBlack.png"
                     fillMode: Image.PreserveAspectFit
                 }
@@ -4180,7 +4978,7 @@ Item {
                     text: "BRIECH UAS"
                     color: "white"
                     font.bold: true
-                    font.pixelSize: 20
+                    font.pixelSize: 15
                     font.letterSpacing: 2
                     font.family: "Barlow Condensed"
                 }
@@ -4188,13 +4986,43 @@ Item {
                 Text {
                     text: "Ground Control Station"
                     color: root.gold
-                    font.pixelSize: 14
+                    font.pixelSize: 10
                     font.letterSpacing: 2
                     font.family: "Barlow Condensed"
                     font.bold: true
                 }
 
                 Item { Layout.fillWidth: true }
+
+                RowLayout {
+                    Layout.preferredWidth: 90
+                    Layout.fillHeight: true
+                    spacing: 0
+
+                    Rectangle {
+                        Layout.preferredWidth: 30
+                        Layout.fillHeight: true
+                        color: minimizeWindow.containsMouse ? "#171c25" : "transparent"
+                        Text { anchors.centerIn: parent; text: "—"; color: root.text; font.pixelSize: 13 }
+                        MouseArea { id: minimizeWindow; anchors.fill: parent; hoverEnabled: true; onClicked: mainWindow.showMinimized() }
+                    }
+
+                    Rectangle {
+                        Layout.preferredWidth: 30
+                        Layout.fillHeight: true
+                        color: maximizeWindow.containsMouse ? "#171c25" : "transparent"
+                        Text { anchors.centerIn: parent; text: "□"; color: root.text; font.pixelSize: 11 }
+                        MouseArea { id: maximizeWindow; anchors.fill: parent; hoverEnabled: true; onClicked: mainWindow.showMaximized() }
+                    }
+
+                    Rectangle {
+                        Layout.preferredWidth: 30
+                        Layout.fillHeight: true
+                        color: closeWindow.containsMouse ? "#b4232f" : "transparent"
+                        Text { anchors.centerIn: parent; text: "×"; color: root.text; font.pixelSize: 15 }
+                        MouseArea { id: closeWindow; anchors.fill: parent; hoverEnabled: true; onClicked: mainWindow.close() }
+                    }
+                }
             }
         }
 
@@ -4396,7 +5224,7 @@ Item {
                 visible: root.activeModernSection === "fly"
 
                 Rectangle {
-                    Layout.preferredWidth: 82
+                    Layout.preferredWidth: 54
                     Layout.fillHeight: true
                     color: "#07090d"
                     border.color: "#1e242e"
@@ -4420,14 +5248,24 @@ Item {
                                 property bool actionEnabled: !!actionItem.enabled
                                 property bool actionVisible: actionItem.visible !== false
                                 property bool disconnectAction: actionKey === "disconnect"
-                                Layout.preferredWidth: 70
-                                Layout.preferredHeight: visible ? 52 : 0
+                                Layout.preferredWidth: 46
+                                Layout.preferredHeight: visible ? 46 : 0
                                 visible: actionVisible
                                 radius: 6
                                 opacity: actionEnabled ? 1.0 : 0.78
                                 color: disconnectAction ? "#171109" : "#0c1017"
                                 border.color: disconnectAction ? root.gold : (actionEnabled ? "#243041" : "#1b2430")
                                 border.width: 1
+
+                                Rectangle {
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    height: 1
+                                    visible: index === 3 || index === 5
+                                    color: root.gold
+                                    opacity: 0.45
+                                }
 
                                 Column {
                                     anchors.centerIn: parent
@@ -4506,6 +5344,7 @@ Item {
                         toolInsets: modernMapToolInsets
                         rightPanelWidth: 0
                         pipMode: false
+                        _keepVehicleCentered: root.followActiveFlight
 
                         onZoomLevelChanged: {
                             QGroundControl.flightMapZoom = modernMap.zoomLevel
@@ -4537,6 +5376,451 @@ Item {
                                     riskMapRefreshTimer.restart()
                                 }
                             }
+                        }
+                    }
+
+                    MapPolyline {
+                        visible: root.demoFlightTrail.length > 1
+                        line.width: 3
+                        line.color: root.ok
+                        opacity: 0.9
+                        path: root.demoFlightTrail
+                        z: QGroundControl.zOrderVehicles - 1
+                    }
+
+                    Rectangle {
+                        visible: root.activeModernSection === "fly" && !!root.activeVehicle && root.activeVehicle.flying
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.leftMargin: 76
+                        anchors.topMargin: 18
+                        width: 222
+                        height: 32
+                        color: root.modernGlassStrong
+                        border.color: root.ok
+                        radius: 2
+                        z: QGroundControl.zOrderWidgets + 4
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: qsTr("LIVE  %1 m  /  %2 m/s").arg(root.altitudeText()).arg(root.groundSpeedText())
+                            color: root.ok
+                            font.pixelSize: 10
+                            font.bold: true
+                            font.family: "monospace"
+                        }
+                    }
+
+                    // A lightweight readout for precise map work. The
+                    // no-button MouseArea observes hover without taking map
+                    // panning, clicking, or gesture handling away from the
+                    // FlightMap control.
+                    MouseArea {
+                        anchors.fill: parent
+                        acceptedButtons: Qt.NoButton
+                        hoverEnabled: true
+                        z: 2
+
+                        onPositionChanged: {
+                            const coordinate = modernMap.toCoordinate(Qt.point(mouse.x, mouse.y), false)
+                            if (coordinate && coordinate.isValid) {
+                                root.modernMapCursorCoordinate = coordinate
+                            }
+                        }
+
+                        onExited: root.modernMapCursorCoordinate = QtPositioning.coordinate()
+                    }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.bottom: parent.bottom
+                        anchors.leftMargin: 76
+                        anchors.bottomMargin: 42
+                        width: 190
+                        height: 30
+                        visible: root.modernMapCursorCoordinate && root.modernMapCursorCoordinate.isValid
+                        color: Qt.rgba(0.03, 0.05, 0.08, 0.88)
+                        border.color: root.border
+                        z: 3
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: root.modernMapCursorCoordinate.latitude.toFixed(6) + "  " + root.modernMapCursorCoordinate.longitude.toFixed(6)
+                            color: root.text
+                            font.pixelSize: 10
+                            font.family: "monospace"
+                        }
+                    }
+
+                    Rectangle {
+                        id: safetyReadinessToggle
+                        visible: root.activeModernSection === "fly"
+                        anchors.top: parent.top
+                        anchors.right: parent.right
+                        anchors.topMargin: 18
+                        anchors.rightMargin: 142
+                        width: 154
+                        height: 28
+                        color: root.safetyPanelOpen ? Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.16) : root.modernGlass
+                        border.color: root.safetyTone(rootSafetyMonitor.state)
+                        border.width: 1
+                        radius: 2
+                        z: QGroundControl.zOrderWidgets + 21
+
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 7
+
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 7
+                                height: 7
+                                radius: 4
+                                color: root.safetyTone(rootSafetyMonitor.state)
+                            }
+
+                            Text {
+                                text: rootSafetyMonitor.state + "  " + rootSafetyMonitor.score
+                                color: root.safetyTone(rootSafetyMonitor.state)
+                                font.pixelSize: 10
+                                font.bold: true
+                                font.family: "monospace"
+                            }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.safetyPanelOpen = !root.safetyPanelOpen
+                        }
+                    }
+
+                    Rectangle {
+                        id: safetyReadinessPanel
+                        visible: root.activeModernSection === "fly" && root.safetyPanelOpen
+                        anchors.top: parent.top
+                        anchors.right: parent.right
+                        anchors.topMargin: 54
+                        anchors.rightMargin: 18
+                        width: 390
+                        height: Math.min(460, parent.height - 82)
+                        color: root.modernGlassStrong
+                        border.color: root.safetyTone(rootSafetyMonitor.state)
+                        border.width: 1
+                        radius: 3
+                        z: QGroundControl.zOrderWidgets + 20
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 12
+                            spacing: 8
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Rectangle {
+                                    Layout.preferredWidth: 62
+                                    Layout.preferredHeight: 46
+                                    color: Qt.rgba(0, 0, 0, 0.24)
+                                    border.color: root.safetyTone(rootSafetyMonitor.state)
+
+                                    Column {
+                                        anchors.centerIn: parent
+                                        spacing: 0
+                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: rootSafetyMonitor.score; color: root.safetyTone(rootSafetyMonitor.state); font.pixelSize: 20; font.bold: true; font.family: "monospace" }
+                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "SCORE"; color: root.dim; font.pixelSize: 8; font.bold: true; font.family: "monospace" }
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "LOCAL SAFETY MONITOR / " + rootSafetyMonitor.state
+                                        color: root.safetyTone(rootSafetyMonitor.state)
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                        font.family: "monospace"
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: rootSafetyMonitor.summary
+                                        color: root.text
+                                        font.pixelSize: 10
+                                        font.family: "monospace"
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Text {
+                                        text: rootSafetyMonitor.issueCount + " ISSUE(S)  |  UPDATED " + rootSafetyMonitor.lastUpdated
+                                        color: root.dim
+                                        font.pixelSize: 8
+                                        font.family: "monospace"
+                                    }
+                                }
+
+                                Text {
+                                    text: "X"
+                                    color: safetyPanelClose.containsMouse ? root.err : root.dim
+                                    font.pixelSize: 13
+                                    font.bold: true
+                                    font.family: "monospace"
+
+                                    MouseArea {
+                                        id: safetyPanelClose
+                                        anchors.fill: parent
+                                        anchors.margins: -8
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.safetyPanelOpen = false
+                                    }
+                                }
+                            }
+
+                            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.modernHairline }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: rootSafetyMonitor.guidance
+                                color: root.text
+                                font.pixelSize: 10
+                                font.family: ScreenTools.normalFontFamily
+                                wrapMode: Text.WordWrap
+                            }
+
+                            ListView {
+                                id: safetyFindingList
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                clip: true
+                                spacing: 6
+                                model: rootSafetyMonitor.findings
+                                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    property var finding: modelData || ({})
+                                    width: ListView.view.width
+                                    height: 72
+                                    color: Qt.rgba(0, 0, 0, 0.22)
+                                    border.color: root.safetyFindingTone(finding.severity)
+                                    border.width: 1
+                                    radius: 2
+
+                                    Rectangle {
+                                        anchors.left: parent.left
+                                        anchors.top: parent.top
+                                        anchors.bottom: parent.bottom
+                                        width: 4
+                                        color: root.safetyFindingTone(parent.finding.severity)
+                                    }
+
+                                    Column {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 12
+                                        anchors.rightMargin: 8
+                                        anchors.topMargin: 7
+                                        spacing: 3
+
+                                        Row {
+                                            width: parent.width
+                                            spacing: 8
+                                            Text { text: String(finding.title || "CHECK").toUpperCase(); color: root.safetyFindingTone(finding.severity); font.pixelSize: 9; font.bold: true; font.family: "monospace" }
+                                            Text { text: String(finding.severity || "info").toUpperCase(); color: root.dim; font.pixelSize: 8; font.family: "monospace" }
+                                        }
+                                        Text { width: parent.width; text: finding.evidence || ""; color: root.text; font.pixelSize: 9; font.family: ScreenTools.normalFontFamily; elide: Text.ElideRight }
+                                        Text { width: parent.width; text: "ACTION: " + (finding.action || "Review status."); color: root.dim; font.pixelSize: 8; font.family: ScreenTools.normalFontFamily; elide: Text.ElideRight }
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Text { text: "LOCAL ONLY / NO CLOUD"; color: root.ok; font.pixelSize: 8; font.bold: true; font.family: "monospace" }
+                                Item { Layout.fillWidth: true }
+                                Text { text: "HISTORY " + rootSafetyMonitor.history.length; color: root.dim; font.pixelSize: 8; font.family: "monospace" }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        id: simulationFlyPanel
+                        visible: root.activeModernSection === "fly" && root.simulationFlyPanelOpen
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.topMargin: 18
+                        anchors.leftMargin: 18
+                        width: 304
+                        height: 282
+                        color: root.modernGlassStrong
+                        border.color: root._simulationController.running ? root.ok : root.gold
+                        border.width: 1
+                        radius: 3
+                        z: QGroundControl.zOrderWidgets + 12
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 12
+                            spacing: 8
+
+                            RowLayout {
+                                Layout.fillWidth: true
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+
+                                    Text {
+                                        text: "DEMO FLIGHT"
+                                        color: root.gold
+                                        font.pixelSize: 12
+                                        font.bold: true
+                                        font.family: "monospace"
+                                    }
+
+                                    Text {
+                                        text: root._simulationController.status
+                                        color: root._simulationController.running ? root.ok : root.dim
+                                        font.pixelSize: 9
+                                        font.family: "monospace"
+                                    }
+                                }
+
+                                Text {
+                                    text: root.hasLiveVehicleLink() ? "MAVLINK ONLINE" : (root.activeVehicle ? "MAVLINK LOST" : "NO VEHICLE")
+                                    color: root.hasLiveVehicleLink() ? root.ok : (root.activeVehicle ? root.warn : root.dim)
+                                    font.pixelSize: 8
+                                    font.bold: true
+                                    font.family: "monospace"
+                                }
+                            }
+
+                            Rectangle { Layout.fillWidth: true; height: 1; color: root.modernHairline }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+
+                                ModernSettingsAction {
+                                    Layout.fillWidth: true
+                                    label: root._simulationController.running ? "SITL RUNNING" : (root._simulationController.busy ? "STARTING..." : "START SITL")
+                                    tone: root.ok
+                                    enabled: !root._simulationController.running && !root._simulationController.busy
+                                    onClicked: root.startSITLForCurrentPlan()
+                                }
+
+                                ModernSettingsAction {
+                                    Layout.fillWidth: true
+                                    label: "STOP"
+                                    tone: root.err
+                                    enabled: root._simulationController.running && !root._simulationController.busy
+                                    onClicked: root._simulationController.stopArduCopter()
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+
+                                ModernSettingsAction {
+                                    Layout.fillWidth: true
+                                    label: root.activeVehicle ? "VEHICLE LINKED" : "CONNECT SITL"
+                                    tone: root.blue
+                                    enabled: root._simulationController.running && !root.hasLiveVehicleLink()
+                                    onClicked: root.connectSimulationLink()
+                                }
+
+                                ModernSettingsAction {
+                                    Layout.fillWidth: true
+                                    label: "FIT ROUTE"
+                                    tone: root.gold
+                                    enabled: root.missionCoordinates.length > 0
+                                    onClicked: root.fitModernMission()
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+
+                                ModernSettingsAction {
+                                    Layout.fillWidth: true
+                                    label: root.sitlMissionLaunchPhase === "upload" ? "UPLOADING..."
+                                        : (root.sitlMissionLaunchPhase === "arming" ? "ARMING..."
+                                        : (root.sitlMissionLaunchPhase === "takeoff" ? "TAKEOFF..."
+                                        : (root.sitlMissionLaunchPhase === "auto" ? "STARTING AUTO..." : "UPLOAD + AUTO")))
+                                    tone: root.ok
+                                    enabled: root.activeVehicleIsBriechSITL() && root.sitlMissionLaunchPhase === "" && !root.pendingVehicleAction
+                                    onClicked: root.startSimulationMission()
+                                }
+
+                                ModernSettingsAction {
+                                    Layout.fillWidth: true
+                                    label: "LAND"
+                                    tone: root.warn
+                                    enabled: root.vehicleCanLand()
+                                    onClicked: root.landVehicle()
+                                }
+                            }
+
+                            ModernSettingsAction {
+                                Layout.fillWidth: true
+                                visible: root.vehicleCanContinueMission()
+                                label: root.pendingVehicleAction === "continueMission" ? "CONTINUING MISSION..." : "CONTINUE MISSION"
+                                tone: root.ok
+                                enabled: root.pendingVehicleAction === "" && root.vehicleCanContinueMission()
+                                onClicked: root.continueMission()
+                            }
+
+                            ModernSettingsAction {
+                                Layout.fillWidth: true
+                                label: root.demoFlightActive ? "DEMO ROUTE ACTIVE" : "RUN SITL DEMO ROUTE"
+                                tone: root.demoFlightActive ? root.ok : root.gold
+                                enabled: !root.demoFlightActive && root.activeVehicleIsBriechSITL() && !root.pendingVehicleAction
+                                onClicked: root.startSITLDemoFlight()
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.missionTimelineSequenceText() + "  ·  " + root.flightModeText()
+                                color: root.text
+                                font.pixelSize: 10
+                                font.family: "monospace"
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        id: simulationFlyToggle
+                        visible: root.activeModernSection === "fly"
+                        anchors.top: parent.top
+                        anchors.right: parent.right
+                        anchors.topMargin: 18
+                        anchors.rightMargin: 18
+                        width: 116
+                        height: 28
+                        color: root.simulationFlyPanelOpen ? Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.16) : root.modernGlass
+                        border.color: root._simulationController.running ? root.ok : root.gold
+                        border.width: 1
+                        radius: 2
+                        z: QGroundControl.zOrderWidgets + 13
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: root._simulationController.running ? "DEMO · LIVE" : "DEMO FLIGHT"
+                            color: root._simulationController.running ? root.ok : root.gold
+                            font.pixelSize: 10
+                            font.bold: true
+                            font.family: "monospace"
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: root.simulationFlyPanelOpen = !root.simulationFlyPanelOpen
                         }
                     }
 
@@ -4915,13 +6199,12 @@ Item {
                     }
 
                     Rectangle {
-                        anchors.left: parent.left
-                        anchors.bottom: parent.bottom
-                        anchors.leftMargin: 76
-                        anchors.bottomMargin: root.payloadPanelOpen ? 228 : 64
+                        id: stationReadyPanel
+                        x: 76
+                        y: Math.max(12, parent.height - height - (root.payloadPanelOpen ? 228 : 64))
                         width: 336
                         height: 156
-                        visible: root.activeModernSection === "fly" && !root.activeVehicle
+                        visible: root.activeModernSection === "fly" && !root.activeVehicle && root.stationReadyPanelOpen
                         color: "#0a0e14"
                         border.color: "#252c38"
                         border.width: 1
@@ -4933,14 +6216,47 @@ Item {
                             anchors.margins: 12
                             spacing: 8
 
-                            Text {
+                            Rectangle {
                                 Layout.fillWidth: true
-                                text: "FLY STATION READY"
-                                color: root.gold
-                                font.pixelSize: 13
-                                font.bold: true
-                                font.letterSpacing: 1
-                                font.family: "Barlow Condensed"
+                                Layout.preferredHeight: 20
+                                color: "transparent"
+
+                                Text {
+                                    anchors.left: parent.left
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "FLY STATION READY"
+                                    color: root.gold
+                                    font.pixelSize: 13
+                                    font.bold: true
+                                    font.letterSpacing: 1
+                                    font.family: "Barlow Condensed"
+                                }
+
+                                Text {
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "×"
+                                    color: stationCloseMouse.containsMouse ? root.err : root.dim
+                                    font.pixelSize: 18
+                                    font.bold: true
+                                }
+
+                                MouseArea {
+                                    id: stationCloseMouse
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    anchors.bottom: parent.bottom
+                                    width: 28
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.stationReadyPanelOpen = false
+                                }
+
+                                DragHandler {
+                                    target: stationReadyPanel
+                                    xAxis.enabled: true
+                                    yAxis.enabled: true
+                                }
                             }
 
                             Text {
@@ -5009,27 +6325,17 @@ Item {
                         vehicleModel: QGroundControl.multiVehicleManager.vehicles
                     }
 
-                    ModernSparklinePanel {
-                        anchors.left: parent.left
-                        anchors.bottom: parent.bottom
-                        anchors.leftMargin: 76
-                        anchors.bottomMargin: 232
-                        width: 320
-                        height: 146
-                        visible: root.activeModernSection === "fly" && root.activeVehicle && root.speedHistory.length > 1
-                        speedSeries: root.speedHistory
-                        altitudeSeries: root.altitudeHistory
-                        batterySeries: root.batteryHistory
-                    }
-
                     ColumnLayout {
                         anchors.left: parent.left
                         anchors.bottom: parent.bottom
                         anchors.leftMargin: 76
                         anchors.bottomMargin: 20
                         spacing: 6
+                        z: QGroundControl.zOrderWidgets + 12
 
                         ModernPayloadPanel {
+                            // The 3D simulator is deliberately a compact tactical payload
+                            // pane. It must not turn into a second, competing map view.
                             Layout.preferredWidth: 318
                             Layout.preferredHeight: 188
                             visible: root.payloadPanelOpen
@@ -5060,7 +6366,6 @@ Item {
                                 Layout.fillWidth: true
                                 label: "3D VIEW"
                                 iconKind: "3d"
-                                enabled: root.viewer3DReady()
                                 active: root.payloadPanelOpen && root.payloadView === "3d"
                                 onClicked: root.openPayload("3d")
                             }
@@ -5642,6 +6947,7 @@ Item {
                     }
 
                     ModernMapToolsPanel {
+                        id: modernMapToolsPanel
                         anchors.left: parent.left
                         anchors.bottom: parent.bottom
                         anchors.leftMargin: 46
@@ -5821,6 +7127,53 @@ Item {
                                 Text {
                                     text: "m/s"
                                     color: root.dim
+                                    font.pixelSize: 8
+                                    font.family: "monospace"
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            id: altitudeBox
+                            anchors.right: parent.right
+                            anchors.bottom: hudCircle.bottom
+                            anchors.bottomMargin: 74
+                            width: 46
+                            height: 70
+                            color: "#0b0f15"
+                            border.color: "#2a3342"
+                            border.width: 1
+
+                            Column {
+                                anchors.centerIn: parent
+                                spacing: 2
+
+                                Text {
+                                    text: "ALT"
+                                    color: root.dim
+                                    font.pixelSize: 9
+                                    font.bold: true
+                                    font.family: "monospace"
+                                }
+
+                                Text {
+                                    text: root.altitudeText()
+                                    color: root.text
+                                    font.pixelSize: 13
+                                    font.bold: true
+                                    font.family: "monospace"
+                                }
+
+                                Text {
+                                    text: "m"
+                                    color: root.dim
+                                    font.pixelSize: 8
+                                    font.family: "monospace"
+                                }
+
+                                Text {
+                                    text: "VSI " + root.hudClimbRateText()
+                                    color: root.ok
                                     font.pixelSize: 8
                                     font.family: "monospace"
                                 }
@@ -6177,7 +7530,7 @@ Item {
         }
     }
 
-    component ModernToastStack: Item {
+component ModernToastStack: Item {
         id: toastStackRoot
         property var model
 
@@ -6192,12 +7545,13 @@ Item {
                 model: toastStackRoot.model
                 delegate: Rectangle {
                     id: toastCard
+                    required property int index
                     required property var modelData
                     width: parent.width
                     height: 58
                     radius: 2
                     color: root.modernGlassStrong
-                    border.color: toastCard.modelData.tone === "ok" ? "#22c55e" : toastCard.modelData.tone === "warn" ? "#f59e0b" : root.modernHairline
+                    border.color: toastCard.modelData.tone === "ok" ? "#22c55e" : toastCard.modelData.tone === "warn" ? "#f59e0b" : toastCard.modelData.tone === "crit" ? "#ef4444" : root.gold
                     border.width: 1
 
                     Rectangle {
@@ -6205,7 +7559,7 @@ Item {
                         anchors.top: parent.top
                         anchors.bottom: parent.bottom
                         width: 4
-                        color: toastCard.modelData.tone === "ok" ? "#22c55e" : toastCard.modelData.tone === "warn" ? "#f59e0b" : "#3b82f6"
+                        color: toastCard.modelData.tone === "ok" ? "#22c55e" : toastCard.modelData.tone === "warn" ? "#f59e0b" : toastCard.modelData.tone === "crit" ? "#ef4444" : root.gold
                     }
 
                     Column {
@@ -6241,6 +7595,17 @@ Item {
                         color: "#6a7585"
                         font.pixelSize: 12
                         font.bold: true
+
+                        MouseArea {
+                            anchors.fill: parent
+                            z: 2
+                            onClicked: toastStackRoot.model.remove(toastCard.index)
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: toastStackRoot.model.remove(toastCard.index)
                     }
                 }
             }
@@ -6613,6 +7978,7 @@ Item {
 
             Item {
                 id: watermarkMark
+                required property var modelData
 
                 readonly property var markData: modelData
                 property real driftOffset: -markData.drift
@@ -6685,98 +8051,6 @@ Item {
         }
     }
 
-    component ModernSparklinePanel: Rectangle {
-        property var speedSeries: []
-        property var altitudeSeries: []
-        property var batterySeries: []
-
-        color: "#090d13"
-        border.color: "#202734"
-        border.width: 1
-        radius: 4
-
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 10
-            spacing: 6
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-
-                Text {
-                    text: "LIVE TRENDS"
-                    color: root.gold
-                    font.pixelSize: 10
-                    font.bold: true
-                    font.family: "monospace"
-                    font.letterSpacing: 1
-                }
-
-                Item { Layout.fillWidth: true }
-
-                Text {
-                    text: "SPD / ALT / BATT"
-                    color: root.dim
-                    font.pixelSize: 8
-                    font.family: "monospace"
-                }
-            }
-
-            Canvas {
-                id: sparkCanvas
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-
-                onPaint: {
-                    const c = getContext("2d")
-                    c.reset()
-                    c.clearRect(0, 0, width, height)
-
-                    function drawSeries(series, color, yMin, yMax, offsetY) {
-                        if (!series || series.length < 2) {
-                            return
-                        }
-                        const pad = 6
-                        const w = width - pad * 2
-                        const h = height - pad * 2
-                        c.beginPath()
-                        for (let i = 0; i < series.length; i++) {
-                            const x = pad + (i / (series.length - 1)) * w
-                            const normalized = Math.max(0, Math.min(1, (series[i] - yMin) / (yMax - yMin)))
-                            const y = pad + offsetY + h - normalized * (h * 0.32)
-                            if (i === 0) c.moveTo(x, y)
-                            else c.lineTo(x, y)
-                        }
-                        c.strokeStyle = color
-                        c.lineWidth = 2
-                        c.stroke()
-                    }
-
-                    c.strokeStyle = "rgba(255,255,255,0.05)"
-                    c.lineWidth = 1
-                    for (let i = 1; i < 4; i++) {
-                        c.beginPath()
-                        c.moveTo(0, (height / 4) * i)
-                        c.lineTo(width, (height / 4) * i)
-                        c.stroke()
-                    }
-
-                    drawSeries(speedSeries, "#3b82f6", 0, 30, 2)
-                    drawSeries(altitudeSeries, "#22c55e", 0, 200, 14)
-                    drawSeries(batterySeries, "#f59e0b", 0, 100, 26)
-                }
-
-                Connections {
-                    target: root
-                    function onSpeedHistoryChanged() { sparkCanvas.requestPaint() }
-                    function onAltitudeHistoryChanged() { sparkCanvas.requestPaint() }
-                    function onBatteryHistoryChanged() { sparkCanvas.requestPaint() }
-                }
-            }
-        }
-    }
-
     component ModernBatteryArc: Rectangle {
         property real percent: 0
         property real displayPercent: percent
@@ -6836,6 +8110,7 @@ Item {
         property bool videoVisible: false
         property string videoMode: "EO"
         property real zoomLevel: 1
+        property var detectionController: rootDetectionController
         signal modeRequested(string mode)
         signal zoomRequested()
 
@@ -6886,6 +8161,90 @@ Item {
                     active: videoVisible
                     visible: videoVisible
                     source: "qrc:/qml/QGroundControl/FlyView/QGCVideoBackground.qml"
+                }
+
+                Item {
+                    id: detectionOverlay
+                    anchors.fill: parent
+                    visible: videoVisible && detectionController && detectionController.lastFrameAgeMs >= 0 && detectionController.lastFrameAgeMs <= 450
+                    z: 4
+
+                    Repeater {
+                        model: detectionController ? detectionController.detections : []
+
+                        delegate: Rectangle {
+                            required property var modelData
+                            x: modelData.x * detectionOverlay.width
+                            y: modelData.y * detectionOverlay.height
+                            width: Math.max(24, modelData.width * detectionOverlay.width)
+                            height: Math.max(22, modelData.height * detectionOverlay.height)
+                            color: "transparent"
+                            border.color: root.detectionLockedTrackId === Number(modelData.trackId) ? root.ok : root.gold
+                            border.width: root.detectionLockedTrackId === Number(modelData.trackId) ? 3 : 2
+                            opacity: detectionController.lastFrameAgeMs > 250 ? 0.45 : 1.0
+
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                width: Math.min(parent.width, trackLabel.implicitWidth + 12)
+                                height: 18
+                                color: root.detectionLockedTrackId === Number(modelData.trackId) ? root.ok : root.gold
+
+                                Text {
+                                    id: trackLabel
+                                    anchors.centerIn: parent
+                                    text: "#" + modelData.trackId + "  " + modelData.className + " " + Math.round(Number(modelData.confidence) * 100) + "%"
+                                    color: root.bg
+                                    font.pixelSize: 8
+                                    font.bold: true
+                                    font.family: "monospace"
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.requestDetectionTrack(modelData)
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: 8
+                        width: 112
+                        height: 22
+                        visible: root.detectionLockedTrackId >= 0
+                        color: Qt.rgba(root.ok.r, root.ok.g, root.ok.b, 0.18)
+                        border.color: root.ok
+
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 6
+
+                            Text {
+                                text: "LOCK #" + root.detectionLockedTrackId
+                                color: root.ok
+                                font.pixelSize: 8
+                                font.bold: true
+                                font.family: "monospace"
+                            }
+
+                            Text {
+                                text: "×"
+                                color: root.text
+                                font.pixelSize: 12
+                                font.bold: true
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.breakDetectionTrack()
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Rectangle {
@@ -7063,6 +8422,32 @@ Item {
                     font.family: "monospace"
                 }
 
+                Text {
+                    text: detectionController ? (detectionController.transportStatus === "" ? "AI IDLE" : detectionController.transportStatus) : "AI OFFLINE"
+                    color: detectionController && detectionController.lastFrameAgeMs >= 0 && detectionController.lastFrameAgeMs <= 450 ? root.ok : root.dim
+                    font.pixelSize: 8
+                    font.family: "monospace"
+                    elide: Text.ElideRight
+                    Layout.maximumWidth: 118
+                }
+
+                Slider {
+                    id: detectionThresholdSlider
+                    Layout.preferredWidth: 78
+                    from: 0.1
+                    to: 0.95
+                    stepSize: 0.05
+                    value: detectionController ? detectionController.confidenceThreshold : 0.45
+                    onMoved: if (detectionController) detectionController.confidenceThreshold = value
+                }
+
+                Text {
+                    text: detectionThresholdSlider.value.toFixed(2)
+                    color: root.gold
+                    font.pixelSize: 8
+                    font.family: "monospace"
+                }
+
                 Rectangle {
                     Layout.preferredWidth: 20
                     Layout.preferredHeight: 20
@@ -7136,26 +8521,41 @@ Item {
 
     component ModernViewer3DPanel: Rectangle {
         property bool viewer3DEnabled: QGroundControl.settingsManager.viewer3DSettings.enabled.rawValue
+        readonly property bool hasLivePose: !!root.activeVehicle && root.activeVehicle.coordinate.isValid
+        readonly property bool missionExecuting: hasLivePose && root.activeVehicle.armed && root.activeVehicle.flying
+            && root.activeVehicle.flightMode === root.activeVehicle.missionFlightMode
+        readonly property string sceneState: !viewer3DEnabled ? "DISABLED"
+            : (!hasLivePose ? "AWAITING VEHICLE" : (missionExecuting ? "MISSION SYNC" : "TELEMETRY LIVE"))
+        readonly property color sceneTone: !viewer3DEnabled ? root.dim
+            : (!hasLivePose ? root.warn : (missionExecuting ? root.ok : root.gold))
 
-        color: "#090d13"
-        border.color: "#202734"
+        color: "#080c12"
+        border.color: Qt.rgba(root.gold.r, root.gold.g, root.gold.b, 0.55)
         border.width: 1
         radius: 4
         clip: true
 
+        onViewer3DEnabledChanged: {
+            if (viewer3DEnabled) {
+                // Viewer3D only self-opens during construction. The Briech
+                // button can enable it after this panel already exists.
+                Qt.callLater(function() { tacticalViewer3D.open() })
+            }
+        }
+
         ColumnLayout {
             anchors.fill: parent
-            anchors.margins: 8
-            spacing: 6
+            anchors.margins: 7
+            spacing: 5
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 8
+                spacing: 6
 
                 Text {
-                    text: "LIVE 3D VIEW"
+                    text: "AUXILIARY / 3D SIMULATION"
                     color: root.gold
-                    font.pixelSize: 10
+                    font.pixelSize: 9
                     font.bold: true
                     font.family: "monospace"
                     font.letterSpacing: 1
@@ -7163,10 +8563,18 @@ Item {
 
                 Item { Layout.fillWidth: true }
 
+                Rectangle {
+                    Layout.preferredWidth: 6
+                    Layout.preferredHeight: 6
+                    radius: 3
+                    color: sceneTone
+                }
+
                 Text {
-                    text: viewer3DEnabled ? "READY" : "DISABLED"
-                    color: viewer3DEnabled ? "#22c55e" : root.dim
-                    font.pixelSize: 8
+                    text: sceneState
+                    color: sceneTone
+                    font.pixelSize: 7
+                    font.bold: true
                     font.family: "monospace"
                 }
             }
@@ -7174,16 +8582,14 @@ Item {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                color: "#05070a"
-                border.color: "#202734"
+                color: "#07101a"
+                border.color: Qt.rgba(root.gold.r, root.gold.g, root.gold.b, 0.26)
                 border.width: 1
                 clip: true
 
                 Viewer3D {
-                    x: 0
-                    y: 0
-                    width: viewer3DContainer.width
-                    height: viewer3DContainer.height
+                    id: tacticalViewer3D
+                    anchors.fill: parent
                     visible: viewer3DEnabled
                     Component.onCompleted: {
                         if (viewer3DEnabled) {
@@ -7191,6 +8597,71 @@ Item {
                         }
                     }
                     Component.onDestruction: close()
+                }
+
+                // Keep all HUD data tied to the same telemetry that animates
+                // the 3D model and mission line in Viewer3D.
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.margins: 7
+                    width: 104
+                    height: 52
+                    visible: viewer3DEnabled && hasLivePose
+                    color: Qt.rgba(0.02, 0.04, 0.07, 0.82)
+                    border.color: Qt.rgba(root.gold.r, root.gold.g, root.gold.b, 0.30)
+                    border.width: 1
+
+                    Column {
+                        anchors.fill: parent
+                        anchors.margins: 6
+                        spacing: 3
+
+                        Text {
+                            text: missionExecuting ? "MISSION TRACK" : "VEHICLE TRACK"
+                            color: root.gold
+                            font.pixelSize: 7
+                            font.bold: true
+                            font.family: "monospace"
+                        }
+
+                        Text {
+                            text: "ALT " + root.altitudeText() + "   GS " + root.groundSpeedText()
+                            color: root.text
+                            font.pixelSize: 8
+                            font.family: "monospace"
+                        }
+
+                        Text {
+                            text: root.missionWaypointProgressText() + "  HDG " + root.headingText()
+                            color: root.dim
+                            font.pixelSize: 7
+                            font.family: "monospace"
+                        }
+                    }
+                }
+
+                Rectangle {
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.margins: 7
+                    width: 128
+                    height: 22
+                    visible: viewer3DEnabled
+                    color: Qt.rgba(0.02, 0.04, 0.07, 0.84)
+                    border.color: Qt.rgba(root.gold.r, root.gold.g, root.gold.b, 0.30)
+                    border.width: 1
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: hasLivePose
+                            ? (root._simulationController.running ? "SITL • LIVE POSE" : "VEHICLE • LIVE POSE")
+                            : "WAITING FOR POSE"
+                        color: hasLivePose ? root.ok : root.warn
+                        font.pixelSize: 7
+                        font.bold: true
+                        font.family: "monospace"
+                    }
                 }
 
                 Column {
@@ -7214,6 +8685,210 @@ Item {
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                 }
+
+                Column {
+                    anchors.centerIn: parent
+                    spacing: 5
+                    visible: viewer3DEnabled && !hasLivePose
+
+                    Text {
+                        text: "AWAITING VEHICLE POSE"
+                        color: root.warn
+                        font.pixelSize: 10
+                        font.family: "monospace"
+                        font.bold: true
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
+
+                    Text {
+                        text: "Start SITL or connect a vehicle to animate the mission scene"
+                        color: root.dim
+                        font.pixelSize: 8
+                        font.family: "monospace"
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
+                }
+            }
+        }
+    }
+
+    // Compact, offline-first aircraft simulator. Unlike Viewer3D this is
+    // available on every supported graphics adapter and needs no terrain map.
+    component ModernOffline3DSimulationPanel: Rectangle {
+        id: tacticalSimulation
+        readonly property bool hasVehicle: !!root.activeVehicle
+        readonly property bool hasLivePose: hasVehicle && root.activeVehicle.coordinate && root.activeVehicle.coordinate.isValid
+        readonly property bool hasMission: root.missionCoordinates && root.missionCoordinates.length > 0
+        readonly property bool executing: hasLivePose && root.activeVehicle.armed && root.activeVehicle.flying
+            && root.activeVehicle.flightMode === root.activeVehicle.missionFlightMode
+        readonly property string sceneState: !hasVehicle ? "NO ACTIVE VEHICLE"
+            : (!hasLivePose ? "AWAITING TELEMETRY" : (!hasMission ? "NO MISSION LOADED"
+                : (root.missionTimelineComplete() ? "MISSION COMPLETE" : (executing ? "MISSION SYNC" : "TELEMETRY LIVE"))))
+        readonly property color sceneTone: !hasVehicle || !hasMission ? root.warn : (executing ? root.ok : root.gold)
+
+        color: "#080c12"
+        border.color: Qt.rgba(root.gold.r, root.gold.g, root.gold.b, 0.62)
+        border.width: 1
+        radius: 3
+        clip: true
+
+        Timer {
+            interval: 125
+            repeat: true
+            running: tacticalSimulation.visible
+            onTriggered: tacticalScene.requestPaint()
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 6
+            spacing: 3
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 15
+                Text {
+                    text: "PAYLOAD · 3D VIEW"
+                    color: root.gold
+                    font.pixelSize: 9
+                    font.bold: true
+                    font.family: "monospace"
+                    font.letterSpacing: 0.8
+                }
+                Item { Layout.fillWidth: true }
+                Rectangle {
+                    Layout.preferredWidth: 24
+                    Layout.preferredHeight: 13
+                    color: Qt.rgba(root.gold.r, root.gold.g, root.gold.b, 0.10)
+                    border.color: Qt.rgba(root.gold.r, root.gold.g, root.gold.b, 0.65)
+                    border.width: 1
+                    radius: 1
+                    Text { anchors.centerIn: parent; text: "3D"; color: root.gold; font.pixelSize: 7; font.bold: true; font.family: "monospace" }
+                }
+                // Reserve space for the parent close affordance.
+                Item { Layout.preferredWidth: 20 }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 10
+                text: "3D VIEW | MISSION PATH | " + (hasVehicle ? root.activeVehicle.vehicleName : "NO VEHICLE") + " | " + root.flightTimeText()
+                elide: Text.ElideRight
+                color: root.dim
+                font.pixelSize: 7
+                font.bold: true
+                font.family: "monospace"
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                color: "#071019"
+                border.color: Qt.rgba(root.gold.r, root.gold.g, root.gold.b, 0.22)
+                border.width: 1
+                clip: true
+
+                Canvas {
+                    id: tacticalScene
+                    anchors.fill: parent
+                    renderTarget: Canvas.Image
+                    antialiasing: true
+
+                    onPaint: {
+                        const ctx = getContext("2d")
+                        const w = width
+                        const h = height
+                        if (w < 2 || h < 2) return
+                        ctx.reset()
+                        const horizon = Math.round(h * 0.38)
+                        const sky = ctx.createLinearGradient(0, 0, 0, horizon)
+                        sky.addColorStop(0, "#07121d")
+                        sky.addColorStop(1, "#123348")
+                        ctx.fillStyle = sky
+                        ctx.fillRect(0, 0, w, horizon)
+                        const ground = ctx.createLinearGradient(0, horizon, 0, h)
+                        ground.addColorStop(0, "#10271f")
+                        ground.addColorStop(1, "#06120f")
+                        ctx.fillStyle = ground
+                        ctx.fillRect(0, horizon, w, h - horizon)
+                        ctx.strokeStyle = "#b09336"
+                        ctx.globalAlpha = 0.6
+                        ctx.beginPath(); ctx.moveTo(0, horizon + 0.5); ctx.lineTo(w, horizon + 0.5); ctx.stroke()
+                        ctx.strokeStyle = "#536823"
+                        ctx.globalAlpha = 0.55
+                        for (let row = 1; row < 10; row++) {
+                            const y = horizon + Math.pow(row / 10, 1.7) * (h - horizon)
+                            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
+                        }
+                        const shift = (root.headingDegreesValue() % 30) / 30
+                        for (let col = -8; col <= 8; col++) {
+                            ctx.beginPath()
+                            ctx.moveTo(w / 2 + (col + shift) * 9, horizon)
+                            ctx.lineTo(w / 2 + (col + shift) * 34, h)
+                            ctx.stroke()
+                        }
+                        ctx.globalAlpha = 1
+
+                        const route = root.missionCoordinates || []
+                        const all = []
+                        for (let i = 0; i < route.length; i++) if (route[i] && route[i].isValid) all.push(route[i])
+                        const vehicleCoordinate = tacticalSimulation.hasLivePose ? root.activeVehicle.coordinate : null
+                        if (vehicleCoordinate) all.push(vehicleCoordinate)
+                        if (all.length === 0) return
+                        let minLat = all[0].latitude, maxLat = minLat, minLon = all[0].longitude, maxLon = minLon
+                        for (let j = 1; j < all.length; j++) {
+                            minLat = Math.min(minLat, all[j].latitude); maxLat = Math.max(maxLat, all[j].latitude)
+                            minLon = Math.min(minLon, all[j].longitude); maxLon = Math.max(maxLon, all[j].longitude)
+                        }
+                        const latSpan = Math.max(0.00008, maxLat - minLat)
+                        const lonSpan = Math.max(0.00008, maxLon - minLon)
+                        const project = function(c) {
+                            return { x: 13 + (c.longitude - minLon) / lonSpan * Math.max(1, w - 26),
+                                y: horizon + 10 + (maxLat - c.latitude) / latSpan * Math.max(1, h - horizon - 22) }
+                        }
+                        if (route.length > 1) {
+                            ctx.setLineDash([4, 3]); ctx.strokeStyle = "#c9a84c"; ctx.lineWidth = 1.4; ctx.beginPath()
+                            for (let k = 0; k < route.length; k++) {
+                                if (!route[k] || !route[k].isValid) continue
+                                const p = project(route[k]); if (k === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y)
+                            }
+                            ctx.stroke(); ctx.setLineDash([])
+                            for (let waypoint = 0; waypoint < route.length; waypoint++) {
+                                if (!route[waypoint] || !route[waypoint].isValid) continue
+                                const p = project(route[waypoint]); ctx.fillStyle = waypoint < root.missionTimelineLiveIndex() ? "#38c976" : "#c9a84c"
+                                ctx.beginPath(); ctx.arc(p.x, p.y, waypoint === root.missionTimelineLiveIndex() ? 3.5 : 2, 0, Math.PI * 2); ctx.fill()
+                            }
+                        }
+                        if (!vehicleCoordinate) return
+                        const aircraft = project(vehicleCoordinate)
+                        ctx.save(); ctx.translate(aircraft.x, aircraft.y); ctx.rotate(root.headingDegreesValue() * Math.PI / 180)
+                        ctx.shadowColor = "#f5cf56"; ctx.shadowBlur = 8; ctx.fillStyle = "#f2cf59"; ctx.strokeStyle = "#10151d"; ctx.lineWidth = 1
+                        ctx.beginPath(); ctx.moveTo(0, -11); ctx.lineTo(3, -2); ctx.lineTo(12, 7); ctx.lineTo(3, 5); ctx.lineTo(1.5, 11); ctx.lineTo(-1.5, 11); ctx.lineTo(-3, 5); ctx.lineTo(-12, 7); ctx.lineTo(-3, -2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore()
+                    }
+                }
+
+                Column {
+                    anchors.centerIn: parent
+                    visible: !tacticalSimulation.hasVehicle || !tacticalSimulation.hasLivePose || !tacticalSimulation.hasMission
+                    spacing: 4
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: tacticalSimulation.sceneState; color: tacticalSimulation.sceneTone; font.pixelSize: 10; font.bold: true; font.family: "monospace" }
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: !tacticalSimulation.hasVehicle ? "Connect a vehicle or start SITL" : (!tacticalSimulation.hasLivePose ? "Waiting for a valid vehicle position" : "Upload a mission to display its route")
+                        color: root.dim; font.pixelSize: 7; font.family: "monospace"
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 11
+                spacing: 7
+                Text { text: "ALT " + root.altitudeText(); color: root.text; font.pixelSize: 7; font.family: "monospace" }
+                Text { text: "GS " + root.groundSpeedText(); color: root.text; font.pixelSize: 7; font.family: "monospace" }
+                Text { text: "HDG " + root.normalizedHeadingText(); color: root.gold; font.pixelSize: 7; font.family: "monospace" }
+                Item { Layout.fillWidth: true }
+                Text { text: root.missionWaypointProgressText(); color: sceneTone; font.pixelSize: 7; font.bold: true; font.family: "monospace" }
             }
         }
     }
@@ -7236,8 +8911,17 @@ Item {
 
         Loader {
             anchors.fill: parent
-            active: root.payloadPanelOpen
-            sourceComponent: payloadView === "3d" ? modern3DPanelComponent : modernVideoPanelComponent
+            // Video is the only payload view which needs deferred creation.
+            // Keeping the tactical simulator out of this Loader makes the 3D
+            // button deterministic on its first click and after close/reopen.
+            active: root.payloadPanelOpen && payloadView === "video"
+            sourceComponent: modernVideoPanelComponent
+        }
+
+        ModernOffline3DSimulationPanel {
+            anchors.fill: parent
+            visible: root.payloadPanelOpen && payloadPanel.payloadView === "3d"
+            z: 1
         }
 
         Rectangle {
@@ -7275,20 +8959,16 @@ Item {
                 videoVisible: payloadPanel.videoVisible
                 videoMode: payloadPanel.videoMode
                 zoomLevel: payloadPanel.zoomLevel
+                detectionController: rootDetectionController
                 onModeRequested: payloadPanel.modeRequested(mode)
                 onZoomRequested: payloadPanel.zoomRequested()
             }
         }
 
-        Component {
-            id: modern3DPanelComponent
-            ModernViewer3DPanel {
-                anchors.fill: parent
-            }
-        }
     }
 
     component ModernPayloadButton: Rectangle {
+        id: payloadButton
         signal clicked()
         property string label: ""
         property string iconKind: "video"
@@ -7362,7 +9042,9 @@ Item {
             cursorShape: parent.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
             onEntered: hovered = true
             onExited: hovered = false
-            onClicked: clicked()
+            // Qualified: an unqualified clicked() resolves to MouseArea.clicked(mouse)
+            // and throws "Insufficient arguments", so the button never fired.
+            onClicked: payloadButton.clicked()
         }
     }
 
@@ -7632,6 +9314,15 @@ Item {
                     font.pixelSize: 9
                     font.family: "monospace"
                 }
+
+                Text {
+                    text: rootEnergyPredictor.status
+                    color: rootEnergyPredictor.modelAvailable ? root.ok : root.warn
+                    font.pixelSize: 8
+                    font.family: "monospace"
+                    elide: Text.ElideLeft
+                    Layout.maximumWidth: 190
+                }
             }
 
             RowLayout {
@@ -7677,9 +9368,17 @@ Item {
                 }
 
                 Text {
-                    text: qsTr("HOME %1").arg(root.missionBatteryAtHomeEstimateText())
-                    color: root.ok
-                    visible: root.missionBatteryAtHomeEstimateText() !== "--"
+                    text: qsTr("HOME %1–%2").arg(root.energyPercentText(rootEnergyPredictor.homeLowerPercent)).arg(root.energyPercentText(rootEnergyPredictor.homeUpperPercent))
+                    color: rootEnergyPredictor.modelAvailable ? root.ok : root.warn
+                    visible: rootEnergyPredictor.waypointPredictions.length > 0
+                    font.pixelSize: 9
+                    font.family: "monospace"
+                }
+
+                Text {
+                    text: rootEnergyPredictor.rtlWaypointIndex >= 0 ? qsTr("RTL SAFE WP %1").arg(rootEnergyPredictor.rtlWaypointIndex + 1) : qsTr("RTL REVIEW")
+                    color: rootEnergyPredictor.rtlWaypointIndex >= 0 ? root.ok : root.err
+                    visible: rootEnergyPredictor.waypointPredictions.length > 0
                     font.pixelSize: 9
                     font.family: "monospace"
                 }
