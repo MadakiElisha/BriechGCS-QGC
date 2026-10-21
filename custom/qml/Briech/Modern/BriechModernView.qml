@@ -2201,6 +2201,14 @@ Item {
         }
     }
 
+    function toggleWindowMaximized() {
+        if (mainWindow.visibility === Window.Maximized) {
+            mainWindow.showNormal()
+        } else {
+            mainWindow.showMaximized()
+        }
+    }
+
     function closePayload() {
         payloadPanelOpen = false
     }
@@ -4952,6 +4960,18 @@ Item {
             Layout.preferredHeight: 30
             color: "#040507"
 
+            // The main window is frameless while Modern is shown, so this bar
+            // stands in for the native title bar: drag to move, double-click
+            // to maximize/restore. Buttons declared below take their own clicks.
+            DragHandler {
+                target: null
+                onActiveChanged: if (active) mainWindow.startSystemMove()
+            }
+
+            TapHandler {
+                onDoubleTapped: root.toggleWindowMaximized()
+            }
+
             Rectangle {
                 anchors.left: parent.left
                 anchors.right: parent.right
@@ -4994,6 +5014,34 @@ Item {
 
                 Item { Layout.fillWidth: true }
 
+                Rectangle {
+                    Layout.preferredWidth: legacyUiLabel.implicitWidth + 18
+                    Layout.preferredHeight: 20
+                    color: legacyUiButton.containsMouse ? Qt.rgba(root.gold.r, root.gold.g, root.gold.b, 0.12) : "transparent"
+                    border.color: Qt.rgba(root.gold.r, root.gold.g, root.gold.b, legacyUiButton.containsMouse ? 0.85 : 0.40)
+                    border.width: 1
+                    radius: 2
+
+                    Text {
+                        id: legacyUiLabel
+                        anchors.centerIn: parent
+                        text: "LEGACY UI"
+                        color: root.gold
+                        font.pixelSize: 9
+                        font.bold: true
+                        font.letterSpacing: 1
+                        font.family: "monospace"
+                    }
+
+                    MouseArea {
+                        id: legacyUiButton
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: mainWindow.showFlyView()
+                    }
+                }
+
                 RowLayout {
                     Layout.preferredWidth: 90
                     Layout.fillHeight: true
@@ -5011,8 +5059,8 @@ Item {
                         Layout.preferredWidth: 30
                         Layout.fillHeight: true
                         color: maximizeWindow.containsMouse ? "#171c25" : "transparent"
-                        Text { anchors.centerIn: parent; text: "□"; color: root.text; font.pixelSize: 11 }
-                        MouseArea { id: maximizeWindow; anchors.fill: parent; hoverEnabled: true; onClicked: mainWindow.showMaximized() }
+                        Text { anchors.centerIn: parent; text: mainWindow.visibility === Window.Maximized ? "❐" : "□"; color: root.text; font.pixelSize: 11 }
+                        MouseArea { id: maximizeWindow; anchors.fill: parent; hoverEnabled: true; onClicked: root.toggleWindowMaximized() }
                     }
 
                     Rectangle {
