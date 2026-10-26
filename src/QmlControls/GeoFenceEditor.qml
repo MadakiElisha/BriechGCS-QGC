@@ -11,7 +11,7 @@ Rectangle {
     id:     geoFenceEditorRect
     height: geoFenceItems.y + geoFenceItems.height + (_margin * 2)
     radius: _radius
-    color:  qgcPal.buttonHighlight
+    color:  "#0f1113"
 
     property var    myGeoFenceController
     property var    flightMap

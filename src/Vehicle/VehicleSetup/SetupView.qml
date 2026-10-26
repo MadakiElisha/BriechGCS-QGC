@@ -86,6 +86,10 @@ Rectangle {
         }
     }
 
+    function showFirmwarePanel() {
+        showPanel(firmwareButton, "qrc:/qml/QGroundControl/VehicleSetup/FirmwareUpgrade.qml")
+    }
+
     Component.onCompleted: _showSummaryPanel()
 
     Connections {

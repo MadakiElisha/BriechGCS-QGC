@@ -12,6 +12,14 @@
         <file alias="microSD.svg">res/Images/microSD.svg</file>
         <file alias="odometer.svg">res/Images/odometer.svg</file>
         <file alias="vertical_speed.svg">res/Images/vertical_speed.svg</file>
+        <file alias="plane-take-off.svg">res/Images/plane-take-off.svg</file>
+        <file alias="target.svg">res/Images/target.svg</file>
+        <file alias="file.svg">res/Images/file.svg</file>
+        <file alias="fence.svg">res/Images/fence.svg</file>
+        <file alias="map-marker.svg">res/Images/map-marker.svg</file>
+        <file alias="map-point-add.svg">res/Images/map-point-add.svg</file>
+        <file alias="return.svg">res/Images/return.svg</file>
+        <file alias="pause.svg">res/Images/pause.svg</file>
         <file alias="dronecode-black.svg">res/Images/dronecode-black.svg</file>
         <file alias="dronecode-white.svg">res/Images/dronecode-white.svg</file>
     </qresource>

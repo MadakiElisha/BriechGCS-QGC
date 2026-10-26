@@ -151,9 +151,29 @@ ApplicationWindow {
         showTool(qsTr("Vehicle Configuration"), "qrc:/qml/QGroundControl/VehicleSetup/SetupView.qml", "/qmlimages/Gears.svg")
     }
 
+    function showAnalyzeToolPage(pageUrl) {
+        showAnalyzeTool()
+        toolDrawerLoader.item.showAnalyzePage(pageUrl)
+    }
+
+    function showVehicleConfigSummaryPage() {
+        showVehicleConfig()
+        toolDrawerLoader.item.showSummaryPanel()
+    }
+
     function showVehicleConfigParametersPage() {
         showVehicleConfig()
         toolDrawerLoader.item.showParametersPanel()
+    }
+
+    function showVehicleConfigFirmwarePage() {
+        showVehicleConfig()
+        toolDrawerLoader.item.showFirmwarePanel()
+    }
+
+    function showVehicleComponentConfigPage(vehicleComponent) {
+        showVehicleConfig()
+        toolDrawerLoader.item.showVehicleComponentPanel(vehicleComponent)
     }
 
     function showKnownVehicleComponentConfigPage(knownVehicleComponent) {

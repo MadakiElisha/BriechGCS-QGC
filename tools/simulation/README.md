@@ -7,7 +7,7 @@ Tools for testing QGroundControl without physical hardware.
 | Tool | Use Case | Setup |
 |------|----------|-------|
 | `mock_vehicle.py` | UI testing, quick checks | `pip install pymavlink` |
-| `run-arducopter-sitl.sh` | Full simulation, mission testing | Docker required |
+| `run-px4-sitl-docker.sh` | PX4 flight simulation and mission testing | Local PX4 SIH Docker image |
 
 ## Mock Vehicle (Lightweight)
 
@@ -24,7 +24,7 @@ pip install pymavlink
 ./mock_vehicle.py --system-id 1 --port 14550 &
 ./mock_vehicle.py --system-id 2 --port 14551 &
 
-# TCP mode (SITL-style)
+# TCP mode (mock MAVLink only; no simulated flight dynamics)
 ./mock_vehicle.py --tcp --port 5760
 ```
 
@@ -47,25 +47,29 @@ pip install pymavlink
 
 **Limitations:** No flight dynamics, no mission execution, limited MAVLink support.
 
-## ArduCopter SITL (Full Simulation)
+## PX4 SIH (Full Simulation)
 
-Full ArduPilot simulation via Docker. Supports missions, geofences, all commands.
+Full PX4 Software-in-Hardware simulation through the local Docker image. Briech GCS connects over UDP 14550 and starts the mission using the PX4 vehicle's native mission mode.
 
 ```bash
-# Run (builds image on first run, ~10-15 min)
-./run-arducopter-sitl.sh
+# Start the default quadrotor model
+./run-px4-sitl-docker.sh
 
-# With simulated network latency (Herelink-like)
-./run-arducopter-sitl.sh --with-latency
+# Select another vehicle type and home position
+./run-px4-sitl-docker.sh --model sihsim_airplane --home 9.0765,7.3986,50,270
+./run-px4-sitl-docker.sh --model sihsim_standard_vtol --speed-factor 1
 
-# Connect QGC to: tcp://localhost:5760
+# Briech GCS connects automatically to UDP 14550
 ```
 
-**Docker Commands:**
+Supported models: `sihsim_quadx` (multirotor), `sihsim_airplane` (fixed wing), and `sihsim_standard_vtol` (VTOL).
+
+The launcher expects the local `px4io/px4-sitl-sih:latest` image and does not build or pull it. The Briech GCS simulation controls use the same image, choose a model from the Plan vehicle type, and use the first mission waypoint as home when available.
+
+**Docker commands:**
 ```bash
-docker logs -f arducopter-sitl   # View logs
-docker stop arducopter-sitl      # Stop simulation
-docker rm arducopter-sitl        # Remove container
+docker logs -f briech-px4-sitl   # View logs
+docker rm -f briech-px4-sitl     # Stop and remove simulation
 ```
 
 **Requirements:** Docker
@@ -76,27 +80,26 @@ docker rm arducopter-sitl        # Remove container
 1. Start `./mock_vehicle.py`
 2. QGC auto-connects to UDP 14550
 
-### ArduCopter SITL (TCP)
-1. Start `./run-arducopter-sitl.sh`
-2. In QGC: **Application Settings → Comm Links → Add**
-3. Type: TCP, Host: localhost, Port: 5760
+### PX4 SIH
+1. Start `./run-px4-sitl-docker.sh` or use the Briech GCS simulation panel.
+2. QGC connects on UDP 14550 automatically.
 
 ## Comparison
 
-| Feature | mock_vehicle.py | ArduCopter SITL |
+| Feature | mock_vehicle.py | PX4 SIH |
 |---------|-----------------|-----------------|
-| Setup time | Seconds | 10-15 min (first run) |
-| Dependencies | pymavlink | Docker |
+| Setup time | Seconds | Starts from the local image |
+| Dependencies | pymavlink | Docker and PX4 SIH image |
 | Flight dynamics | ❌ | ✓ |
 | Mission execution | ❌ | ✓ |
 | Geofence support | ❌ | ✓ |
 | All MAVLink commands | ❌ | ✓ |
 | Resource usage | Low | Medium |
-| Best for | UI testing | Integration testing |
+| Best for | UI testing | PX4 integration and mission testing |
 
 ## Other Simulators
 
-For more advanced simulation:
-- [ArduPilot SITL](https://ardupilot.org/dev/docs/sitl-simulator-software-in-the-loop.html) - Native install
-- [PX4 SITL](https://docs.px4.io/main/en/simulation/) - PX4 simulation
+For more advanced PX4 simulation:
+- [PX4 SIH simulation](https://docs.px4.io/main/en/sim_sih/) - Flight dynamics inside PX4
+- [PX4 Gazebo simulation](https://docs.px4.io/main/en/sim_gazebo_gz/) - 3D physics simulation
 - [Gazebo](https://gazebosim.org/) - 3D physics simulation

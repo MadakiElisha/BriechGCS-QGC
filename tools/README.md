@@ -38,7 +38,8 @@ tools/
 ├── setup/                   # Environment setup scripts
 ├── simulation/              # Vehicle simulators
 │   ├── mock_vehicle.py      # Lightweight MAVLink simulator
-│   └── run-arducopter-sitl.sh  # ArduCopter SITL (Docker)
+│   ├── run-px4-sitl-docker.sh  # PX4 SIH full simulation (Docker)
+│   └── run-arducopter-sitl.sh  # Legacy alias for PX4 SIH
 └── translations/            # Translation tools
 ```
 
@@ -325,11 +326,11 @@ pip install pymavlink
 ./tools/simulation/mock_vehicle.py --tcp --port 5760  # TCP mode
 ```
 
-### ArduCopter SITL (Full Simulation)
+### PX4 SIH (Full Simulation)
 
 ```bash
-./tools/simulation/run-arducopter-sitl.sh       # Connect to tcp://localhost:5760
-./tools/simulation/run-arducopter-sitl.sh --with-latency  # Simulate network lag
+./tools/simulation/run-px4-sitl-docker.sh
+./tools/simulation/run-px4-sitl-docker.sh --model sihsim_airplane
 ```
 
 See [simulation/README.md](simulation/README.md) for details.
