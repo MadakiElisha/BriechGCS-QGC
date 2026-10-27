@@ -6,10 +6,8 @@
 class CustomFirmwarePlugin;
 class FirmwarePlugin;
 
-/// This custom implementation of FirmwarePluginFactory creates a custom build which only supports
-/// PX4 Pro firmware running on a multi-rotor vehicle. This is turn removes portions of the QGC UI
-/// related to other firmware and vehicle types. This creating a more simplified UI for a specific
-/// type of vehicle.
+/// This custom implementation supports PX4 firmware across the vehicle classes
+/// used by the PX4 SIH simulator and exposes the standard PX4 flight modes.
 class CustomFirmwarePluginFactory : public FirmwarePluginFactory
 {
     Q_OBJECT

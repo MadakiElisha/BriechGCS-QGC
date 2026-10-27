@@ -59,6 +59,10 @@ Item {
     property int riskZoneViewportRevision: 0
     property string openAipToken: QGroundControl.settingsManager.appSettings.openaipToken.rawValue || ""
     property bool liveGcsLocationReceived: false
+    property real modernActionSidebarWidth: 54
+    property bool planFilePanelOpen: true
+    // Live Plan view instance, used by the plan-only sidebar actions.
+    property var modernPlanView: null
     property bool modernSettingsOpen: false
     property bool modernConnectPanelOpen: false
     property bool modernVehicleMessagesOpen: false
@@ -116,20 +120,12 @@ Item {
     property bool demoFlightTargetDispatched: false
     property bool demoFlightTakeoffDispatched: false
     property double demoFlightPhaseStartedAt: 0
-    // A KML plan belongs to the persistent Plan editor. Keep its launch
-    // sequence separate from the generic command-pending state so a mission
-    // cannot be started until its upload, arm and takeoff phases are each
-    // confirmed by SITL telemetry.
+    // A KML plan belongs to the persistent Plan editor. Track its upload so
+    // the view can move to Fly after PX4 confirms the transfer.
     property string sitlMissionLaunchPhase: ""
     property double sitlMissionLaunchPhaseStartedAt: 0
-    property real sitlMissionLaunchAltitude: 0
-    property var sitlMissionLaunchRoute: []
-    // ArduCopter may still be completing Guided takeoff when it first reports
-    // the requested altitude. Keep the AUTO hand-off local to SITL, deliberate
-    // and observable instead of requiring the legacy Fly view's Continue action.
-    property double sitlMissionGuidedStableSince: 0
-    property int sitlMissionAutoAttempts: 0
-    property bool sitlBatteryConfigured: false
+    property bool simulationVehicleAutoSelected: false
+    property bool px4SITLConnectRequested: false
     property var demoFlightRoute: []
     property var demoFlightTrail: []
     property bool stationReadyPanelOpen: true
@@ -378,6 +374,67 @@ Item {
         return remainingDistance
     }
 
+    // Distance of the waypoint path, summed leg by leg.
+    function missionTotalDistanceMeters() {
+        if (missionCoordinates.length < 2) {
+            return missionCoordinates.length === 1 ? 0 : NaN
+        }
+        let total = 0
+        for (let i = 0; i < missionCoordinates.length - 1; i++) {
+            total += distanceMetersBetween(missionCoordinates[i], missionCoordinates[i + 1])
+        }
+        return total
+    }
+
+    // The leg being flown: previous waypoint (or home for the first leg) to
+    // the current target waypoint.
+    function missionCurrentLeg() {
+        if (!missionTimelineAvailable()) {
+            return null
+        }
+        const toIndex = missionTimelineComplete() ? missionCoordinates.length - 1 : missionTimelineLiveIndex()
+        if (toIndex > 0) {
+            return {
+                from: qsTr("WP %1").arg(toIndex),
+                to: qsTr("WP %1").arg(toIndex + 1),
+                meters: distanceMetersBetween(missionCoordinates[toIndex - 1], missionCoordinates[toIndex])
+            }
+        }
+        const home = activeVehicle && activeVehicle.homePosition && activeVehicle.homePosition.isValid
+            ? activeVehicle.homePosition
+            : (_missionController ? _missionController.plannedHomePosition : QtPositioning.coordinate())
+        if (home && home.isValid) {
+            return { from: qsTr("HOME"), to: qsTr("WP 1"), meters: distanceMetersBetween(home, missionCoordinates[0]) }
+        }
+        return missionCoordinates.length > 1
+            ? { from: qsTr("WP 1"), to: qsTr("WP 2"), meters: distanceMetersBetween(missionCoordinates[0], missionCoordinates[1]) }
+            : null
+    }
+
+    function missionLegText() {
+        const leg = missionCurrentLeg()
+        return leg ? qsTr("%1→%2 %3").arg(leg.from).arg(leg.to).arg(formatMissionDistance(leg.meters)) : "--"
+    }
+
+    function flightDistanceMeters() {
+        return activeVehicle && activeVehicle.flightDistance ? Number(activeVehicle.flightDistance.rawValue) : NaN
+    }
+
+    // Midpoint labels for every leg of the mission path on the fly map.
+    function missionSegmentLabels() {
+        const labels = []
+        for (let i = 0; i < missionCoordinates.length - 1; i++) {
+            const from = missionCoordinates[i]
+            const to = missionCoordinates[i + 1]
+            if (!from || !to || !from.isValid || !to.isValid) {
+                continue
+            }
+            const meters = from.distanceTo(to)
+            labels.push({ coordinate: from.atDistanceAndAzimuth(meters / 2, from.azimuthTo(to)), text: formatMissionDistance(meters) })
+        }
+        return labels
+    }
+
     function missionEtaSeconds() {
         const remainingDistance = missionRemainingDistanceMeters()
         const groundSpeed = activeVehicle ? numericFactValue(activeVehicle.groundSpeed, NaN) : NaN
@@ -510,14 +567,45 @@ Item {
             && !activeVehicle.vehicleLinkManager.communicationLost
     }
 
-    function guidedActionsEnabled() {
-        if (!activeVehicle) {
+    function vehicleUsesPX4SITLUDP(vehicle) {
+        if (!vehicle || !vehicle.px4Firmware || !vehicle.vehicleLinkManager
+                || vehicle.vehicleLinkManager.communicationLost) {
             return false
         }
-        // ArduPilot SITL does not provide a physical RC receiver. Keep the
-        // normal RC safety gate for real vehicles, but allow the dedicated
-        // local simulator controls to operate without an RC RSSI value.
-        if (_simulationController && _simulationController.running) {
+        const vehicleLinks = vehicle.vehicleLinkManager.linkNames
+        const configurations = QGroundControl.linkManager.linkConfigurations
+        for (let index = 0; index < configurations.count; index++) {
+            const configuration = configurations.get(index)
+            if (configuration
+                    && configuration.linkType === LinkConfiguration.TypeUdp
+                    && Number(configuration.localPort) === 14550
+                    && vehicleLinks.indexOf(configuration.name) >= 0) {
+                return true
+            }
+        }
+        return false
+    }
+
+    function isPX4SimulationVehicle(vehicle) {
+        if (!vehicle || !vehicle.px4Firmware || !vehicle.vehicleLinkManager
+                || vehicle.vehicleLinkManager.communicationLost) {
+            return false
+        }
+        if (_simulationController && _simulationController.running
+                && Number(vehicle.id) === Number(_simulationController.systemId)) {
+            return true
+        }
+        return px4SITLConnectRequested && vehicleUsesPX4SITLUDP(vehicle)
+    }
+
+    function guidedActionsEnabled() {
+        // Commands cannot reach a vehicle whose link is lost.
+        if (!activeVehicle || !hasLiveVehicleLink()) {
+            return false
+        }
+        // SIH does not provide a physical RC receiver. Keep the normal RC
+        // safety gate for real vehicles and allow local simulator controls.
+        if (isPX4SimulationVehicle(activeVehicle)) {
             return true
         }
         const options = QGroundControl.corePlugin.options
@@ -531,7 +619,7 @@ Item {
         if (!activeVehicle) {
             return false
         }
-        if (_simulationController && _simulationController.running) {
+        if (isPX4SimulationVehicle(activeVehicle)) {
             return true
         }
         const appSettings = QGroundControl.settingsManager.appSettings
@@ -546,7 +634,7 @@ Item {
     function healthAllowsArm() {
         return !!activeVehicle
             && checklistPassed()
-            && ((_simulationController && _simulationController.running)
+            && (isPX4SimulationVehicle(activeVehicle)
                 || !activeVehicle.healthAndArmingCheckReport.supported
                 || activeVehicle.healthAndArmingCheckReport.canArm)
     }
@@ -557,14 +645,14 @@ Item {
             // takeoff command itself. SITL can report canTakeoff=false while
             // armed and ready, which previously left the control disabled.
             && (activeVehicle.armed
-                || ((_simulationController && _simulationController.running)
+                || (isPX4SimulationVehicle(activeVehicle)
                     && checklistPassed()
                     && (!activeVehicle.healthAndArmingCheckReport.supported
                         || activeVehicle.healthAndArmingCheckReport.canTakeoff)))
     }
 
     function vehicleCanArm() {
-        if (!activeVehicle) {
+        if (!activeVehicle || !hasLiveVehicleLink()) {
             return false
         }
         if (activeVehicle.armed) {
@@ -703,6 +791,97 @@ Item {
 
     function flightModeText() {
         return activeVehicle ? activeVehicle.flightMode : "--"
+    }
+
+    // Operator-facing PX4 mode labels per vehicle class, mapped to the mode
+    // names the PX4 firmware plugin uses. PX4 fixed-wing Loiter is its Hold mode.
+    readonly property var flightModeCatalog: ({
+        multicopter: [
+            { label: "Manual", mode: "Manual" },
+            { label: "Stabilized", mode: "Stabilized" },
+            { label: "Acro", mode: "Acro" },
+            { label: "Altitude", mode: "Altitude" },
+            { label: "Position", mode: "Position" },
+            { label: "Hold", mode: "Hold" },
+            { label: "Mission (Auto)", mode: "Mission" },
+            { label: "Return", mode: "Return" },
+            { label: "Takeoff", mode: "Takeoff" },
+            { label: "Land", mode: "Land" },
+            { label: "Follow Me", mode: "Follow Me" },
+            { label: "Offboard", mode: "Offboard" }
+        ],
+        fixedWing: [
+            { label: "Manual", mode: "Manual" },
+            { label: "Stabilized", mode: "Stabilized" },
+            { label: "Acro", mode: "Acro" },
+            { label: "Altitude", mode: "Altitude" },
+            { label: "Position", mode: "Position" },
+            { label: "Hold", mode: "Hold" },
+            { label: "Mission (Auto)", mode: "Mission" },
+            { label: "Return", mode: "Return" },
+            { label: "Takeoff", mode: "Takeoff" },
+            { label: "Land", mode: "Land" },
+            { label: "Loiter", mode: "Hold" },
+            { label: "Offboard", mode: "Offboard" }
+        ],
+        vtol: [
+            { label: "Manual", mode: "Manual" },
+            { label: "Stabilized", mode: "Stabilized" },
+            { label: "Acro", mode: "Acro" },
+            { label: "Altitude", mode: "Altitude" },
+            { label: "Position", mode: "Position" },
+            { label: "Hold", mode: "Hold" },
+            { label: "Mission (Auto)", mode: "Mission" },
+            { label: "Return", mode: "Return" },
+            { label: "Takeoff", mode: "Takeoff" },
+            { label: "Land", mode: "Land" },
+            { label: "Offboard", mode: "Offboard" }
+        ],
+        rover: [
+            { label: "Manual", mode: "Manual" },
+            { label: "Acro", mode: "Acro" },
+            { label: "Stabilized", mode: "Stabilized" },
+            { label: "Position", mode: "Position" },
+            { label: "Hold", mode: "Hold" },
+            { label: "Mission (Auto)", mode: "Mission" },
+            { label: "Return", mode: "Return" },
+            { label: "Offboard", mode: "Offboard" }
+        ]
+    })
+
+    function vehicleFlightModeClass() {
+        if (!activeVehicle) {
+            return ""
+        }
+        if (activeVehicle.vtol) {
+            return "vtol"
+        }
+        if (activeVehicle.rover) {
+            return "rover"
+        }
+        if (activeVehicle.fixedWing) {
+            return "fixedWing"
+        }
+        if (activeVehicle.multiRotor) {
+            return "multicopter"
+        }
+        return ""
+    }
+
+    function flightModeOptions() {
+        const modes = flightModeCatalog[vehicleFlightModeClass()] || []
+        const supported = activeVehicle ? activeVehicle.flightModes : []
+        return modes.map(entry => ({
+            label: entry.label,
+            mode: entry.mode,
+            available: supported.indexOf(entry.mode) >= 0
+        }))
+    }
+
+    function selectFlightMode(mode) {
+        if (activeVehicle && mode && activeVehicle.flightMode !== mode) {
+            activeVehicle.flightMode = mode
+        }
     }
 
     function flightTimeText() {
@@ -1347,6 +1526,7 @@ Item {
 
     function vehicleCanDisarm() {
         return !!activeVehicle
+            && hasLiveVehicleLink()
             && guidedActionsEnabled()
             && activeVehicle.armed
             && !activeVehicle.flying
@@ -1451,16 +1631,87 @@ Item {
 
     function flyActionModel() {
         const commandReady = pendingVehicleAction === ""
+        const vehicleConnected = hasLiveVehicleLink()
         return [
-            { t: activeVehicle ? "DISC" : "CONNECT", s: activeVehicle ? "X" : "L", a: activeVehicle ? "disconnect" : "connect", visible: true, enabled: commandReady },
+            { t: vehicleConnected ? "DISC" : "CONNECT", s: vehicleConnected ? "X" : "L", a: vehicleConnected ? "disconnect" : "connect", visible: true, enabled: commandReady },
             { t: pendingVehicleAction === "arm" ? "ARM..." : (pendingVehicleAction === "disarm" ? "DISARM..." : (activeVehicle && activeVehicle.armed ? "DISARM" : "ARM")), s: activeVehicle && activeVehicle.armed ? "D" : "A", a: activeVehicle && activeVehicle.armed ? "disarm" : "arm", visible: true, enabled: commandReady && (activeVehicle && activeVehicle.armed ? vehicleCanDisarm() : vehicleCanArm()) },
-            { t: pendingVehicleAction === "takeoff" ? "TAKEOFF..." : "TAKEOFF", s: "T", a: "takeoff", visible: true, enabled: commandReady && vehicleCanTakeoff() },
-            { t: pendingVehicleAction === "pause" ? "PAUSE..." : "PAUSE", s: "P", a: "pause", visible: true, enabled: commandReady && vehicleCanPause() },
-            { t: pendingVehicleAction === "land" ? "LAND..." : "LAND", s: "L", a: "land", visible: true, enabled: commandReady && vehicleCanLand() },
-            { t: pendingVehicleAction === "rtl" ? "RTL..." : "RTL", s: "R", a: "rtl", visible: true, enabled: commandReady && vehicleCanRTL() },
-            { t: "CENTER", s: "C", a: "center", visible: hasNavigationTarget(), enabled: hasNavigationTarget() },
-            { t: "FIT", s: "F", a: "fit", visible: missionCoordinates.length > 1, enabled: missionCoordinates.length > 1 }
+            { t: pendingVehicleAction === "takeoff" ? "TAKEOFF..." : "TAKEOFF", s: "T", icon: "qrc:/custom/img/plane-take-off.svg", a: "takeoff", visible: true, enabled: commandReady && vehicleCanTakeoff() },
+            { t: pendingVehicleAction === "pause" ? "PAUSE..." : "PAUSE", s: "P", icon: "qrc:/custom/img/pause.svg", a: "pause", visible: true, enabled: commandReady && vehicleCanPause(), sep: true },
+            { t: pendingVehicleAction === "land" ? "LAND..." : "LAND", s: "L", icon: "qrc:/res/land.svg", a: "land", visible: true, enabled: commandReady && vehicleCanLand() },
+            { t: pendingVehicleAction === "rtl" ? "RTL..." : "RTL", s: "R", icon: "qrc:/custom/img/return.svg", a: "rtl", visible: true, enabled: commandReady && vehicleCanRTL(), sep: true },
+            // CENTER and FIT drive the fly map, which is hidden while planning.
+            { t: "CENTER", s: "C", icon: "qrc:/custom/img/target.svg", a: "center", visible: activeModernSection === "fly" && hasNavigationTarget(), enabled: hasNavigationTarget() },
+            { t: "FIT", s: "F", a: "fit", visible: activeModernSection === "fly" && missionCoordinates.length > 1, enabled: missionCoordinates.length > 1 },
+            { t: "WAYPOINT", s: "+", icon: "qrc:/custom/img/map-point-add.svg", a: "planWaypoint", visible: activeModernSection === "plan", enabled: !!modernPlanView, sep: true },
+            { t: "FENCE", s: "G", icon: "qrc:/custom/img/fence.svg", a: "planFence", visible: activeModernSection === "plan", enabled: !!modernPlanView && modernPlanView.fenceSupported, active: !!modernPlanView && modernPlanView._editingLayer === modernPlanView._layerFence },
+            { t: "RALLY", s: "R", icon: "qrc:/custom/img/map-marker.svg", a: "planRally", visible: activeModernSection === "plan", enabled: !!modernPlanView && modernPlanView.rallySupported, active: !!modernPlanView && modernPlanView._editingLayer === modernPlanView._layerRally },
+            { t: "FILE", s: "F", icon: "qrc:/custom/img/file.svg", a: "file", visible: activeModernSection === "plan", enabled: true, active: planFilePanelOpen }
         ]
+    }
+
+    // The left sidebar is shared by every section; like QGroundControl's
+    // tool strips, its contents follow the current view.
+    function sidebarActionModel() {
+        switch (activeModernSection) {
+        case "analyze": return analyzeSidebarActions()
+        case "vehicle": return vehicleSidebarActions()
+        default: return flyActionModel()
+        }
+    }
+
+    function sidebarShortLabel(title) {
+        const shortLabels = {
+            "Log Download": "LOGS",
+            "GeoTag Images": "GEOTAG",
+            "MAVLink Console": "CONSOLE",
+            "MAVLink Inspector": "INSPECT",
+            "Vibration": "VIBE",
+            "Flight Modes": "MODES",
+            "Flight Behavior": "BEHAVIOR"
+        }
+        return (shortLabels[title] || String(title || "")).toUpperCase()
+    }
+
+    // Analyze pages that only work against a connected vehicle.
+    readonly property var analyzePagesRequiringVehicle: ["LogDownloadPage.qml", "MAVLinkConsolePage.qml", "VibrationPage.qml"]
+
+    // Mirrors the page list of the stock Analyze tool.
+    function analyzeSidebarActions() {
+        const pages = QGroundControl.corePlugin ? QGroundControl.corePlugin.analyzePages : []
+        const vehicleConnected = hasLiveVehicleLink()
+        const actions = []
+        for (let i = 0; i < pages.length; i++) {
+            const page = pages[i]
+            const pageUrl = String(page.url)
+            const needsVehicle = analyzePagesRequiringVehicle.some(fileName => pageUrl.endsWith("/" + fileName))
+            actions.push({ t: sidebarShortLabel(page.title), s: String(page.title).charAt(0), icon: String(page.icon), a: "analyzePage", target: page.url, visible: true, enabled: !needsVehicle || vehicleConnected })
+        }
+        return actions
+    }
+
+    // Mirrors the button list of the stock Vehicle Setup tool.
+    function vehicleSidebarActions() {
+        const manager = QGroundControl.multiVehicleManager
+        const corePlugin = QGroundControl.corePlugin
+        const actions = [
+            { t: "SUMMARY", s: "S", icon: "/qmlimages/VehicleSummaryIcon.png", a: "vehicleSummary", visible: true, enabled: true }
+        ]
+        if (activeVehicle && manager.parameterReadyVehicleAvailable && !activeVehicle.parameterManager.missingParameters) {
+            const components = activeVehicle.autopilotPlugin.vehicleComponents
+            for (let i = 0; i < components.length; i++) {
+                const component = components[i]
+                if (component.setupSource.toString() === "") {
+                    continue
+                }
+                // Same restrictions the stock Setup view enforces when a page is opened.
+                const blocked = (activeVehicle.armed && !component.allowSetupWhileArmed)
+                    || (activeVehicle.flying && !component.allowSetupWhileFlying)
+                actions.push({ t: sidebarShortLabel(component.name), s: String(component.name).charAt(0), icon: component.iconResource, a: "vehicleComponent", target: component, visible: true, enabled: !blocked, warn: component.requiresSetup && !component.setupComplete })
+            }
+        }
+        actions.push({ t: "PARAMS", s: "P", icon: "/qmlimages/subMenuButtonImage.png", a: "vehicleParameters", visible: !!activeVehicle && manager.parameterReadyVehicleAvailable && !activeVehicle.usingHighLatencyLink && corePlugin.showAdvancedUI, enabled: true, sep: true })
+        actions.push({ t: "FIRMWARE", s: "F", icon: "/qmlimages/FirmwareUpgradeIcon.png", a: "vehicleFirmware", visible: !ScreenTools.isMobile && corePlugin.options.showFirmwareUpgrade, enabled: true })
+        return actions
     }
 
     function appendSample(series, sample, maxCount) {
@@ -2277,9 +2528,17 @@ Item {
     Component {
         id: planViewComponent
         PlanViewModern {
+            id: modernPlanViewInstance
             anchors.fill: parent
+            Component.onCompleted: root.modernPlanView = modernPlanViewInstance
+            Component.onDestruction: {
+                if (root.modernPlanView === modernPlanViewInstance) {
+                    root.modernPlanView = null
+                }
+            }
             planMasterController: root._planEditorController
             simulationController: root._simulationController
+            filePanelOpen: root.planFilePanelOpen
             onSimulationHomeSuggested: function(home) {
                 root.simulationHome = home
                 if (root._simulationController.running) {
@@ -2308,29 +2567,54 @@ Item {
         id: rootSafetyMonitor
     }
 
-    function connectSimulationLink() {
-        const linkName = "Briech SITL TCP"
+    function localPX4SITLVehicle() {
+        if (!root._simulationController.running) {
+            return null
+        }
+        const vehicle = QGroundControl.multiVehicleManager.getVehicleById(root._simulationController.systemId)
+        return vehicle && vehicle.px4Firmware ? vehicle : null
+    }
+
+    function selectLocalPX4SITLVehicle() {
+        if (simulationVehicleAutoSelected) {
+            return
+        }
+        const vehicle = localPX4SITLVehicle()
+        if (!vehicle) {
+            return
+        }
+        QGroundControl.multiVehicleManager.activeVehicle = vehicle
+        simulationVehicleAutoSelected = true
+    }
+
+    function px4SimulationUDPConfiguration() {
         const configurations = QGroundControl.linkManager.linkConfigurations
         for (let index = 0; index < configurations.count; index++) {
             const configuration = configurations.get(index)
-            if (configuration && configuration.name === linkName) {
-                // LinkManager does not deduplicate createConnectedLink calls.
-                // A previous attempt which is still connecting owns the link;
-                // a failed/disconnected attempt clears this property, allowing
-                // the retry timer below to make a fresh connection.
-                if (configuration.link) {
-                    return
-                }
-                QGroundControl.linkManager.createConnectedLink(configuration)
-                return
+            if (configuration
+                    && configuration.linkType === LinkConfiguration.TypeUdp
+                    && Number(configuration.localPort) === 14550) {
+                return configuration
             }
         }
+        return null
+    }
 
-        const configuration = QGroundControl.linkManager.createConfiguration(LinkConfiguration.TypeTcp, linkName)
-        configuration.host = "127.0.0.1"
-        configuration.port = 5760
-        configuration.dynamic = true
-        QGroundControl.linkManager.createConnectedLink(configuration)
+    function connectSimulationLink() {
+        selectLocalPX4SITLVehicle()
+        let configuration = px4SimulationUDPConfiguration()
+        if (configuration) {
+            if (!configuration.link) {
+                QGroundControl.linkManager.createConnectedLink(configuration)
+            }
+            return
+        }
+
+        const udpConfiguration = QGroundControl.linkManager.createConfiguration(LinkConfiguration.TypeUdp, "Briech PX4 SITL UDP")
+        udpConfiguration.localPort = 14550
+        udpConfiguration.dynamic = true
+        QGroundControl.linkManager.endCreateConfiguration(udpConfiguration)
+        QGroundControl.linkManager.createConnectedLink(udpConfiguration)
     }
 
     Connections {
@@ -2339,19 +2623,24 @@ Item {
 
         function onRunningChanged() {
             if (root._simulationController.running) {
+                root.simulationVehicleAutoSelected = false
                 simulationAutoConnectTimer.restart()
+            } else {
+                root.simulationVehicleAutoSelected = false
             }
         }
     }
 
     Timer {
         id: simulationAutoConnectTimer
-        // Docker reports a container as running before ArduPilot starts its
-        // MAVLink TCP listener. Give it a brief head start, then keep trying
-        // safely until a vehicle heartbeat is received.
+        // Docker can report the container before PX4 publishes its first
+        // heartbeat. Give it a brief head start, then select its system ID.
         interval: 1800
         repeat: false
-        onTriggered: root.connectSimulationLink()
+        onTriggered: {
+            root.connectSimulationLink()
+            root.selectLocalPX4SITLVehicle()
+        }
     }
 
     Timer {
@@ -2359,17 +2648,12 @@ Item {
         interval: 2500
         repeat: true
         running: !!root._simulationController
-            && root._simulationController.running
-            && !root.hasLiveVehicleLink()
-        onTriggered: root.connectSimulationLink()
-    }
-
-    Timer {
-        id: sitlBatteryConfigTimer
-        interval: 2000
-        repeat: true
-        running: root._simulationController.running && !root.sitlBatteryConfigured
-        onTriggered: root.configureLocalSITLBattery()
+            && ((root._simulationController.running && !root.simulationVehicleAutoSelected)
+                || (root.px4SITLConnectRequested && !root.isPX4SimulationVehicle(root.activeVehicle)))
+        onTriggered: {
+            root.connectSimulationLink()
+            root.selectLocalPX4SITLVehicle()
+        }
     }
 
     Timer {
@@ -2385,10 +2669,6 @@ Item {
         interval: 250
         repeat: true
         running: root.sitlMissionLaunchPhase === "upload"
-            || root.sitlMissionLaunchPhase === "arming"
-            || root.sitlMissionLaunchPhase === "takeoff"
-            || root.sitlMissionLaunchPhase === "settling"
-            || root.sitlMissionLaunchPhase === "auto"
         onTriggered: root.advanceSITLMissionLaunch()
     }
 
@@ -3741,6 +4021,28 @@ Item {
             + Math.max(0, Number(origin.altitude) || 0).toFixed(2) + ",270.0"
     }
 
+    function px4SimulationModelForPlan() {
+        const vehicle = root._planEditorController ? root._planEditorController.controllerVehicle : null
+        if (vehicle && vehicle.vtol) {
+            return "sihsim_standard_vtol"
+        }
+        if (vehicle && vehicle.fixedWing) {
+            return "sihsim_airplane"
+        }
+        return "sihsim_quadx"
+    }
+
+    function px4SimulationProfileText() {
+        const model = px4SimulationModelForPlan()
+        if (model === "sihsim_standard_vtol") {
+            return qsTr("PX4 SIH · STANDARD VTOL")
+        }
+        if (model === "sihsim_airplane") {
+            return qsTr("PX4 SIH · FIXED WING")
+        }
+        return qsTr("PX4 SIH · QUADROTOR X")
+    }
+
     function startSITLForCurrentPlan() {
         if (_simulationController.running || _simulationController.busy) {
             return
@@ -3751,7 +4053,7 @@ Item {
         const route = editorMissionCoordinates()
         const home = sitlHomeFromRoute(route)
         simulationHome = home
-        _simulationController.startArduCopter(home, Number(simulationSpeedup), false)
+        _simulationController.startPX4SITL(home, Number(simulationSpeedup), px4SimulationModelForPlan())
         if (route.length > 0) {
             pushToast(qsTr("SITL"), qsTr("Starting at the first mission waypoint."), "info", 2600)
         }
@@ -3761,41 +4063,9 @@ Item {
         sitlMissionLaunchTimer.stop()
         sitlMissionLaunchPhase = ""
         sitlMissionLaunchPhaseStartedAt = 0
-        sitlMissionLaunchRoute = []
-        sitlMissionGuidedStableSince = 0
-        sitlMissionAutoAttempts = 0
         if (message && message.length > 0) {
             pushToast(qsTr("SITL Mission"), message, tone || "info", 3800)
         }
-    }
-
-    function requestSITLAutoMissionStart() {
-        if (sitlMissionLaunchPhase !== "auto" || !activeVehicleIsBriechSITL()) {
-            return
-        }
-        sitlMissionAutoAttempts += 1
-        activeVehicle.startMission()
-        if (sitlMissionAutoAttempts === 1) {
-            pushToast(qsTr("SITL Mission"), qsTr("Guided takeoff stabilized. AUTO mission start sent."), "info", 3000)
-        } else {
-            pushToast(qsTr("SITL Mission"), qsTr("AUTO confirmation delayed; retrying mission start (%1/3).").arg(sitlMissionAutoAttempts), "warn", 3000)
-        }
-    }
-
-    function beginSITLMissionTakeoff() {
-        if (!activeVehicle || !activeVehicle.armed) {
-            finishSITLMissionLaunch(qsTr("SITL did not confirm arming. Review the vehicle messages before retrying."), "warn")
-            return
-        }
-        sitlMissionLaunchPhase = "takeoff"
-        sitlMissionLaunchPhaseStartedAt = Date.now()
-        sitlMissionLaunchAltitude = Math.max(Number(activeVehicle.minimumTakeoffAltitudeMeters()), 12)
-        if (activeVehicle.guidedTakeoffSupported) {
-            activeVehicle.guidedModeTakeoff(sitlMissionLaunchAltitude)
-        } else {
-            activeVehicle.startTakeoff()
-        }
-        pushToast(qsTr("SITL Mission"), qsTr("Mission uploaded. Guided takeoff sent; waiting for flight altitude."), "info", 3200)
     }
 
     function advanceSITLMissionLaunch() {
@@ -3810,67 +4080,9 @@ Item {
             }
             return
         }
-        if (sitlMissionLaunchPhase === "arming") {
-            if (activeVehicle.armed) {
-                beginSITLMissionTakeoff()
-            } else if (elapsed >= 20000) {
-                finishSITLMissionLaunch(qsTr("SITL did not confirm arming. Review the vehicle messages before retrying."), "warn")
-            }
-            return
-        }
-        if (sitlMissionLaunchPhase === "takeoff") {
-            if (!activeVehicle.flying || !activeVehicle.coordinate.isValid
-                    || Number(activeVehicle.altitudeRelative.value) < sitlMissionLaunchAltitude - 1.5) {
-                if (elapsed >= 30000) {
-                    finishSITLMissionLaunch(qsTr("SITL did not reach mission takeoff altitude. Review the vehicle messages."), "warn")
-                }
-                return
-            }
-            sitlMissionLaunchPhase = "settling"
-            sitlMissionLaunchPhaseStartedAt = Date.now()
-            sitlMissionGuidedStableSince = 0
-            pushToast(qsTr("SITL Mission"), qsTr("Takeoff altitude confirmed. Stabilizing Guided flight before AUTO."), "info", 2600)
-            return
-        }
-        if (sitlMissionLaunchPhase === "settling") {
-            const atTakeoffAltitude = activeVehicle.flying && activeVehicle.coordinate.isValid
-                && Number(activeVehicle.altitudeRelative.value) >= sitlMissionLaunchAltitude - 1.5
-            // For ArduCopter, gotoFlightMode is the QML-exposed Guided mode.
-            const stillGuided = activeVehicle.flightMode === activeVehicle.gotoFlightMode
-            if (!atTakeoffAltitude || !stillGuided) {
-                sitlMissionGuidedStableSince = 0
-                if (elapsed >= 30000) {
-                    finishSITLMissionLaunch(qsTr("SITL did not stabilize in Guided mode before AUTO. Review vehicle messages."), "warn")
-                }
-                return
-            }
-            if (sitlMissionGuidedStableSince === 0) {
-                sitlMissionGuidedStableSince = Date.now()
-                return
-            }
-            if (Date.now() - sitlMissionGuidedStableSince < 1500) {
-                return
-            }
-            sitlMissionLaunchPhase = "auto"
-            sitlMissionLaunchPhaseStartedAt = Date.now()
-            sitlMissionAutoAttempts = 0
-            requestSITLAutoMissionStart()
-            return
-        }
-        if (sitlMissionLaunchPhase === "auto") {
-            if (activeVehicle.flightMode === activeVehicle.missionFlightMode) {
-                followActiveFlight = true
-                showLiveFlight()
-                finishSITLMissionLaunch(qsTr("AUTO confirmed. Vehicle is now following the uploaded mission."), "ok")
-            } else if (sitlMissionAutoAttempts < 3 && elapsed >= sitlMissionAutoAttempts * 2500) {
-                requestSITLAutoMissionStart()
-            } else if (elapsed >= 15000) {
-                finishSITLMissionLaunch(qsTr("SITL did not confirm AUTO after three requests. Review vehicle messages, then retry UPLOAD + AUTO from Briech Modern."), "warn")
-            }
-        }
     }
 
-    function startSimulationMission() {
+    function uploadSimulationMission() {
         if (sitlMissionLaunchPhase !== "") {
             return
         }
@@ -3904,13 +4116,13 @@ Item {
             confirmBriechAction(qsTr("Altitude Check"),
                 qsTr("This route contains a %1 m altitude step. Confirm that the KML altitudes are intentional before launch.")
                     .arg(largestAltitudeStep.toFixed(1)),
-                function() { root.uploadAndLaunchSITLMission(route) }, qsTr("LAUNCH SITL"), root.warn)
+                function() { root.uploadSITLMissionRoute(route) }, qsTr("UPLOAD PLAN"), root.warn)
             return
         }
-        uploadAndLaunchSITLMission(route)
+        uploadSITLMissionRoute(route)
     }
 
-    function uploadAndLaunchSITLMission(route) {
+    function uploadSITLMissionRoute(route) {
         const controller = _planEditorController ? _planEditorController.missionController : null
         if (!controller || controller.syncInProgress) {
             pushToast(qsTr("SITL Mission"), qsTr("Mission synchronization is in progress; wait for it to finish."), "warn", 3200)
@@ -3925,7 +4137,6 @@ Item {
             return
         }
 
-        sitlMissionLaunchRoute = route
         sitlMissionLaunchPhase = "upload"
         sitlMissionLaunchPhaseStartedAt = Date.now()
         _planEditorController.sendToVehicle()
@@ -3934,6 +4145,14 @@ Item {
 
     function handleSITLMissionUploadComplete(error) {
         if (sitlMissionLaunchPhase !== "upload") {
+            if (activeModernSection === "plan" && activeVehicleIsBriechSITL()) {
+                if (error) {
+                    pushToast(qsTr("PX4 SITL"), qsTr("Waypoint upload failed. Review vehicle messages before retrying."), "warn", 3800)
+                } else {
+                    activateModernSection("fly")
+                    pushToast(qsTr("PX4 SITL"), qsTr("Waypoints uploaded. Use the sidebar to arm when ready."), "ok", 4200)
+                }
+            }
             return
         }
         if (error) {
@@ -3944,42 +4163,13 @@ Item {
             finishSITLMissionLaunch(qsTr("Mission uploaded, but the SITL link is no longer active."), "warn")
             return
         }
-        sitlMissionLaunchPhase = "arming"
-        sitlMissionLaunchPhaseStartedAt = Date.now()
-        if (activeVehicle.armed) {
-            beginSITLMissionTakeoff()
-        } else if (vehicleCanArm()) {
-            activeVehicle.armed = true
-            pushToast(qsTr("SITL Mission"), qsTr("Mission uploaded. Arm command sent; awaiting confirmation."), "info", 3000)
-        } else {
-            finishSITLMissionLaunch(qsTr("Mission uploaded, but SITL is not ready to arm. Review preflight messages."), "warn")
-        }
+        finishSITLMissionLaunch("", "ok")
+        root.activateModernSection("fly")
+        pushToast(qsTr("PX4 SITL"), qsTr("Waypoints uploaded. Use the sidebar to arm when ready."), "ok", 4200)
     }
 
     function activeVehicleIsBriechSITL() {
-        if (!root._simulationController.running || !hasLiveVehicleLink()) {
-            return false
-        }
-        const linkNames = activeVehicle.vehicleLinkManager.linkNames
-        return linkNames && linkNames.indexOf("Briech SITL TCP") !== -1
-    }
-
-    function configureLocalSITLBattery() {
-        // The Docker copter model has no simulated battery sensor. Disable
-        // only that local SITL monitor so a synthetic 0% reading cannot
-        // raise a failsafe or mask the demo route. Hardware is never touched.
-        if (sitlBatteryConfigured || !activeVehicleIsBriechSITL()) {
-            return
-        }
-        const batteryMonitor = activeVehicle.getParameterFact(-1, "BATT_MONITOR", false)
-        if (!batteryMonitor) {
-            return
-        }
-        sitlBatteryConfigured = true
-        if (Number(batteryMonitor.rawValue) !== 0) {
-            batteryMonitor.rawValue = 0
-        }
-        pushToast(qsTr("SITL"), qsTr("Local simulated battery monitor disabled; hardware battery monitoring is unchanged."), "info", 3200)
+        return isPX4SimulationVehicle(activeVehicle)
     }
 
     function demoRouteFrom(origin) {
@@ -4069,7 +4259,7 @@ Item {
 
     function startSITLDemoFlight() {
         if (!activeVehicleIsBriechSITL()) {
-            showBriechMessage(qsTr("SITL Demo Only"), qsTr("The animated demo route is available only for the local Briech SITL TCP vehicle. Real aircraft never receive automated demo commands."), root.warn)
+            showBriechMessage(qsTr("SITL Demo Only"), qsTr("The animated demo route is available only for the local PX4 SITL vehicle. Real aircraft never receive automated demo commands."), root.warn)
             return
         }
         if (!activeVehicle.coordinate.isValid || !vehicleCanArm()) {
@@ -4560,13 +4750,18 @@ Item {
             showBriechMessage(qsTr("Arm Unavailable"), qsTr("The enforced checklist, health checks, or required RC link checks are not passing."), root.warn)
             return
         }
-        confirmVehicleAction(qsTr("Arm Vehicle"), qsTr("Arm the active vehicle?"), function() {
+        const armCommand = function() {
             if (!activeVehicle || activeVehicle.armed || !vehicleCanArm() || !beginPendingVehicleAction("arm")) {
                 return
             }
             activeVehicle.armed = true
             pushToast(qsTr("Vehicle Command"), qsTr("Arm command sent; awaiting vehicle state."), "info", 2200)
-        })
+        }
+        if (activeVehicleIsBriechSITL()) {
+            armCommand()
+        } else {
+            confirmVehicleAction(qsTr("Arm Vehicle"), qsTr("Arm the active vehicle?"), armCommand)
+        }
     }
 
     function disarmVehicle() {
@@ -4668,7 +4863,19 @@ Item {
 
     function disconnectVehicle() {
         if (activeVehicle) {
+            let simulationLink = null
+            const disconnectingPX4SITL = activeVehicleIsBriechSITL()
+            if (disconnectingPX4SITL) {
+                const configuration = px4SimulationUDPConfiguration()
+                simulationLink = configuration ? configuration.link : null
+                // Keep the retry timer from undoing the user's disconnect.
+                simulationVehicleAutoSelected = true
+                px4SITLConnectRequested = false
+            }
             activeVehicle.closeVehicle()
+            if (simulationLink) {
+                simulationLink.disconnect()
+            }
             pushToast(qsTr("Vehicle"), qsTr("Connection closed."), "warn", 2200)
         }
     }
@@ -4681,6 +4888,14 @@ Item {
 
     function openCommLinksSettings() {
         modernConnectPanelOpen = true
+    }
+
+    function connectSidebarVehicle() {
+        px4SITLConnectRequested = true
+        simulationVehicleAutoSelected = false
+        connectSimulationLink()
+        selectLocalPX4SITLVehicle()
+        pushToast(qsTr("PX4 SITL"), qsTr("Listening for the Docker vehicle on UDP 14550."), "info", 2600)
     }
 
     function closeCommLinksPanel() {
@@ -4780,8 +4995,7 @@ Item {
     }
 
     // MissionManager reports the result of the actual MAVLink mission
-    // transfer. Waiting for this signal prevents AUTO from being requested
-    // against an empty or still-uploading SITL mission.
+    // transfer. The upload state is only cleared after PX4 responds.
     Connections {
         target: root.activeVehicle ? root.activeVehicle.missionManager : null
         ignoreUnknownSignals: true
@@ -4856,8 +5070,6 @@ Item {
             root.syncMissionCoordinates()
             root.syncMissionScrubIndexToLive()
             root.followActiveFlight = false
-            root.sitlBatteryConfigured = false
-            root.configureLocalSITLBattery()
             if (root.activeVehicle && root.activeVehicle.flying) {
                 Qt.callLater(root.showLiveFlight)
             }
@@ -5151,10 +5363,76 @@ Item {
 
                             Text {
                                 id: unit
-                                text: root.telemetrySlotUnit(parent.parent.telemetryIndex)
-                                color: root.dim
+                                text: parent.parent.isModeSlot ? "▾" : root.telemetrySlotUnit(parent.parent.telemetryIndex)
+                                color: parent.parent.isModeSlot ? root.gold : root.dim
                                 font.pixelSize: 12
                                 font.family: ScreenTools.normalFontFamily
+                            }
+                        }
+
+                        property bool isModeSlot: telemetryIndex === 5
+
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: parent.isModeSlot && root.flightModeOptions().length > 0
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: flightModePopup.opened ? flightModePopup.close() : flightModePopup.open()
+                        }
+
+                        Popup {
+                            id: flightModePopup
+                            y: parent.height + 2
+                            width: Math.max(parent.width, 170)
+                            padding: 4
+                            closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+
+                            background: Rectangle {
+                                color: root.modernGlassStrong
+                                border.color: root.modernGoldHairline
+                                border.width: 1
+                                radius: 2
+                            }
+
+                            contentItem: Column {
+                                spacing: 1
+
+                                Repeater {
+                                    model: flightModePopup.opened ? root.flightModeOptions() : []
+
+                                    delegate: Rectangle {
+                                        id: modeOption
+                                        required property var modelData
+                                        readonly property bool current: root.activeVehicle && root.activeVehicle.flightMode === modelData.mode
+                                        width: flightModePopup.availableWidth
+                                        height: 26
+                                        radius: 2
+                                        color: current ? root.modernGoldFill : (optionMouse.containsMouse && modelData.available ? root.modernGlassSoft : "transparent")
+
+                                        Text {
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: 8
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: modeOption.modelData.label
+                                            color: modeOption.current ? root.gold : (modeOption.modelData.available ? root.text : root.dim)
+                                            opacity: modeOption.modelData.available ? 1 : 0.5
+                                            font.pixelSize: 12
+                                            font.bold: modeOption.current
+                                            font.family: "Barlow Condensed"
+                                        }
+
+                                        MouseArea {
+                                            id: optionMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            enabled: modeOption.modelData.available
+                                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                            onClicked: {
+                                                root.selectFlightMode(modeOption.modelData.mode)
+                                                flightModePopup.close()
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -5221,40 +5499,49 @@ Item {
             RowLayout {
                 anchors.fill: parent
                 spacing: 0
-                visible: root.activeModernSection === "fly"
+                // The action sidebar is shared by every section; the fly map is not.
 
                 Rectangle {
-                    Layout.preferredWidth: 54
+                    Layout.preferredWidth: root.modernActionSidebarWidth
                     Layout.fillHeight: true
                     color: "#07090d"
                     border.color: "#1e242e"
                     border.width: 1
 
-                    ColumnLayout {
-                        anchors.top: parent.top
-                        anchors.horizontalCenter: parent.horizontalCenter
+                    Flickable {
+                        anchors.fill: parent
                         anchors.topMargin: 8
+                        contentWidth: width
+                        contentHeight: sidebarColumn.implicitHeight + 8
+                        boundsBehavior: Flickable.StopAtBounds
+                        clip: true
+
+                    ColumnLayout {
+                        id: sidebarColumn
+                        anchors.horizontalCenter: parent.horizontalCenter
                         spacing: 4
 
                         Repeater {
-                            model: root.flyActionModel().length
+                            model: root.sidebarActionModel().length
 
                             delegate: Rectangle {
                                 required property int index
-                                property var actionItem: root.flyActionModel()[index] || ({})
+                                property var actionItem: root.sidebarActionModel()[index] || ({})
                                 property string actionText: actionItem.t || ""
                                 property string actionShort: actionItem.s || ""
+                                property string actionIcon: actionItem.icon || ""
                                 property string actionKey: actionItem.a || ""
                                 property bool actionEnabled: !!actionItem.enabled
                                 property bool actionVisible: actionItem.visible !== false
                                 property bool disconnectAction: actionKey === "disconnect"
+                                property bool actionActive: !!actionItem.active
                                 Layout.preferredWidth: 46
                                 Layout.preferredHeight: visible ? 46 : 0
                                 visible: actionVisible
                                 radius: 6
                                 opacity: actionEnabled ? 1.0 : 0.78
-                                color: disconnectAction ? "#171109" : "#0c1017"
-                                border.color: disconnectAction ? root.gold : (actionEnabled ? "#243041" : "#1b2430")
+                                color: disconnectAction || actionActive ? "#171109" : "#0c1017"
+                                border.color: disconnectAction || actionActive ? root.gold : (actionEnabled ? "#243041" : "#1b2430")
                                 border.width: 1
 
                                 Rectangle {
@@ -5262,7 +5549,7 @@ Item {
                                     anchors.right: parent.right
                                     anchors.top: parent.top
                                     height: 1
-                                    visible: index === 3 || index === 5
+                                    visible: !!parent.actionItem.sep
                                     color: root.gold
                                     opacity: 0.45
                                 }
@@ -5271,6 +5558,19 @@ Item {
                                     anchors.centerIn: parent
                                     spacing: 2
 
+                                    QGCColoredImage {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        width: 20
+                                        height: 20
+                                        source: parent.parent.actionIcon
+                                        color: parent.parent.actionActive ? root.gold : root.text
+                                        fillMode: Image.PreserveAspectFit
+                                        smooth: true
+                                        mipmap: true
+                                        visible: parent.parent.actionIcon !== ""
+                                        opacity: parent.parent.actionEnabled ? 1.0 : 0.38
+                                    }
+
                                     Text {
                                         anchors.horizontalCenter: parent.horizontalCenter
                                         text: parent.parent.actionShort
@@ -5278,16 +5578,33 @@ Item {
                                         font.pixelSize: 14
                                         font.bold: true
                                         font.family: "Barlow Condensed"
+                                        visible: parent.parent.actionIcon === ""
                                     }
 
                                     Text {
                                         anchors.horizontalCenter: parent.horizontalCenter
+                                        width: 42
+                                        horizontalAlignment: Text.AlignHCenter
                                         text: parent.parent.actionText
                                         color: parent.parent.actionEnabled ? (parent.parent.disconnectAction ? root.gold : root.dim) : "#586272"
                                         font.pixelSize: 9
                                         font.bold: true
                                         font.family: "Barlow Condensed"
+                                        fontSizeMode: Text.HorizontalFit
+                                        minimumPixelSize: 7
                                     }
+                                }
+
+                                // Setup still required, as flagged in the stock Vehicle Setup list.
+                                Rectangle {
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    anchors.margins: 4
+                                    width: 6
+                                    height: 6
+                                    radius: 3
+                                    visible: !!parent.actionItem.warn
+                                    color: root.err
                                 }
 
                                 MouseArea {
@@ -5295,7 +5612,7 @@ Item {
                                     enabled: parent.actionEnabled
                                     onClicked: {
                                         switch (parent.actionKey) {
-                                        case "connect": root.openCommLinksSettings(); break
+                                        case "connect": root.connectSidebarVehicle(); break
                                         case "disconnect": root.disconnectVehicle(); break
                                         case "arm": root.armVehicle(); break
                                         case "disarm": root.disarmVehicle(); break
@@ -5305,11 +5622,21 @@ Item {
                                         case "rtl": root.rtlVehicle(); break
                                         case "center": root.centerOnVehicle(); break
                                         case "fit": root.fitModernMission(); break
+                                        case "planWaypoint": root.modernPlanView.insertWaypointAtMapCenter(); break
+                                        case "planFence": root.modernPlanView.toggleEditingLayer(root.modernPlanView._layerFence); break
+                                        case "planRally": root.modernPlanView.toggleEditingLayer(root.modernPlanView._layerRally); break
+                                        case "file": root.planFilePanelOpen = !root.planFilePanelOpen; break
+                                        case "analyzePage": mainWindow.showAnalyzeToolPage(parent.actionItem.target); break
+                                        case "vehicleSummary": mainWindow.showVehicleConfigSummaryPage(); break
+                                        case "vehicleComponent": mainWindow.showVehicleComponentConfigPage(parent.actionItem.target); break
+                                        case "vehicleParameters": mainWindow.showVehicleConfigParametersPage(); break
+                                        case "vehicleFirmware": mainWindow.showVehicleConfigFirmwarePage(); break
                                         }
                                     }
                                 }
                             }
                         }
+                    }
                     }
                 }
 
@@ -5317,6 +5644,7 @@ Item {
                     id: modernMapContainer
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    visible: root.activeModernSection === "fly"
 
                     QtObject {
                         id: modernMapToolInsets
@@ -5365,6 +5693,41 @@ Item {
                             }
                         }
                         onMapReadyChanged: root.initializeModernMapType()
+
+                        // Distance between consecutive waypoints, at each leg's midpoint.
+                        MapItemView {
+                            model: root.activeModernSection === "fly" ? root.missionSegmentLabels() : []
+
+                            delegate: MapQuickItem {
+                                id: segmentLabel
+                                required property var modelData
+                                coordinate: segmentLabel.modelData.coordinate
+                                anchorPoint.x: segmentLabelBox.width / 2
+                                anchorPoint.y: segmentLabelBox.height / 2
+                                z: QGroundControl.zOrderWaypointLines + 2
+
+                                sourceItem: Rectangle {
+                                    id: segmentLabelBox
+                                    width: segmentLabelText.implicitWidth + 10
+                                    height: segmentLabelText.implicitHeight + 4
+                                    radius: 2
+                                    color: Qt.rgba(5 / 255, 7 / 255, 10 / 255, 0.82)
+                                    border.color: root.modernGoldHairline
+                                    border.width: 1
+
+                                    Text {
+                                        id: segmentLabelText
+                                        anchors.centerIn: parent
+                                        text: segmentLabel.modelData.text
+                                        color: root.gold
+                                        font.pixelSize: 9
+                                        font.bold: true
+                                        font.family: "monospace"
+                                    }
+                                }
+                            }
+                        }
+
                         onGcsPositionChanged: {
                             if (!root.liveGcsLocationReceived && !root.activeVehicle && modernMap.gcsPosition.isValid && !QGroundControl.flightMapPosition.isValid) {
                                 modernMap.center = modernMap.gcsPosition
@@ -5655,7 +6018,7 @@ Item {
                         anchors.topMargin: 18
                         anchors.leftMargin: 18
                         width: 304
-                        height: 282
+                        height: 300
                         color: root.modernGlassStrong
                         border.color: root._simulationController.running ? root.ok : root.gold
                         border.width: 1
@@ -5701,13 +6064,21 @@ Item {
 
                             Rectangle { Layout.fillWidth: true; height: 1; color: root.modernHairline }
 
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.px4SimulationProfileText()
+                                color: root.dim
+                                font.pixelSize: 9
+                                font.family: "monospace"
+                            }
+
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: 6
 
                                 ModernSettingsAction {
                                     Layout.fillWidth: true
-                                    label: root._simulationController.running ? "SITL RUNNING" : (root._simulationController.busy ? "STARTING..." : "START SITL")
+                                    label: root._simulationController.running ? "PX4 SITL RUNNING" : (root._simulationController.busy ? "STARTING PX4..." : "START PX4 SITL")
                                     tone: root.ok
                                     enabled: !root._simulationController.running && !root._simulationController.busy
                                     onClicked: root.startSITLForCurrentPlan()
@@ -5718,7 +6089,7 @@ Item {
                                     label: "STOP"
                                     tone: root.err
                                     enabled: root._simulationController.running && !root._simulationController.busy
-                                    onClicked: root._simulationController.stopArduCopter()
+                                    onClicked: root._simulationController.stopSimulation()
                                 }
                             }
 
@@ -5728,9 +6099,9 @@ Item {
 
                                 ModernSettingsAction {
                                     Layout.fillWidth: true
-                                    label: root.activeVehicle ? "VEHICLE LINKED" : "CONNECT SITL"
+                                    label: root.activeVehicleIsBriechSITL() ? "PX4 SITL LINKED" : "CONNECT PX4 SITL"
                                     tone: root.blue
-                                    enabled: root._simulationController.running && !root.hasLiveVehicleLink()
+                                    enabled: root._simulationController.running && !root.activeVehicleIsBriechSITL()
                                     onClicked: root.connectSimulationLink()
                                 }
 
@@ -5749,13 +6120,10 @@ Item {
 
                                 ModernSettingsAction {
                                     Layout.fillWidth: true
-                                    label: root.sitlMissionLaunchPhase === "upload" ? "UPLOADING..."
-                                        : (root.sitlMissionLaunchPhase === "arming" ? "ARMING..."
-                                        : (root.sitlMissionLaunchPhase === "takeoff" ? "TAKEOFF..."
-                                        : (root.sitlMissionLaunchPhase === "auto" ? "STARTING AUTO..." : "UPLOAD + AUTO")))
+                                    label: root.sitlMissionLaunchPhase === "upload" ? "UPLOADING..." : "UPLOAD PLAN"
                                     tone: root.ok
                                     enabled: root.activeVehicleIsBriechSITL() && root.sitlMissionLaunchPhase === "" && !root.pendingVehicleAction
-                                    onClicked: root.startSimulationMission()
+                                    onClicked: root.uploadSimulationMission()
                                 }
 
                                 ModernSettingsAction {
@@ -6261,11 +6629,33 @@ Item {
 
                             Text {
                                 Layout.fillWidth: true
-                                text: "No vehicle is connected. The live map, local position, and airspace tools remain active while you prepare the link."
+                                text: root._simulationController.lastError.length > 0
+                                    ? root._simulationController.lastError
+                                    : (root._simulationController.running
+                                        ? "PX4 SITL is running. Waiting for its MAVLink heartbeat on UDP 14550."
+                                        : "No vehicle is connected. Start the PX4 SITL simulator here, or connect a vehicle.")
                                 color: root.text
                                 wrapMode: Text.WordWrap
                                 font.pixelSize: 10
                                 font.family: ScreenTools.normalFontFamily
+                            }
+
+                            ModernSettingsAction {
+                                Layout.fillWidth: true
+                                label: root._simulationController.running
+                                    ? (root.activeVehicleIsBriechSITL() ? "PX4 SITL CONNECTED" : "CONNECT TO PX4 SITL")
+                                    : (root._simulationController.busy ? "STARTING PX4..." : "START PX4 SITL")
+                                tone: root.ok
+                                enabled: root._simulationController.running
+                                    ? !root.activeVehicleIsBriechSITL()
+                                    : !root._simulationController.busy
+                                onClicked: {
+                                    if (root._simulationController.running) {
+                                        root.connectSimulationLink()
+                                    } else {
+                                        root.startSITLForCurrentPlan()
+                                    }
+                                }
                             }
 
                             GridLayout {
@@ -7376,6 +7766,7 @@ Item {
 
             ModernWorkspacePage {
                 anchors.fill: parent
+                anchors.leftMargin: root.modernActionSidebarWidth
                 visible: root.activeModernSection === "plan"
                 contentComponent: planViewComponent
                 sectionLabel: "PLAN"
@@ -7392,6 +7783,7 @@ Item {
 
             ModernWorkspacePage {
                 anchors.fill: parent
+                anchors.leftMargin: root.modernActionSidebarWidth
                 visible: root.activeModernSection === "analyze"
                 contentComponent: analyzeViewComponent
                 sectionLabel: "ANALYZE"
@@ -7408,6 +7800,7 @@ Item {
 
             ModernWorkspacePage {
                 anchors.fill: parent
+                anchors.leftMargin: root.modernActionSidebarWidth
                 visible: root.activeModernSection === "vehicle"
                 contentComponent: vehicleViewComponent
                 sectionLabel: "VEHICLE"
@@ -9280,7 +9673,7 @@ component ModernToastStack: Item {
         readonly property int _waypointCount: _safeMaxIndex + 1
         readonly property real _progress: _safeMaxIndex > 0 ? Math.min(currentIndex, _safeMaxIndex) / _safeMaxIndex : 0
 
-        implicitHeight: 74
+        implicitHeight: 92
         color: "#090d13"
         border.color: "#202734"
         border.width: 1
@@ -9382,6 +9775,44 @@ component ModernToastStack: Item {
                     font.pixelSize: 9
                     font.family: "monospace"
                 }
+            }
+
+            // Distance metrics: current leg, mission total, distance flown.
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 14
+
+                Repeater {
+                    model: [
+                        { label: qsTr("LEG"), value: root.missionLegText(), tone: root.gold },
+                        { label: qsTr("TOTAL"), value: root.formatMissionDistance(root.missionTotalDistanceMeters()), tone: root.text },
+                        { label: qsTr("COVERED"), value: root.formatMissionDistance(root.flightDistanceMeters()), tone: root.ok }
+                    ]
+
+                    delegate: Row {
+                        id: distanceMetric
+                        required property var modelData
+                        spacing: 5
+
+                        Text {
+                            text: distanceMetric.modelData.label
+                            color: root.dim
+                            font.pixelSize: 9
+                            font.bold: true
+                            font.family: "monospace"
+                        }
+
+                        Text {
+                            text: distanceMetric.modelData.value
+                            color: distanceMetric.modelData.tone
+                            font.pixelSize: 9
+                            font.bold: true
+                            font.family: "monospace"
+                        }
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
             }
 
             Item {

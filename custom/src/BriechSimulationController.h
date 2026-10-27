@@ -12,6 +12,7 @@ class BriechSimulationController : public QObject
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY lastErrorChanged)
+    Q_PROPERTY(int systemId READ systemId CONSTANT)
 
 public:
     explicit BriechSimulationController(QObject *parent = nullptr);
@@ -20,9 +21,10 @@ public:
     bool busy() const { return _busy; }
     QString status() const { return _status; }
     QString lastError() const { return _lastError; }
+    int systemId() const { return 250; }
 
-    Q_INVOKABLE void startArduCopter(const QString &home, double speedup, bool withLatency);
-    Q_INVOKABLE void stopArduCopter();
+    Q_INVOKABLE void startPX4SITL(const QString &home, double speedFactor, const QString &simulationModel);
+    Q_INVOKABLE void stopSimulation();
 
 signals:
     void runningChanged();
@@ -36,7 +38,6 @@ private:
     void setStatus(const QString &status);
     void setLastError(const QString &error);
     void inspectImage();
-    void buildImage();
     void launchContainer();
     void verifyContainerRunning();
     void runDockerCommand(const QStringList &arguments, const std::function<void(int, const QString &)> &finished);
@@ -47,5 +48,6 @@ private:
     QString _status = QStringLiteral("SIM OFFLINE");
     QString _lastError;
     QString _home = QStringLiteral("42.3898,-71.1476,14.0,270.0");
-    double _speedup = 1.0;
+    QString _simulationModel = QStringLiteral("sihsim_quadx");
+    double _speedFactor = 1.0;
 };

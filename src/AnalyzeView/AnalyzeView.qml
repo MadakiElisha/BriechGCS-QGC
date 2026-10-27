@@ -27,6 +27,16 @@ Rectangle {
         id: geoController
     }
 
+    function showAnalyzePage(pageUrl) {
+        for (var i = 0; i < buttonRepeater.count; i++) {
+            var page = QGroundControl.corePlugin.analyzePages[i]
+            if (page.url.toString() === pageUrl.toString()) {
+                buttonRepeater.itemAt(i).clicked()
+                return
+            }
+        }
+    }
+
     QGCFlickable {
         id:                 buttonScroll
         width:              buttonColumn.width

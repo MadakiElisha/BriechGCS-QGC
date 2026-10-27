@@ -44,9 +44,13 @@ Item {
     readonly property int _layerRally: 3
     property int _editingLayer: _layerMission
     property bool simulationPanelOpen: false
+    // Create Plan / Storage panel, toggled by the FILE sidebar action.
+    property bool filePanelOpen: true
     property string simulationHome: "42.3898,-71.1476,14.0,270.0"
     property string simulationSpeedup: "1"
     property bool fitPending: false
+    property bool waitingForPX4Upload: false
+    property double px4UploadWaitStartedAt: 0
     required property var simulationController
 
     BriechDialog {
@@ -62,21 +66,48 @@ Item {
                                       confirmLabel || qsTr("CONFIRM"), tone || root.gold)
     }
 
-    function hasLiveVehicleLink() {
+    function hasPX4SITLVehicle() {
+        if (!simulationController.running) {
+            return false
+        }
         const vehicle = QGroundControl.multiVehicleManager.activeVehicle
         return !!vehicle
+            && vehicle.px4Firmware
+            && Number(vehicle.id) === Number(simulationController.systemId)
             && !!vehicle.vehicleLinkManager
             && !vehicle.vehicleLinkManager.communicationLost
     }
 
+    function px4SimulationModelForPlan() {
+        const vehicle = root._planMasterController ? root._planMasterController.controllerVehicle : null
+        if (vehicle && vehicle.vtol) {
+            return "sihsim_standard_vtol"
+        }
+        if (vehicle && vehicle.fixedWing) {
+            return "sihsim_airplane"
+        }
+        return "sihsim_quadx"
+    }
+
+    function px4SimulationProfileText() {
+        const model = px4SimulationModelForPlan()
+        if (model === "sihsim_standard_vtol") {
+            return qsTr("PX4 SIH · STANDARD VTOL")
+        }
+        if (model === "sihsim_airplane") {
+            return qsTr("PX4 SIH · FIXED WING")
+        }
+        return qsTr("PX4 SIH · QUADROTOR X")
+    }
+
     function connectSimulationLink() {
-        const linkName = "Briech SITL TCP"
+        const udpPort = 14550
         const configurations = QGroundControl.linkManager.linkConfigurations
         for (let index = 0; index < configurations.count; index++) {
             const configuration = configurations.get(index)
-            if (configuration && configuration.name === linkName) {
-                // Avoid a second TCP client while a prior attempt is live.
-                // BriechModernView owns the retry loop for failed attempts.
+            if (configuration
+                    && configuration.linkType === LinkConfiguration.TypeUdp
+                    && Number(configuration.localPort) === udpPort) {
                 if (configuration.link) {
                     return
                 }
@@ -85,10 +116,10 @@ Item {
             }
         }
 
-        const configuration = QGroundControl.linkManager.createConfiguration(LinkConfiguration.TypeTcp, linkName)
-        configuration.host = "127.0.0.1"
-        configuration.port = 5760
+        const configuration = QGroundControl.linkManager.createConfiguration(LinkConfiguration.TypeUdp, "Briech PX4 SITL UDP")
+        configuration.localPort = udpPort
         configuration.dynamic = true
+        QGroundControl.linkManager.endCreateConfiguration(configuration)
         QGroundControl.linkManager.createConnectedLink(configuration)
     }
 
@@ -252,6 +283,51 @@ Item {
         _missionController.insertSimpleMissionItem(coordinate, nextIndex, true)
     }
 
+    function editorMapCenter() {
+        const coordinate = editorMap.center
+        coordinate.latitude = coordinate.latitude.toFixed(7)
+        coordinate.longitude = coordinate.longitude.toFixed(7)
+        coordinate.altitude = coordinate.altitude.toFixed(2)
+        return coordinate
+    }
+
+    // Sidebar shortcut, following the stock Plan view tool strip: insert a
+    // waypoint after the current item at the map center.
+    function insertWaypointAtMapCenter() {
+        setEditingLayer(_layerMission)
+        insertSimpleItemAfterCurrent(editorMapCenter())
+    }
+
+    // Editing layers. The right panel's MISSION / FENCE / RALLY tabs and the
+    // sidebar both switch layers, so keep the two in step.
+    readonly property bool fenceSupported: _geoFenceController.supported
+    readonly property bool rallySupported: _rallyPointController.supported
+
+    function setEditingLayer(layer) {
+        _editingLayer = layer
+        rightPanel.expanded = true
+    }
+
+    function toggleEditingLayer(layer) {
+        setEditingLayer(_editingLayer === layer ? _layerMission : layer)
+    }
+
+    on_EditingLayerChanged: rightPanel._editingTool = _editingLayer - _layerMission
+
+    function editingLayerHint() {
+        if (_editingLayer === _layerFence) {
+            return fenceSupported
+                ? qsTr("FENCE  ·  Add a polygon or circle fence from the right panel, then drag its vertices on the map.")
+                : qsTr("FENCE  ·  This vehicle does not support geofences.")
+        }
+        if (_editingLayer === _layerRally) {
+            return rallySupported
+                ? qsTr("RALLY  ·  Click the map to add a rally point. Drag points to move them.")
+                : qsTr("RALLY  ·  This vehicle does not support rally points.")
+        }
+        return ""
+    }
+
     function handleMapClick(mouse) {
         editorMap.focus = true
         if (!mainWindow.allowViewSwitch()) {
@@ -265,9 +341,38 @@ Item {
 
         if (_editingLayer === _layerMission) {
             insertSimpleItemAfterCurrent(coordinate)
-        } else if (_editingLayer === _layerRally && _rallyPointController.supported) {
-            _rallyPointController.addPoint(coordinate)
+        } else if (_editingLayer === _layerRally) {
+            if (rallySupported) {
+                _rallyPointController.addPoint(coordinate)
+            } else {
+                showBriechMessage(qsTr("Rally Points"), qsTr("The connected vehicle does not support rally points."), root.warn)
+            }
         }
+    }
+
+    // Plan templates replace the current plan, as in the stock Plan view.
+    function createPlanFromTemplate(planCreator) {
+        const create = function() {
+            setEditingLayer(_layerMission)
+            if (planCreator.blankPlan) {
+                planCreator.createPlan(editorMapCenter())
+                planMasterController.manualCreation = true
+            } else {
+                planCreator.createPlan(editorMapCenter())
+                Qt.callLater(root.fitPlanToMap)
+            }
+        }
+        if (planMasterController.containsItems) {
+            confirmBriechAction(qsTr("Create Plan"),
+                qsTr("Replace the current plan with a new %1 plan? Unsaved changes will be lost.").arg(planCreatorLabel(planCreator)),
+                create, qsTr("REPLACE PLAN"), root.warn)
+        } else {
+            create()
+        }
+    }
+
+    function planCreatorLabel(planCreator) {
+        return planCreator.blankPlan ? qsTr("Blank") : planCreator.name
     }
 
     function importKmlWaypointsFromFile(filename) {
@@ -309,21 +414,93 @@ Item {
         // can be missed while this view is recreated, but the persistent
         // mission controller remains authoritative.
         suggestSimulationHomeFromMission()
-        simulationController.startArduCopter(simulationHomeField.text, Number(simulationSpeedField.text), false)
+        simulationController.startPX4SITL(simulationHomeField.text, Number(simulationSpeedField.text), px4SimulationModelForPlan())
     }
 
-    function uploadMission() {
-        if (planMasterController.readyForSaveState() === VisualMissionItem.NotReadyForSaveData) {
-            showBriechMessage(qsTr("Unable to Upload"), qsTr("Complete all mission items before uploading."), root.warn)
+    function startPX4AndQueueMissionUpload() {
+        if (waitingForPX4Upload) {
+            return
+        }
+        waitingForPX4Upload = true
+        px4UploadWaitStartedAt = Date.now()
+        px4UploadConnectTimer.start()
+
+        if (!simulationController.running && !simulationController.busy) {
+            suggestSimulationHomeFromMission()
+            simulationController.startPX4SITL(simulationHomeField.text, Number(simulationSpeedField.text), px4SimulationModelForPlan())
+        } else if (simulationController.running) {
+            connectSimulationLink()
+        }
+        pushToast(qsTr("PX4 SITL"), qsTr("Starting PX4 and waiting for the vehicle before uploading this plan."), "info", 4000)
+    }
+
+    function finishPX4UploadWait(message, tone) {
+        px4UploadConnectTimer.stop()
+        waitingForPX4Upload = false
+        px4UploadWaitStartedAt = 0
+        if (message && message.length > 0) {
+            showBriechMessage(qsTr("PX4 SITL"), message, tone || root.warn)
+        }
+    }
+
+    function advancePX4UploadWait() {
+        if (!waitingForPX4Upload) {
+            px4UploadConnectTimer.stop()
+            return
+        }
+        if (!simulationController.running && !simulationController.busy && simulationController.lastError.length > 0) {
+            finishPX4UploadWait(simulationController.lastError, root.err)
+            return
+        }
+        if (Date.now() - px4UploadWaitStartedAt >= 60000) {
+            finishPX4UploadWait(qsTr("PX4 did not connect within 60 seconds. Check that the local PX4 SIH image is running and sending MAVLink to UDP port 14550."), root.warn)
+            return
+        }
+        if (!simulationController.running) {
             return
         }
 
+        const vehicle = QGroundControl.multiVehicleManager.getVehicleById(simulationController.systemId)
+        if (!vehicle || !vehicle.px4Firmware) {
+            connectSimulationLink()
+            return
+        }
+        if (QGroundControl.multiVehicleManager.activeVehicle !== vehicle) {
+            QGroundControl.multiVehicleManager.activeVehicle = vehicle
+            return
+        }
+        if (!vehicle.vehicleLinkManager || vehicle.vehicleLinkManager.communicationLost) {
+            connectSimulationLink()
+            return
+        }
+
+        const precheck = _missionController.sendToVehiclePreCheck()
+        if (precheck === MissionController.SendToVehiclePreCheckStateOk) {
+            px4UploadConnectTimer.stop()
+            waitingForPX4Upload = false
+            px4UploadWaitStartedAt = 0
+            planMasterController.sendToVehicle()
+            pushToast(qsTr("PX4 SITL"), qsTr("PX4 connected. Uploading the plan."), "info", 3000)
+        } else if (precheck !== MissionController.SendToVehiclePreCheckStateNoActiveVehicle) {
+            finishPX4UploadWait(qsTr("PX4 connected, but QGC cannot upload this plan in the current vehicle state."), root.warn)
+        }
+    }
+
+    Timer {
+        id: px4UploadConnectTimer
+        interval: 250
+        repeat: true
+        running: root.waitingForPX4Upload
+        onTriggered: root.advancePX4UploadWait()
+    }
+
+    function sendMissionToVehicle() {
         switch (_missionController.sendToVehiclePreCheck()) {
         case MissionController.SendToVehiclePreCheckStateOk:
             planMasterController.sendToVehicle()
             break
         case MissionController.SendToVehiclePreCheckStateNoActiveVehicle:
-            showBriechMessage(qsTr("No Vehicle"), qsTr("Connect the simulator or a vehicle before uploading the mission."), root.warn)
+            startPX4AndQueueMissionUpload()
             break
         case MissionController.SendToVehiclePreCheckStateActiveMission:
             showBriechMessage(qsTr("Upload Blocked"), qsTr("Pause the active mission before uploading a new plan."), root.warn)
@@ -333,6 +510,22 @@ Item {
                 function() { planMasterController.sendToVehicle() }, qsTr("UPLOAD ANYWAY"), root.warn)
             break
         }
+    }
+
+    function uploadMission() {
+        if (waitingForPX4Upload) {
+            return
+        }
+        if (planMasterController.readyForSaveState() === VisualMissionItem.NotReadyForSaveData) {
+            showBriechMessage(qsTr("Unable to Upload"), qsTr("Complete all mission items before uploading."), root.warn)
+            return
+        }
+        if ((simulationController.running || simulationController.busy)
+                && !root.hasPX4SITLVehicle()) {
+            startPX4AndQueueMissionUpload()
+            return
+        }
+        sendMissionToVehicle()
     }
 
     Connections {
@@ -511,7 +704,7 @@ Item {
                     }
 
                     Text {
-                        text: "ArduPilot SITL · real MAVLink"
+                        text: "PX4 SIH · real MAVLink"
                         color: root.dim
                         font.pixelSize: 10
                         font.family: "monospace"
@@ -551,28 +744,24 @@ Item {
 
             Rectangle { Layout.fillWidth: true; height: 1; color: root.border }
 
-            Text { text: "AIRCRAFT PROFILE"; color: "#91a0b3"; font.pixelSize: 9; font.bold: true; font.letterSpacing: 1; font.family: "monospace" }
-            ComboBox {
+            Text { text: "PX4 VEHICLE · AUTO SELECT"; color: "#91a0b3"; font.pixelSize: 9; font.bold: true; font.letterSpacing: 1; font.family: "monospace" }
+            Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 40
-                model: ["ArduCopter Quad · SITL"]
-                enabled: !simulationController.busy && !simulationController.running
-                currentIndex: 0
-                contentItem: Text {
-                    leftPadding: 12
-                    rightPadding: 34
-                    text: parent.displayText
-                    color: parent.enabled ? root.text : "#8190a2"
+                color: "#111925"
+                border.color: "#344154"
+                border.width: 1
+
+                Text {
+                    anchors.fill: parent
+                    anchors.leftMargin: 12
+                    anchors.rightMargin: 12
+                    text: root.px4SimulationProfileText()
+                    color: simulationController.running ? "#8190a2" : root.text
                     verticalAlignment: Text.AlignVCenter
                     font.pixelSize: 11
                     font.family: "monospace"
                     elide: Text.ElideRight
-                }
-                background: Rectangle {
-                    color: "#111925"
-                    border.color: "#344154"
-                    border.width: 1
-                    radius: 2
                 }
             }
 
@@ -625,7 +814,7 @@ Item {
 
                 ModernSettingsAction {
                     Layout.fillWidth: true
-                    label: simulationController.running ? "SITL RUNNING" : (simulationController.busy ? "STARTING..." : "START SITL")
+                    label: simulationController.running ? "PX4 SITL RUNNING" : (simulationController.busy ? "STARTING PX4..." : "START PX4 SITL")
                     tone: root.ok
                     enabled: !simulationController.running && !simulationController.busy
                     onClicked: root.startSimulationAtMissionHome()
@@ -633,18 +822,18 @@ Item {
 
                 ModernSettingsAction {
                     Layout.fillWidth: true
-                    label: simulationController.running ? "STOP SITL" : "STOP"
+                    label: simulationController.running ? "STOP PX4 SITL" : "STOP"
                     tone: root.err
                     enabled: simulationController.running && !simulationController.busy
-                    onClicked: simulationController.stopArduCopter()
+                    onClicked: simulationController.stopSimulation()
                 }
             }
 
                 ModernSettingsAction {
                     Layout.fillWidth: true
-                    label: root.hasLiveVehicleLink() ? "QGC CONNECTED" : "CONNECT QGC TO SITL"
+                    label: root.hasPX4SITLVehicle() ? "PX4 SITL CONNECTED" : "CONNECT PX4 SITL"
                     tone: root.blue
-                    enabled: simulationController.running && !root.hasLiveVehicleLink()
+                    enabled: simulationController.running && !root.hasPX4SITLVehicle()
                     onClicked: root.connectSimulationLink()
                 }
 
@@ -665,7 +854,8 @@ Item {
     // Left panel
     Rectangle {
         id: leftPanel
-        width: 300
+        width: root.filePanelOpen ? 300 : 0
+        visible: root.filePanelOpen
         anchors.top: topHeader.bottom
         anchors.left: parent.left
             anchors.bottom: bottomBar.top
@@ -693,25 +883,30 @@ Item {
                 rowSpacing: 6
                 Layout.fillWidth: true
 
+                // Blank, Survey, Corridor Scan and Structure Scan (not offered
+                // for fixed-wing) come from the PlanMasterController.
                 Repeater {
                     model: planMasterController.planCreators
                     delegate: Rectangle {
+                        id: planCreatorCard
+                        required property var object
                         Layout.fillWidth: true
-                        height: 110
+                        Layout.preferredHeight: 110
                         radius: 4
-                        color: "#0b0d10"
+                        color: cardHover.containsMouse ? "#14171c" : "#0b0d10"
                         border.color: cardHover.containsMouse ? root.gold : "#22252a"
                         clip: true
 
                         Image {
-                            id: thumb
                             anchors.top: parent.top
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.bottom: cardLabel.top
-                            anchors.margins: 4
+                            anchors.margins: 6
                             fillMode: Image.PreserveAspectFit
-                            source: (modelData && modelData.thumbnail) ? modelData.thumbnail : ""
+                            source: planCreatorCard.object.imageResource
+                            sourceSize.width: width
+                            mipmap: true
                             opacity: 0.9
                         }
 
@@ -721,23 +916,21 @@ Item {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.margins: 8
-                            text: (modelData && modelData.name) ? modelData.name : "Template"
+                            horizontalAlignment: Text.AlignHCenter
+                            text: root.planCreatorLabel(planCreatorCard.object).toUpperCase()
                             color: cardHover.containsMouse ? root.gold : root.text
                             font.pixelSize: 11
                             font.bold: true
                             font.family: ScreenTools.normalFontFamily
+                            elide: Text.ElideRight
                         }
 
                         MouseArea {
                             id: cardHover
                             anchors.fill: parent
                             hoverEnabled: true
-                            onClicked: {
-                                if (modelData && modelData.createPlan) {
-                                    modelData.createPlan(editorMap.center)
-                                    Qt.callLater(root.fitPlanToMap)
-                                }
-                            }
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.createPlanFromTemplate(planCreatorCard.object)
                         }
                     }
                 }
@@ -874,8 +1067,8 @@ Item {
                     color: "transparent"
                     border.color: "#3b82f6"
                     radius: 3
-                    Text { anchors.centerIn: parent; text: "UPLOAD"; color: "#3b82f6"; font.pixelSize: 10; font.bold: true; font.family: ScreenTools.normalFontFamily }
-                    MouseArea { anchors.fill: parent; onClicked: root.uploadMission() }
+                    Text { anchors.centerIn: parent; text: root.waitingForPX4Upload ? "WAITING FOR PX4..." : "UPLOAD"; color: "#3b82f6"; font.pixelSize: 10; font.bold: true; font.family: ScreenTools.normalFontFamily; elide: Text.ElideRight }
+                    MouseArea { anchors.fill: parent; enabled: !root.waitingForPX4Upload; onClicked: root.uploadMission() }
                 }
 
                 Rectangle {
@@ -958,6 +1151,12 @@ Item {
         planView: true
 
         property real _nonInteractiveOpacity: 0.5
+        // Area new fence shapes and complex item polygons are placed in; the
+        // stock fence and polygon editors require it on their map.
+        property real _viewportMargin: ScreenTools.defaultFontPixelWidth * 4
+        property rect centerViewport: Qt.rect(_viewportMargin, _viewportMargin,
+                                              Math.max(1, width - _viewportMargin * 2),
+                                              Math.max(1, height - _viewportMargin * 2))
 
         zoomLevel: QGroundControl.flightMapZoom
         center: root.sharedMapCenter()
@@ -1094,6 +1293,33 @@ Item {
         }
     }
 
+    // Editing layer hint, shown while editing the fence or rally layer
+    Rectangle {
+        anchors.top: topHeader.bottom
+        anchors.topMargin: 10
+        anchors.horizontalCenter: editorMap.horizontalCenter
+        width: Math.min(editorMap.width - 24, layerHintText.implicitWidth + 24)
+        height: 28
+        radius: 2
+        visible: root._editingLayer !== root._layerMission
+        color: "#0b0d10"
+        border.color: root.gold
+        border.width: 1
+
+        Text {
+            id: layerHintText
+            anchors.centerIn: parent
+            width: parent.width - 24
+            horizontalAlignment: Text.AlignHCenter
+            text: root.editingLayerHint()
+            color: root.text
+            font.pixelSize: 10
+            font.bold: true
+            font.family: "monospace"
+            elide: Text.ElideRight
+        }
+    }
+
     // Right panel (reuses existing PlanViewRightPanel)
     PlanViewRightPanel {
         id: rightPanel
@@ -1103,6 +1329,7 @@ Item {
         width: Math.min(root.width * 0.3, ScreenTools.defaultFontPixelWidth * 30)
         planMasterController: root._planMasterController
         editorMap: editorMap
+        on_EditingToolChanged: root._editingLayer = rightPanel._editingTool + root._layerMission
     }
 
     // Bottom summary bar

@@ -19,7 +19,9 @@ QList<QGCMAVLink::FirmwareClass_t> CustomFirmwarePluginFactory::supportedFirmwar
 QList<QGCMAVLink::VehicleClass_t> CustomFirmwarePluginFactory::supportedVehicleClasses() const
 {
     QList<QGCMAVLink::VehicleClass_t> vehicleClasses;
+    vehicleClasses.append(QGCMAVLink::VehicleClassFixedWing);
     vehicleClasses.append(QGCMAVLink::VehicleClassMultiRotor);
+    vehicleClasses.append(QGCMAVLink::VehicleClassVTOL);
     return vehicleClasses;
 }
 
