@@ -19,10 +19,17 @@ ApplicationWindow {
     id:         mainWindow
     visible:    true
     // The special casing for android prevents white bars from showing up on the edges of the screen with newer android versions
+    // Briech Modern draws its own title bar, so the native one is hidden while it is shown
     flags:      Qt.Window | (ScreenTools.isAndroid ? Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint : 0)
+                    | (_briechFramelessWindow ? Qt.FramelessWindowHint : 0)
+
+    readonly property bool _briechFramelessWindow: briechModernView.visible && !ScreenTools.isMobile
 
     property bool   _utmspSendActTrigger
     Component.onCompleted: {
+        // Briech Modern is the primary interface; the legacy QGC views stay
+        // reachable from its title bar.
+        showBriechModernView()
         // Start the sequence of first run prompt(s)
         firstRunPromptManager.nextPrompt()
     }
@@ -791,6 +798,44 @@ ApplicationWindow {
         onLoaded: {
             if (item && item.activateModernSection) {
                 item.activateModernSection("fly")
+            }
+        }
+    }
+
+    // Resize grips for the frameless Briech Modern window
+    Item {
+        anchors.fill:   parent
+        z:              briechModernView.z + 1
+        visible:        mainWindow._briechFramelessWindow && mainWindow.visibility !== Window.Maximized && mainWindow.visibility !== Window.FullScreen
+
+        id: resizeGrips
+
+        readonly property int _grip: 5
+
+        Repeater {
+            // x/y/w/h are fractions: 0 = start, 1 = end, -1 = full span
+            model: [
+                { edges: Qt.LeftEdge,                   x: 0, y: -1, cursor: Qt.SizeHorCursor },
+                { edges: Qt.RightEdge,                  x: 1, y: -1, cursor: Qt.SizeHorCursor },
+                { edges: Qt.TopEdge,                    x: -1, y: 0, cursor: Qt.SizeVerCursor },
+                { edges: Qt.BottomEdge,                 x: -1, y: 1, cursor: Qt.SizeVerCursor },
+                { edges: Qt.TopEdge | Qt.LeftEdge,      x: 0, y: 0, cursor: Qt.SizeFDiagCursor },
+                { edges: Qt.BottomEdge | Qt.RightEdge,  x: 1, y: 1, cursor: Qt.SizeFDiagCursor },
+                { edges: Qt.TopEdge | Qt.RightEdge,     x: 1, y: 0, cursor: Qt.SizeBDiagCursor },
+                { edges: Qt.BottomEdge | Qt.LeftEdge,   x: 0, y: 1, cursor: Qt.SizeBDiagCursor }
+            ]
+
+            MouseArea {
+                readonly property bool _corner: modelData.x >= 0 && modelData.y >= 0
+                readonly property int  _size:   resizeGrips._grip * (_corner ? 2 : 1)
+
+                x:              modelData.x < 0 ? 0 : (modelData.x === 0 ? 0 : resizeGrips.width - width)
+                y:              modelData.y < 0 ? 0 : (modelData.y === 0 ? 0 : resizeGrips.height - height)
+                width:          modelData.x < 0 ? resizeGrips.width : _size
+                height:         modelData.y < 0 ? resizeGrips.height : _size
+                z:              _corner ? 1 : 0
+                cursorShape:    modelData.cursor
+                onPressed:      mainWindow.startSystemResize(modelData.edges)
             }
         }
     }
