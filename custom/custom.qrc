@@ -47,6 +47,14 @@
         <file alias="Modern/BriechDialog.qml">qml/Briech/Modern/BriechDialog.qml</file>
         <file alias="Modern/BriechRiskDataManager.qml">qml/Briech/Modern/BriechRiskDataManager.qml</file>
         <file alias="Modern/PlanViewModern.qml">qml/Briech/Modern/PlanViewModern.qml</file>
+        <file alias="Modern/ModernHeaderTelemetry.qml">qml/Briech/Modern/ModernHeaderTelemetry.qml</file>
+        <file alias="Modern/ModernTelemetryStrip.qml">qml/Briech/Modern/ModernTelemetryStrip.qml</file>
+        <file alias="Modern/ModernFooterBar.qml">qml/Briech/Modern/ModernFooterBar.qml</file>
+        <file alias="Modern/ModernFlightModeMenu.qml">qml/Briech/Modern/ModernFlightModeMenu.qml</file>
+        <file alias="Modern/ModernToastStack.qml">qml/Briech/Modern/ModernToastStack.qml</file>
+        <file alias="Modern/ModernMapTypeList.qml">qml/Briech/Modern/ModernMapTypeList.qml</file>
+        <file alias="Fleet/FleetLayer.qml">qml/Briech/Fleet/FleetLayer.qml</file>
+        <file alias="Fleet/FleetPanel.qml">qml/Briech/Fleet/FleetPanel.qml</file>
     </qresource>
     <qresource prefix="/Briech/res">
         <file alias="QGCLogoFull.svg">res/Briech/Logos/QGCLogoFull.svg</file>

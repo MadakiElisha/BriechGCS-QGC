@@ -116,6 +116,9 @@ set(CUSTOM_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/FirmwarePlugin/CustomFirmwarePlugin.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/FirmwarePlugin/CustomFirmwarePluginFactory.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/FirmwarePlugin/CustomFirmwarePluginFactory.h
+    # Briech Fleet layer: keep all fleet C++ in src/Fleet/
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetSettings.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetSettings.h
     CACHE INTERNAL "" FORCE
 )
 
@@ -124,8 +127,11 @@ set(CUSTOM_SOURCES
 # ============================================================================
 
 # Custom libraries to link
+# Finding a Qt component (CUSTOM_QT_COMPONENTS below) does not link it, so
+# Qt6::WebSockets for the Fleet link must also be listed here.
 set(CUSTOM_LIBRARIES
     CustomModule
+    Qt6::WebSockets
     CACHE INTERNAL "" FORCE
 )
 
@@ -134,6 +140,7 @@ set(CUSTOM_INCLUDE_DIRECTORIES
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/AutoPilotPlugin
     ${CMAKE_CURRENT_SOURCE_DIR}/src/FirmwarePlugin
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet
     CACHE INTERNAL "" FORCE
 )
 
@@ -145,10 +152,21 @@ set(CUSTOM_DEFINITIONS
     CACHE INTERNAL "" FORCE
 )
 
+# Fleet 3D view: only compiled in when the stock 3D viewer is enabled and Qt
+# Quick 3D was found. Otherwise BRIECH_FLEET_3D is undefined and the fleet
+# layer falls back to the 2D attitude indicator.
+if(QGC_VIEWER3D AND TARGET Qt6::Quick3D)
+    set(CUSTOM_DEFINITIONS ${CUSTOM_DEFINITIONS} BRIECH_FLEET_3D CACHE INTERNAL "" FORCE)
+    message(STATUS "QGC: Briech Fleet 3D view enabled (Qt Quick 3D found)")
+else()
+    message(STATUS "QGC: Briech Fleet 3D view disabled, using 2D fallback")
+endif()
+
 # Custom Qt components required
 set(CUSTOM_QT_COMPONENTS
     Core
     Network
     Qml
+    WebSockets
     CACHE INTERNAL "" FORCE
 )
