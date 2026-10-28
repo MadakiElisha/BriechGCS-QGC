@@ -90,7 +90,6 @@ Item {
     property string pendingVehicleAction: ""
     property double pendingVehicleActionStartedAt: 0
     property var defaultCenter: QtPositioning.coordinate(9.0765, 7.3986)
-    property var overlayCenter: activeVehicle && activeVehicle.coordinate.isValid ? activeVehicle.coordinate : (QGroundControl.flightMapPosition.isValid ? QGroundControl.flightMapPosition : defaultCenter)
     property var speedHistory: []
     property var altitudeHistory: []
     property var batteryHistory: []
@@ -108,6 +107,8 @@ Item {
         { label: "VEHICLE", key: "vehicle", icon: "/qmlimages/Gears.svg" }
     ]
     property var missionCoordinates: []
+    // Mission sequence number of each entry in missionCoordinates.
+    property var missionSequenceNumbers: []
     property var modernMapCursorCoordinate: QtPositioning.coordinate()
     property bool missionTimelineInspectionMode: false
     property bool simulationFlyPanelOpen: false
@@ -235,20 +236,17 @@ Item {
         return missionCoordinates.length > 0 && !!_missionController && _missionController.missionItemCount > 0
     }
 
+    // Called from bindings that re-run on every vehicle position update, so it
+    // scans the cached sequence numbers instead of the mission items: reading
+    // each item's coordinate here froze the UI with large missions.
     function missionTimelineIndexForSequence(sequenceNumber) {
-        if (!_visualItems || missionCoordinates.length === 0) {
+        if (missionCoordinates.length === 0) {
             return -1
         }
-        let missionIndex = 0
-        for (let i = 0; i < _visualItems.count; i++) {
-            const item = _visualItems.get(i)
-            if (!isTimelineMissionItem(item)) {
-                continue
+        for (let i = 0; i < missionSequenceNumbers.length; i++) {
+            if (missionSequenceNumbers[i] >= sequenceNumber) {
+                return i
             }
-            if (item.sequenceNumber >= sequenceNumber) {
-                return missionIndex
-            }
-            missionIndex++
         }
         return missionCoordinates.length
     }
@@ -684,7 +682,8 @@ Item {
         if (pendingVehicleAction !== "") {
             return qsTr("BRCH-%1 - %2 COMMAND PENDING").arg(activeVehicle.id).arg(pendingVehicleAction.toUpperCase())
         }
-        return qsTr("BRCH-%1 - %2 - %3").arg(activeVehicle.id).arg(activeVehicle.flightMode).arg(vehicleReadyText())
+        // Readiness moved to the header's armed-state cell (ModernHeaderTelemetry).
+        return qsTr("BRCH-%1 — %2 — %3").arg(activeVehicle.id).arg(activeVehicle.vehicleTypeString).arg(activeVehicle.flightMode.toUpperCase())
     }
 
     function gpsStatusText() {
@@ -719,7 +718,10 @@ Item {
     }
 
     function hasNavigationTarget() {
-        return (activeVehicle && activeVehicle.coordinate.isValid) || QGroundControl.flightMapPosition.isValid || defaultCenter.isValid
+        // defaultCenter is a fixed, valid coordinate, so check it first: reading
+        // activeVehicle.coordinate here made every binding that calls this
+        // re-run on each GPS message, which froze the UI with several drones.
+        return defaultCenter.isValid || QGroundControl.flightMapPosition.isValid || (activeVehicle && activeVehicle.coordinate.isValid)
     }
 
     function headingText() {
@@ -795,87 +797,39 @@ Item {
 
     // Operator-facing PX4 mode labels per vehicle class, mapped to the mode
     // names the PX4 firmware plugin uses. PX4 fixed-wing Loiter is its Hold mode.
-    readonly property var flightModeCatalog: ({
-        multicopter: [
-            { label: "Manual", mode: "Manual" },
-            { label: "Stabilized", mode: "Stabilized" },
-            { label: "Acro", mode: "Acro" },
-            { label: "Altitude", mode: "Altitude" },
-            { label: "Position", mode: "Position" },
-            { label: "Hold", mode: "Hold" },
-            { label: "Mission (Auto)", mode: "Mission" },
-            { label: "Return", mode: "Return" },
-            { label: "Takeoff", mode: "Takeoff" },
-            { label: "Land", mode: "Land" },
-            { label: "Follow Me", mode: "Follow Me" },
-            { label: "Offboard", mode: "Offboard" }
-        ],
-        fixedWing: [
-            { label: "Manual", mode: "Manual" },
-            { label: "Stabilized", mode: "Stabilized" },
-            { label: "Acro", mode: "Acro" },
-            { label: "Altitude", mode: "Altitude" },
-            { label: "Position", mode: "Position" },
-            { label: "Hold", mode: "Hold" },
-            { label: "Mission (Auto)", mode: "Mission" },
-            { label: "Return", mode: "Return" },
-            { label: "Takeoff", mode: "Takeoff" },
-            { label: "Land", mode: "Land" },
-            { label: "Loiter", mode: "Hold" },
-            { label: "Offboard", mode: "Offboard" }
-        ],
-        vtol: [
-            { label: "Manual", mode: "Manual" },
-            { label: "Stabilized", mode: "Stabilized" },
-            { label: "Acro", mode: "Acro" },
-            { label: "Altitude", mode: "Altitude" },
-            { label: "Position", mode: "Position" },
-            { label: "Hold", mode: "Hold" },
-            { label: "Mission (Auto)", mode: "Mission" },
-            { label: "Return", mode: "Return" },
-            { label: "Takeoff", mode: "Takeoff" },
-            { label: "Land", mode: "Land" },
-            { label: "Offboard", mode: "Offboard" }
-        ],
-        rover: [
-            { label: "Manual", mode: "Manual" },
-            { label: "Acro", mode: "Acro" },
-            { label: "Stabilized", mode: "Stabilized" },
-            { label: "Position", mode: "Position" },
-            { label: "Hold", mode: "Hold" },
-            { label: "Mission (Auto)", mode: "Mission" },
-            { label: "Return", mode: "Return" },
-            { label: "Offboard", mode: "Offboard" }
-        ]
-    })
+    // Autopilot-commanded modes (PX4 and ArduPilot names); every other mode the
+    // vehicle reports is listed under MANUAL / ASSISTED.
+    readonly property var autoFlightModeNames: [
+        "Mission", "Return", "Hold", "Takeoff", "Land", "Precision Land", "Orbit",
+        "Follow Me", "Return to Groundstation", "VTOL Takeoff",
+        "Auto", "RTL", "Smart RTL", "Loiter", "Guided", "Brake", "Circle"
+    ]
 
-    function vehicleFlightModeClass() {
-        if (!activeVehicle) {
-            return ""
-        }
-        if (activeVehicle.vtol) {
-            return "vtol"
-        }
-        if (activeVehicle.rover) {
-            return "rover"
-        }
-        if (activeVehicle.fixedWing) {
-            return "fixedWing"
-        }
-        if (activeVehicle.multiRotor) {
-            return "multicopter"
-        }
-        return ""
-    }
-
+    // Mode menu built from the modes the vehicle itself reports, so it never
+    // offers a mode the autopilot does not have. Group headers are entries
+    // with header: true.
     function flightModeOptions() {
-        const modes = flightModeCatalog[vehicleFlightModeClass()] || []
         const supported = activeVehicle ? activeVehicle.flightModes : []
-        return modes.map(entry => ({
-            label: entry.label,
-            mode: entry.mode,
-            available: supported.indexOf(entry.mode) >= 0
-        }))
+        const autoModes = []
+        const otherModes = []
+        for (let i = 0; i < supported.length; i++) {
+            const entry = { label: supported[i], mode: supported[i], available: true, header: false }
+            if (autoFlightModeNames.indexOf(supported[i]) >= 0) {
+                autoModes.push(entry)
+            } else {
+                otherModes.push(entry)
+            }
+        }
+        let options = []
+        if (autoModes.length > 0) {
+            options.push({ label: "AUTO", header: true })
+            options = options.concat(autoModes)
+        }
+        if (otherModes.length > 0) {
+            options.push({ label: "MANUAL / ASSISTED", header: true })
+            options = options.concat(otherModes)
+        }
+        return options
     }
 
     function selectFlightMode(mode) {
@@ -1574,61 +1528,6 @@ Item {
             && _missionController.currentMissionIndex < _missionController.missionItemCount - 1
     }
 
-    function telemetryModel() {
-        return [
-            { k: "ALT", v: altitudeText(), u: "m" },
-            { k: "GS", v: groundSpeedText(), u: "m/s" },
-            { k: "HDG", v: headingText(), u: "deg" },
-            { k: "GPS", v: gpsStatusText(), u: "" },
-            { k: "BATT", v: batteryPercentText(), u: "" },
-            { k: "MODE", v: flightModeText(), u: "" }
-        ]
-    }
-
-    function telemetrySlotKey(index) {
-        switch (index) {
-        case 0: return "ALT"
-        case 1: return "GS"
-        case 2: return "HDG"
-        case 3: return "GPS"
-        case 4: return "BATT"
-        case 5: return "MODE"
-        default: return "--"
-        }
-    }
-
-    function telemetrySlotValue(index) {
-        switch (index) {
-        case 0: return altitudeText()
-        case 1: return groundSpeedText()
-        case 2: return headingText()
-        case 3: return gpsStatusText()
-        case 4: return batteryPercentText()
-        case 5: return flightModeText()
-        default: return "--"
-        }
-    }
-
-    function telemetrySlotUnit(index) {
-        switch (index) {
-        case 0: return "m"
-        case 1: return "m/s"
-        case 2: return "deg"
-        default: return ""
-        }
-    }
-
-    function telemetrySlotValueColor(index) {
-        switch (index) {
-        case 4:
-            return isNaN(currentBatteryPercent()) ? root.dim : (currentBatteryPercent() > 30 ? root.ok : root.err)
-        case 5:
-            return root.ok
-        default:
-            return root.text
-        }
-    }
-
     function flyActionModel() {
         const commandReady = pendingVehicleAction === ""
         const vehicleConnected = hasLiveVehicleLink()
@@ -1651,6 +1550,10 @@ Item {
 
     // The left sidebar is shared by every section; like QGroundControl's
     // tool strips, its contents follow the current view.
+    // Built once and shared by every sidebar button; each button rebuilding the
+    // whole list made the cost grow with the square of the button count.
+    readonly property var sidebarActions: sidebarActionModel()
+
     function sidebarActionModel() {
         switch (activeModernSection) {
         case "analyze": return analyzeSidebarActions()
@@ -1751,6 +1654,7 @@ Item {
             title: title,
             message: message,
             tone: tone || "info",
+            time: Qt.formatTime(new Date(), "hh:mm:ss"),
             expiresAt: Date.now() + (durationMs || 3500)
         })
         toastSweepTimer.start()
@@ -1975,7 +1879,9 @@ Item {
         if (isNaN(percent) && isNaN(minutes)) {
             return ""
         }
-        return "battery:" + (isNaN(percent) ? "--" : Math.round(percent)) + ":" + (isNaN(minutes) ? "--" : Math.round(minutes))
+        // Include the vehicle id so dismissing one drone's warning never hides another's.
+        const vehicleId = activeVehicle ? activeVehicle.id : "--"
+        return "battery:" + vehicleId + ":" + (isNaN(percent) ? "--" : Math.round(percent)) + ":" + (isNaN(minutes) ? "--" : Math.round(minutes))
     }
 
     function batteryAlertDetailText() {
@@ -2452,6 +2358,14 @@ Item {
         }
     }
 
+    function toggleWindowMaximized() {
+        if (mainWindow.visibility === Window.Maximized) {
+            mainWindow.showNormal()
+        } else {
+            mainWindow.showMaximized()
+        }
+    }
+
     function closePayload() {
         payloadPanelOpen = false
     }
@@ -2474,6 +2388,30 @@ Item {
             return missionCoordinates[missionCoordinates.length - 1]
         }
         return missionCoordinates[index]
+    }
+
+    // Reading a coordinate property (vehicle.coordinate, item.coordinate) gives a
+    // live reference that stays connected to its owner's change signal. Never
+    // store those in lists: copy them first. A demo-flight trail of up to 600
+    // live references to the vehicle position froze the UI in flight.
+    function detachedCoordinate(coordinate) {
+        return QtPositioning.coordinate(coordinate.latitude, coordinate.longitude, coordinate.altitude)
+    }
+
+    function missionRouteEquals(coordinates, sequenceNumbers) {
+        if (coordinates.length !== missionCoordinates.length || sequenceNumbers.length !== missionSequenceNumbers.length) {
+            return false
+        }
+        for (let i = 0; i < coordinates.length; i++) {
+            const current = missionCoordinates[i]
+            if (sequenceNumbers[i] !== missionSequenceNumbers[i]
+                    || coordinates[i].latitude !== current.latitude
+                    || coordinates[i].longitude !== current.longitude
+                    || coordinates[i].altitude !== current.altitude) {
+                return false
+            }
+        }
+        return true
     }
 
     function isTimelineMissionItem(item) {
@@ -2500,18 +2438,26 @@ Item {
     function syncMissionCoordinates() {
         if (!_visualItems) {
             missionCoordinates = []
+            missionSequenceNumbers = []
             missionScrubIndex = 0
             missionTimelineInspectionMode = false
             return
         }
         const coordinates = []
+        const sequenceNumbers = []
         for (let i = 0; i < _visualItems.count; i++) {
             const item = _visualItems.get(i)
             if (isTimelineMissionItem(item)) {
-                coordinates.push(item.coordinate)
+                coordinates.push(detachedCoordinate(item.coordinate))
+                sequenceNumbers.push(item.sequenceNumber)
             }
         }
-        missionCoordinates = coordinates
+        // Reassigning rebuilds every binding and map label that reads the
+        // mission, so only do it when the route actually changed.
+        if (!missionRouteEquals(coordinates, sequenceNumbers)) {
+            missionCoordinates = coordinates
+            missionSequenceNumbers = sequenceNumbers
+        }
         if (missionCoordinates.length === 0) {
             missionScrubIndex = 0
             missionTimelineInspectionMode = false
@@ -3947,13 +3893,6 @@ Item {
         }
     }
 
-    function offsetCoordinate(latitudeOffset, longitudeOffset) {
-        if (!overlayCenter || !overlayCenter.isValid) {
-            return QtPositioning.coordinate()
-        }
-        return QtPositioning.coordinate(overlayCenter.latitude + latitudeOffset, overlayCenter.longitude + longitudeOffset)
-    }
-
     function updateSelectedMapKindFromActiveType() {
         if (!modernMap.activeMapType || !modernMap.activeMapType.name) {
             selectedMapKind = "default"
@@ -4006,7 +3945,7 @@ Item {
         for (let index = 0; items && index < items.count; index++) {
             const item = items.get(index)
             if (isTimelineMissionItem(item)) {
-                coordinates.push(item.coordinate)
+                coordinates.push(detachedCoordinate(item.coordinate))
             }
         }
         return coordinates
@@ -4268,8 +4207,8 @@ Item {
         }
 
         demoFlightTakeoffAltitude = Math.max(Number(activeVehicle.minimumTakeoffAltitudeMeters()), 12)
-        demoFlightRoute = demoRouteFrom(activeVehicle.coordinate)
-        demoFlightTrail = [activeVehicle.coordinate]
+        demoFlightRoute = demoRouteFrom(detachedCoordinate(activeVehicle.coordinate))
+        demoFlightTrail = [detachedCoordinate(activeVehicle.coordinate)]
         demoFlightRouteIndex = 0
         demoFlightTargetDispatched = false
         demoFlightTakeoffDispatched = false
@@ -4495,13 +4434,20 @@ Item {
         return selectedRiskZone === kind ? 3 : 2
     }
 
-    function selectRiskZone(kind) {
-        if (kind === "fleet") {
-            selectedRiskZone = "fleet"
-            centerOnVehicle()
-            pushToast(qsTr("Fleet"), qsTr("Fleet focus active."), "info", 2200)
+    // Called when the operator picks a vehicle in the Fleet panel; the panel has
+    // already made it the active vehicle.
+    function focusFleetVehicle(vehicle) {
+        if (!vehicle) {
             return
         }
+        if (vehicle.coordinate && vehicle.coordinate.isValid) {
+            modernMap.center = vehicle.coordinate
+            modernMap.zoomLevel = Math.max(modernMap.zoomLevel, 16)
+        }
+        pushToast(qsTr("Fleet"), qsTr("BRCH-%1 is now the active vehicle.").arg(vehicle.id), "info", 2200)
+    }
+
+    function selectRiskZone(kind) {
         const zones = visibleRiskZones().filter(function(zone) { return zone.kind === kind })
         if (zones.length === 0) {
             if (airspaceTileOverlayActive()) {
@@ -4534,7 +4480,7 @@ Item {
     }
 
     function validateSelectedRiskZone() {
-        if (selectedRiskZone && selectedRiskZone !== "fleet" && visibleRiskZones().filter(function(zone) { return zone.kind === selectedRiskZone }).length === 0) {
+        if (selectedRiskZone && visibleRiskZones().filter(function(zone) { return zone.kind === selectedRiskZone }).length === 0) {
             selectedRiskZone = ""
         }
     }
@@ -4542,7 +4488,7 @@ Item {
     function clearRiskZones() {
         riskZones = []
         airportRiskZones = []
-        selectedRiskZone = selectedRiskZone === "fleet" ? selectedRiskZone : ""
+        selectedRiskZone = ""
     }
 
     function upsertRiskZone(zone) {
@@ -4664,7 +4610,16 @@ Item {
             showBriechMessage(qsTr("No Vehicle"), qsTr("Connect to a vehicle before using this action."), root.warn)
             return
         }
-        confirmBriechAction(title, message, action, qsTr("CONFIRM"), root.gold)
+        // Name the target so the operator cannot command the wrong drone in a fleet,
+        // and refuse to send if the active vehicle changed while the dialog was open.
+        const targetVehicle = activeVehicle
+        confirmBriechAction(qsTr("%1 - BRCH-%2").arg(title).arg(targetVehicle.id), message, function() {
+            if (activeVehicle !== targetVehicle) {
+                showBriechMessage(qsTr("Vehicle Changed"), qsTr("The active vehicle changed before confirmation. The command was not sent."), root.warn)
+                return
+            }
+            action()
+        }, qsTr("CONFIRM"), root.gold)
     }
 
     function beginPendingVehicleAction(action) {
@@ -5064,6 +5019,10 @@ Item {
             if (root.pendingVehicleAction !== "") {
                 root.finishPendingVehicleAction(false, qsTr("Active vehicle changed before command confirmation."))
             }
+            // Telemetry histories belong to one vehicle; never splice two together.
+            root.speedHistory = []
+            root.altitudeHistory = []
+            root.batteryHistory = []
             if (root.activeVehicle) {
                 root.modernConnectPanelOpen = false
             }
@@ -5084,7 +5043,7 @@ Item {
             if (!root.demoFlightActive || !root.activeVehicle || !root.activeVehicle.coordinate.isValid) {
                 return
             }
-            const nextCoordinate = root.activeVehicle.coordinate
+            const nextCoordinate = root.detachedCoordinate(root.activeVehicle.coordinate)
             const trail = root.demoFlightTrail.slice(0)
             if (trail.length === 0 || trail[trail.length - 1].distanceTo(nextCoordinate) >= 1.5) {
                 trail.push(nextCoordinate)
@@ -5164,6 +5123,18 @@ Item {
             Layout.preferredHeight: 30
             color: "#040507"
 
+            // The main window is frameless while Modern is shown, so this bar
+            // stands in for the native title bar: drag to move, double-click
+            // to maximize/restore. Buttons declared below take their own clicks.
+            DragHandler {
+                target: null
+                onActiveChanged: if (active) mainWindow.startSystemMove()
+            }
+
+            TapHandler {
+                onDoubleTapped: root.toggleWindowMaximized()
+            }
+
             Rectangle {
                 anchors.left: parent.left
                 anchors.right: parent.right
@@ -5206,6 +5177,34 @@ Item {
 
                 Item { Layout.fillWidth: true }
 
+                Rectangle {
+                    Layout.preferredWidth: legacyUiLabel.implicitWidth + 18
+                    Layout.preferredHeight: 20
+                    color: legacyUiButton.containsMouse ? Qt.rgba(root.gold.r, root.gold.g, root.gold.b, 0.12) : "transparent"
+                    border.color: Qt.rgba(root.gold.r, root.gold.g, root.gold.b, legacyUiButton.containsMouse ? 0.85 : 0.40)
+                    border.width: 1
+                    radius: 2
+
+                    Text {
+                        id: legacyUiLabel
+                        anchors.centerIn: parent
+                        text: "LEGACY UI"
+                        color: root.gold
+                        font.pixelSize: 9
+                        font.bold: true
+                        font.letterSpacing: 1
+                        font.family: "monospace"
+                    }
+
+                    MouseArea {
+                        id: legacyUiButton
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: mainWindow.showFlyView()
+                    }
+                }
+
                 RowLayout {
                     Layout.preferredWidth: 90
                     Layout.fillHeight: true
@@ -5223,8 +5222,8 @@ Item {
                         Layout.preferredWidth: 30
                         Layout.fillHeight: true
                         color: maximizeWindow.containsMouse ? "#171c25" : "transparent"
-                        Text { anchors.centerIn: parent; text: "□"; color: root.text; font.pixelSize: 11 }
-                        MouseArea { id: maximizeWindow; anchors.fill: parent; hoverEnabled: true; onClicked: mainWindow.showMaximized() }
+                        Text { anchors.centerIn: parent; text: mainWindow.visibility === Window.Maximized ? "❐" : "□"; color: root.text; font.pixelSize: 11 }
+                        MouseArea { id: maximizeWindow; anchors.fill: parent; hoverEnabled: true; onClicked: root.toggleWindowMaximized() }
                     }
 
                     Rectangle {
@@ -5248,7 +5247,7 @@ Item {
                 spacing: 0
 
                 Rectangle {
-                    Layout.preferredWidth: root.activeVehicle ? 248 : 282
+                    Layout.preferredWidth: root.activeVehicle ? 330 : 282
                     Layout.fillHeight: true
                     color: "transparent"
                     border.color: root.modernHairline
@@ -5327,115 +5326,10 @@ Item {
                     }
                 }
 
-                Repeater {
-                    model: root.activeVehicle ? 6 : 0
-
-                    delegate: Rectangle {
-                        required property int index
-                        property int telemetryIndex: index
-                        Layout.preferredWidth: Math.max(72, label.implicitWidth + value.implicitWidth + unit.implicitWidth + 18)
-                        Layout.fillHeight: true
-                        color: "transparent"
-                        border.color: root.modernHairline
-                        border.width: 1
-
-                        RowLayout {
-                            anchors.centerIn: parent
-                            spacing: 5
-
-                            Text {
-                                id: label
-                                text: root.telemetrySlotKey(parent.parent.telemetryIndex)
-                                color: root.dim
-                                font.pixelSize: 12
-                                font.family: "Barlow Condensed"
-                                font.bold: true
-                            }
-
-                            Text {
-                                id: value
-                                text: root.telemetrySlotValue(parent.parent.telemetryIndex)
-                                color: root.telemetrySlotValueColor(parent.parent.telemetryIndex)
-                                font.pixelSize: 12
-                                font.bold: true
-                                font.family: "Barlow Condensed"
-                            }
-
-                            Text {
-                                id: unit
-                                text: parent.parent.isModeSlot ? "▾" : root.telemetrySlotUnit(parent.parent.telemetryIndex)
-                                color: parent.parent.isModeSlot ? root.gold : root.dim
-                                font.pixelSize: 12
-                                font.family: ScreenTools.normalFontFamily
-                            }
-                        }
-
-                        property bool isModeSlot: telemetryIndex === 5
-
-                        MouseArea {
-                            anchors.fill: parent
-                            enabled: parent.isModeSlot && root.flightModeOptions().length > 0
-                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            onClicked: flightModePopup.opened ? flightModePopup.close() : flightModePopup.open()
-                        }
-
-                        Popup {
-                            id: flightModePopup
-                            y: parent.height + 2
-                            width: Math.max(parent.width, 170)
-                            padding: 4
-                            closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
-
-                            background: Rectangle {
-                                color: root.modernGlassStrong
-                                border.color: root.modernGoldHairline
-                                border.width: 1
-                                radius: 2
-                            }
-
-                            contentItem: Column {
-                                spacing: 1
-
-                                Repeater {
-                                    model: flightModePopup.opened ? root.flightModeOptions() : []
-
-                                    delegate: Rectangle {
-                                        id: modeOption
-                                        required property var modelData
-                                        readonly property bool current: root.activeVehicle && root.activeVehicle.flightMode === modelData.mode
-                                        width: flightModePopup.availableWidth
-                                        height: 26
-                                        radius: 2
-                                        color: current ? root.modernGoldFill : (optionMouse.containsMouse && modelData.available ? root.modernGlassSoft : "transparent")
-
-                                        Text {
-                                            anchors.left: parent.left
-                                            anchors.leftMargin: 8
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            text: modeOption.modelData.label
-                                            color: modeOption.current ? root.gold : (modeOption.modelData.available ? root.text : root.dim)
-                                            opacity: modeOption.modelData.available ? 1 : 0.5
-                                            font.pixelSize: 12
-                                            font.bold: modeOption.current
-                                            font.family: "Barlow Condensed"
-                                        }
-
-                                        MouseArea {
-                                            id: optionMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            enabled: modeOption.modelData.available
-                                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                            onClicked: {
-                                                root.selectFlightMode(modeOption.modelData.mode)
-                                                flightModePopup.close()
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                // Live readouts and the flight-mode picker; see ModernHeaderTelemetry.qml.
+                ModernHeaderTelemetry {
+                    view: root
+                    Layout.fillHeight: true
                 }
 
                 Item { Layout.fillWidth: true }
@@ -5492,6 +5386,13 @@ Item {
             }
         }
 
+        // Fly telemetry strip; see ModernTelemetryStrip.qml.
+        ModernTelemetryStrip {
+            view: root
+            Layout.fillWidth: true
+            visible: root.activeModernSection === "fly" && !!root.activeVehicle
+        }
+
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -5522,11 +5423,11 @@ Item {
                         spacing: 4
 
                         Repeater {
-                            model: root.sidebarActionModel().length
+                            model: root.sidebarActions.length
 
                             delegate: Rectangle {
                                 required property int index
-                                property var actionItem: root.sidebarActionModel()[index] || ({})
+                                property var actionItem: root.sidebarActions[index] || ({})
                                 property string actionText: actionItem.t || ""
                                 property string actionShort: actionItem.s || ""
                                 property string actionIcon: actionItem.icon || ""
@@ -5819,9 +5720,9 @@ Item {
                         id: safetyReadinessToggle
                         visible: root.activeModernSection === "fly"
                         anchors.top: parent.top
-                        anchors.right: parent.right
+                        anchors.right: modernMapTypeList.left
                         anchors.topMargin: 18
-                        anchors.rightMargin: 142
+                        anchors.rightMargin: 10
                         width: 154
                         height: 28
                         color: root.safetyPanelOpen ? Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.16) : root.modernGlass
@@ -5862,9 +5763,8 @@ Item {
                         id: safetyReadinessPanel
                         visible: root.activeModernSection === "fly" && root.safetyPanelOpen
                         anchors.top: parent.top
-                        anchors.right: parent.right
+                        anchors.right: safetyReadinessToggle.right
                         anchors.topMargin: 54
-                        anchors.rightMargin: 18
                         width: 390
                         height: Math.min(460, parent.height - 82)
                         color: root.modernGlassStrong
@@ -6165,10 +6065,11 @@ Item {
                     Rectangle {
                         id: simulationFlyToggle
                         visible: root.activeModernSection === "fly"
+                        // Left of the safety badge; the map-type list owns the corner.
                         anchors.top: parent.top
-                        anchors.right: parent.right
+                        anchors.right: safetyReadinessToggle.left
                         anchors.topMargin: 18
-                        anchors.rightMargin: 18
+                        anchors.rightMargin: 8
                         width: 116
                         height: 28
                         color: root.simulationFlyPanelOpen ? Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.16) : root.modernGlass
@@ -6197,11 +6098,11 @@ Item {
                         visible: root.activeModernSection === "fly" && root.modernWatermarkEnabled
                     }
 
+                    // Top-centre, as in the reference design.
                     ModernFlightAlertStack {
                         anchors.top: parent.top
-                        anchors.right: parent.right
-                        anchors.topMargin: 20
-                        anchors.rightMargin: 214
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.topMargin: 18
                         width: 312
                         model: root.modernFlightAlerts()
                         onDismissRequested: function(key, kind) {
@@ -6209,12 +6110,27 @@ Item {
                         }
                     }
 
-                    ModernToastStack {
+                    // Map types own the top-right corner; badges and notifications
+                    // sit to their left. See ModernMapTypeList.qml.
+                    ModernMapTypeList {
+                        id: modernMapTypeList
+                        view: root
+                        visible: root.activeModernSection === "fly"
                         anchors.top: parent.top
                         anchors.right: parent.right
-                        anchors.topMargin: 44
-                        anchors.rightMargin: 12
-                        width: 292
+                        anchors.topMargin: 18
+                        anchors.rightMargin: 18
+                        z: QGroundControl.zOrderWidgets + 13
+                    }
+
+                    // Operator notifications; see ModernToastStack.qml.
+                    ModernToastStack {
+                        anchors.top: parent.top
+                        anchors.right: modernMapTypeList.left
+                        anchors.topMargin: 54
+                        anchors.rightMargin: 10
+                        width: 340
+                        z: QGroundControl.zOrderWidgets + 14
                         model: toastModel
                     }
 
@@ -6705,16 +6621,6 @@ Item {
                         }
                     }
 
-                    ModernSwarmPanel {
-                        anchors.top: parent.top
-                        anchors.right: parent.right
-                        anchors.topMargin: 214
-                        anchors.rightMargin: 12
-                        width: 264
-                        visible: QGroundControl.multiVehicleManager.vehicles.count > 1
-                        vehicleModel: QGroundControl.multiVehicleManager.vehicles
-                    }
-
                     ColumnLayout {
                         anchors.left: parent.left
                         anchors.bottom: parent.bottom
@@ -7179,12 +7085,14 @@ Item {
                     }
 
                     Column {
+                        id: mapLegendColumn
                         anchors.left: parent.left
                         anchors.top: parent.top
                         anchors.leftMargin: 64
                         anchors.topMargin: 84
                         spacing: 4
                         visible: root.riskZoneControls().length > 0 || riskDataManager.status !== "idle" || root.airspaceTileOverlayActive()
+                                 || QGroundControl.multiVehicleManager.vehicles.count > 0
 
                         Rectangle {
                             width: 112
@@ -7247,35 +7155,51 @@ Item {
                             }
                         }
 
+                        // FLEET chip: opens and closes the Fleet panel docked below it.
                         Rectangle {
                             width: 112
                             height: 28
                             visible: QGroundControl.multiVehicleManager.vehicles.count > 0
-                            color: root.selectedRiskZone === "fleet" ? "#1a1609" : "#0c1017"
+                            color: fleetLayerLoader.active ? "#1a1609" : "#0c1017"
                             border.color: root.gold
-                            border.width: root.selectedRiskZone === "fleet" ? 2 : 1
+                            border.width: fleetLayerLoader.active ? 2 : 1
 
-                            Rectangle {
-                                anchors.left: parent.left
-                                anchors.top: parent.top
-                                anchors.bottom: parent.bottom
-                                width: 4
-                                color: root.gold
-                            }
-
-                            Text {
+                            Row {
                                 anchors.centerIn: parent
-                                text: "FLEET"
-                                color: root.gold
-                                font.pixelSize: 10
-                                font.bold: true
-                                font.family: "monospace"
-                                font.letterSpacing: 1
+                                spacing: 6
+
+                                Text {
+                                    text: "✣"
+                                    color: root.gold
+                                    font.pixelSize: 12
+                                }
+
+                                Text {
+                                    text: "FLEET"
+                                    color: root.gold
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                    font.family: "monospace"
+                                    font.letterSpacing: 1
+                                }
                             }
 
                             MouseArea {
                                 anchors.fill: parent
-                                onClicked: root.selectRiskZone("fleet")
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (!FleetSettings.enabled) {
+                                        root.confirmBriechAction(qsTr("Enable Fleet"),
+                                                                 qsTr("Turn on the Fleet layer? It stays on until you disable it."),
+                                                                 function() {
+                                                                     FleetSettings.enabled = true
+                                                                     fleetLayerLoader.open = true
+                                                                 },
+                                                                 qsTr("ENABLE"))
+                                        return
+                                    }
+                                    fleetLayerLoader.open = !fleetLayerLoader.open
+                                }
                             }
                         }
                     }
@@ -7333,6 +7257,35 @@ Item {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: root.modernDiagnosticsOpen = !root.modernDiagnosticsOpen
                             }
+                        }
+                    }
+
+                    // Briech Fleet layer: the only fleet hook in this file. Nothing
+                    // is created unless Fleet is enabled and the operator opens it.
+                    // Docked under the legend and FLEET chip, as in the reference.
+                    Loader {
+                        id: fleetLayerLoader
+                        property bool open: false
+                        anchors.left: mapLegendColumn.left
+                        anchors.top: mapLegendColumn.bottom
+                        anchors.topMargin: 8
+                        z: QGroundControl.zOrderWidgets + 12
+                        active: FleetSettings.enabled && open
+                        source: "qrc:/Briech/qml/Fleet/FleetLayer.qml"
+
+                        // Stop above the zoom and video buttons; the card list scrolls.
+                        Binding {
+                            target: fleetLayerLoader.item
+                            property: "maximumHeight"
+                            value: Math.max(140, fleetLayerLoader.parent.height - fleetLayerLoader.y - 110)
+                            when: fleetLayerLoader.status === Loader.Ready
+                        }
+
+                        Connections {
+                            target: fleetLayerLoader.item
+                            ignoreUnknownSignals: true
+                            function onCloseRequested() { fleetLayerLoader.open = false }
+                            function onVehicleFocused(vehicle) { root.focusFleetVehicle(vehicle) }
                         }
                     }
 
@@ -7816,87 +7769,10 @@ Item {
             }
         }
 
-        Rectangle {
+        // Status bar; see ModernFooterBar.qml.
+        ModernFooterBar {
+            view: root
             Layout.fillWidth: true
-            Layout.preferredHeight: 28
-            color: "#05070a"
-
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                height: 1
-                color: root.gold
-                opacity: 0.85
-            }
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 12
-                anchors.rightMargin: 12
-                spacing: 18
-
-                Text {
-                    text: root.activeVehicle ? "ARMED" : "DISARMED"
-                    color: root.activeVehicle ? root.gold : root.dim
-                    font.bold: true
-                    font.pixelSize: 11
-                    font.family: ScreenTools.normalFontFamily
-                }
-
-                Text {
-                    text: "ALT " + (root.activeVehicle ? root.activeVehicle.altitudeRelative.valueString : "--") + " m"
-                    color: root.text
-                    font.pixelSize: 10
-                    font.family: ScreenTools.normalFontFamily
-                }
-
-                Text {
-                    text: "GS " + (root.activeVehicle ? root.activeVehicle.groundSpeed.valueString : "--") + " m/s"
-                    color: root.text
-                    font.pixelSize: 10
-                    font.family: ScreenTools.normalFontFamily
-                }
-
-                Text {
-                    text: "HDG " + root.headingText()
-                    color: root.text
-                    font.pixelSize: 10
-                    font.family: ScreenTools.normalFontFamily
-                }
-
-                Text {
-                    text: "GPS " + root.gpsStatusText()
-                    color: root.text
-                    font.pixelSize: 10
-                    font.family: ScreenTools.normalFontFamily
-                }
-
-                Text {
-                    text: "BATT " + root.batteryPercentText()
-                    color: root.telemetrySlotValueColor(4)
-                    font.pixelSize: 10
-                    font.family: ScreenTools.normalFontFamily
-                }
-
-                Text {
-                    text: "MODE " + root.flightModeText()
-                    color: root.ok
-                    font.pixelSize: 10
-                    font.family: ScreenTools.normalFontFamily
-                }
-
-                Item { Layout.fillWidth: true }
-
-                Text {
-                    text: "BRIECH UAS GCS"
-                    color: root.gold
-                    font.bold: true
-                    font.pixelSize: 10
-                    font.letterSpacing: 1
-                    font.family: ScreenTools.normalFontFamily
-                }
-            }
         }
     }
 
@@ -7920,88 +7796,6 @@ Item {
             font.pixelSize: waypointMarker.highlight ? 11 : 10
             font.bold: true
             font.family: ScreenTools.normalFontFamily
-        }
-    }
-
-component ModernToastStack: Item {
-        id: toastStackRoot
-        property var model
-
-        implicitHeight: stackColumn.implicitHeight
-
-        Column {
-            id: stackColumn
-            anchors.fill: parent
-            spacing: 8
-
-            Repeater {
-                model: toastStackRoot.model
-                delegate: Rectangle {
-                    id: toastCard
-                    required property int index
-                    required property var modelData
-                    width: parent.width
-                    height: 58
-                    radius: 2
-                    color: root.modernGlassStrong
-                    border.color: toastCard.modelData.tone === "ok" ? "#22c55e" : toastCard.modelData.tone === "warn" ? "#f59e0b" : toastCard.modelData.tone === "crit" ? "#ef4444" : root.gold
-                    border.width: 1
-
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        width: 4
-                        color: toastCard.modelData.tone === "ok" ? "#22c55e" : toastCard.modelData.tone === "warn" ? "#f59e0b" : toastCard.modelData.tone === "crit" ? "#ef4444" : root.gold
-                    }
-
-                    Column {
-                        anchors.fill: parent
-                        anchors.leftMargin: 12
-                        anchors.rightMargin: 36
-                        anchors.topMargin: 8
-                        anchors.bottomMargin: 8
-                        spacing: 2
-
-                        Text {
-                            text: toastCard.modelData.title
-                            color: "#f8fafc"
-                            font.pixelSize: 11
-                            font.bold: true
-                            font.family: "monospace"
-                        }
-
-                        Text {
-                            text: toastCard.modelData.message
-                            color: "#aab3c1"
-                            wrapMode: Text.WordWrap
-                            font.pixelSize: 9
-                        }
-                    }
-
-                    Text {
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.rightMargin: 10
-                        anchors.topMargin: 8
-                        text: "x"
-                        color: "#6a7585"
-                        font.pixelSize: 12
-                        font.bold: true
-
-                        MouseArea {
-                            anchors.fill: parent
-                            z: 2
-                            onClicked: toastStackRoot.model.remove(toastCard.index)
-                        }
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: toastStackRoot.model.remove(toastCard.index)
-                    }
-                }
-            }
         }
     }
 
@@ -9557,111 +9351,6 @@ component ModernToastStack: Item {
             onEntered: settingsAction.hovered = true
             onExited: settingsAction.hovered = false
             onClicked: settingsAction.clicked()
-        }
-    }
-
-    component ModernSwarmPanel: Rectangle {
-        property var vehicleModel
-
-        color: "#090d13"
-        border.color: "#202734"
-        border.width: 1
-        radius: 4
-
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 8
-            spacing: 6
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-
-                Text {
-                    text: "SWARM"
-                    color: root.gold
-                    font.pixelSize: 10
-                    font.bold: true
-                    font.family: "monospace"
-                    font.letterSpacing: 1
-                }
-
-                Item { Layout.fillWidth: true }
-
-                Text {
-                    text: vehicleModel ? vehicleModel.count : 0
-                    color: root.text
-                    font.pixelSize: 10
-                    font.family: "monospace"
-                }
-            }
-
-            Repeater {
-                model: vehicleModel
-                delegate: Rectangle {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 28
-                    color: "#0c1017"
-                    border.color: "#1f2631"
-                    border.width: 1
-                    radius: 3
-                    property var vehicleObject: object
-
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        width: 3
-                        color: object === activeVehicle ? "#22c55e" : root.blue
-                    }
-
-                    Text {
-                        anchors.left: parent.left
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.leftMargin: 10
-                        text: "BRCH-" + object.id
-                        color: root.text
-                        font.pixelSize: 9
-                        font.family: "monospace"
-                        font.bold: true
-                    }
-
-                    Text {
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.rightMargin: 10
-                        text: object.flightMode
-                        color: root.dim
-                        font.pixelSize: 8
-                        font.family: "monospace"
-                    }
-
-                    Text {
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        anchors.rightMargin: 10
-                        anchors.bottomMargin: 3
-                        text: object.armed ? "ARMED" : "STBY"
-                        color: object.armed ? "#22c55e" : root.dim
-                        font.pixelSize: 7
-                        font.family: "monospace"
-                        font.bold: true
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            if (vehicleObject && vehicleObject.coordinate && vehicleObject.coordinate.isValid) {
-                                modernMap.center = vehicleObject.coordinate
-                                modernMap.zoomLevel = Math.max(modernMap.zoomLevel, 16)
-                                pushToast(qsTr("Swarm"), qsTr("Focused BRCH-%1 on the map.").arg(vehicleObject.id), "info", 2200)
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 

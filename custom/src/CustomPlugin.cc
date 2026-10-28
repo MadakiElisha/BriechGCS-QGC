@@ -4,6 +4,7 @@
 #include "BriechDetectionController.h"
 #include "BriechEnergyPredictor.h"
 #include "BriechSafetyMonitor.h"
+#include "FleetSettings.h"
 #include "QmlComponentInfo.h"
 #include "QGCLoggingCategory.h"
 #include "QGCPalette.h"
@@ -277,6 +278,9 @@ QQmlApplicationEngine* CustomPlugin::createQmlApplicationEngine(QObject* parent)
     qmlRegisterType<BriechDetectionController>("Custom.Widgets", 1, 0, "BriechDetectionController");
     qmlRegisterType<BriechEnergyPredictor>("Custom.Widgets", 1, 0, "BriechEnergyPredictor");
     qmlRegisterType<BriechSafetyMonitor>("Custom.Widgets", 1, 0, "BriechSafetyMonitor");
+    // One shared switch for the whole app; the QML engine owns the instance.
+    qmlRegisterSingletonType<FleetSettings>("Custom.Widgets", 1, 0, "FleetSettings",
+        [](QQmlEngine *, QJSEngine *) -> QObject * { return new FleetSettings(); });
 
     _qmlEngine = QGCCorePlugin::createQmlApplicationEngine(parent);
     _qmlEngine->addImportPath("qrc:/qml/Custom/Widgets");

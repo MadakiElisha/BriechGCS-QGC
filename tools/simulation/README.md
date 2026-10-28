@@ -59,8 +59,15 @@ Full PX4 Software-in-Hardware simulation through the local Docker image. Briech 
 ./run-px4-sitl-docker.sh --model sihsim_airplane --home 9.0765,7.3986,50,270
 ./run-px4-sitl-docker.sh --model sihsim_standard_vtol --speed-factor 1
 
+# Several drones at once: each needs its own system ID and container name,
+# otherwise QGC merges drones that share an ID into one vehicle
+./run-px4-sitl-docker.sh --system-id 1 --name px4-1 --home 42.3898,-71.1476,14,270
+./run-px4-sitl-docker.sh --system-id 2 --name px4-2 --home 42.3898,-71.1472,14,270
+
 # Briech GCS connects automatically to UDP 14550
 ```
+
+Options: `--model`, `--home LAT,LON,ALT,HEADING`, `--speed-factor N`, `--system-id ID` (1-255, default 250, the ID the Briech GCS simulation panel uses) and `--name CONTAINER` (default `briech-px4-sitl`).
 
 Supported models: `sihsim_quadx` (multirotor), `sihsim_airplane` (fixed wing), and `sihsim_standard_vtol` (VTOL).
 
@@ -71,6 +78,8 @@ The launcher expects the local `px4io/px4-sitl-sih:latest` image and does not bu
 docker logs -f briech-px4-sitl   # View logs
 docker rm -f briech-px4-sitl     # Stop and remove simulation
 ```
+
+On Docker Desktop (Windows and macOS) PX4 runs as a daemon (`px4 -d`), with no interactive shell. With the shell, a container without input redraws its prompt endlessly (about 100 MB of log every five minutes), and once its input closes, for example after `docker start`, the shell exits and stops PX4. On Linux the image's own entrypoint is used, so the container keeps its input open with `docker run -i`. Logs are capped at 10 MB.
 
 **Requirements:** Docker
 

@@ -24,9 +24,9 @@ public:
 
     /// This custom build has it's own custom instrument panel. Don't show regular one.
     bool showInstrumentPanel() const final { return false; }
-    /// This custom build does not support conecting multiple vehicles to it.
-    /// This in turn simplifies various parts of the QGC ui.
-    bool showMultiVehicleList() const final { return false; }
+    /// The Briech Fleet build flies several vehicles at once, so keep the
+    /// stock multi-vehicle list visible in the Fly view.
+    bool showMultiVehicleList() const final { return true; }
 };
 
 /*===========================================================================*/
