@@ -55,6 +55,7 @@ movable into `custom/`; **fix** = a known problem.
 | `src/MAVLink/LibEvents/CMakeLists.txt` | libevents pinned to `077677a` instead of `main` | Upstream `main` is a moving target | keep; re-check on each upstream merge |
 | `cmake/CustomOptions.cmake` | App and organisation names, macOS icon | Branding | **review**: `custom/cmake/CustomOverrides.cmake` already sets the name (`BriechUAS`, while this file says `BriechGroundControl`), so this edit may be redundant |
 | `cmake/install/Install.cmake` | Installs Qt SerialPort explicitly on Windows | Installed app failed to start without it | keep |
+| `src/VideoManager/VideoReceiver/GStreamer/GStreamer.cc` | Windows: prepends the app's `bin` folder to `PATH` in `_setGstEnvVars()` | The bundled `gst-plugin-scanner.exe` runs from `libexec` and could not load `glib-2.0-0.dll` from `bin`, so the installed app hung at startup with no window on PCs without the GStreamer SDK on `PATH` | keep (worth sending upstream) |
 | `deploy/` (installer script, iOS plists, Linux appdata and icons, Windows icon) | Branding | Packaging | keep |
 | `Makefile` | **An accidental line at the end**: `The file /Users/mac/BriechGCS-QGC/build/Debug/QGroundControl does not exist.` (commit `8886fd7e4`) | Shell output pasted in by mistake | **fix**: delete the line; it breaks `make docker` |
 | `android/gradle/wrapper/gradle-wrapper.properties` | Gradle version | Android build | review |

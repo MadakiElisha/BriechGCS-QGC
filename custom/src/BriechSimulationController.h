@@ -47,7 +47,7 @@ private:
     bool _busy = false;
     QString _status = QStringLiteral("SIM OFFLINE");
     QString _lastError;
-    QString _home = QStringLiteral("42.3898,-71.1476,14.0,270.0");
+    QString _home = QStringLiteral("8.893321,7.264172,400.0,0.0");
     QString _simulationModel = QStringLiteral("sihsim_quadx");
     double _speedFactor = 1.0;
 };
