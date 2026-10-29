@@ -46,7 +46,7 @@ Item {
     property bool simulationPanelOpen: false
     // Create Plan / Storage panel, toggled by the FILE sidebar action.
     property bool filePanelOpen: true
-    property string simulationHome: "42.3898,-71.1476,14.0,270.0"
+    property string simulationHome: "8.893321,7.264172,400.0,0.0"
     property string simulationSpeedup: "1"
     property bool fitPending: false
     property bool waitingForPX4Upload: false
@@ -150,7 +150,7 @@ Item {
     Component.onCompleted: Qt.callLater(root.fitPlanToMap)
 
     function sharedMapCenter() {
-        return QGroundControl.flightMapPosition.isValid ? QGroundControl.flightMapPosition : QtPositioning.coordinate(9.0765, 7.3986)
+        return QGroundControl.flightMapPosition.isValid ? QGroundControl.flightMapPosition : QtPositioning.coordinate(8.893321, 7.264172)
     }
 
     function mapTypeKeywords(kind) {
@@ -773,7 +773,7 @@ Item {
                 text: root.simulationHome
                 selectByMouse: true
                 color: root.text
-                placeholderText: "42.3898,-71.1476,14.0,270.0"
+                placeholderText: "8.893321,7.264172,400.0,0.0"
                 placeholderTextColor: "#66758a"
                 font.pixelSize: 11
                 font.family: "monospace"

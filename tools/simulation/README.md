@@ -61,8 +61,8 @@ Full PX4 Software-in-Hardware simulation through the local Docker image. Briech 
 
 # Several drones at once: each needs its own system ID and container name,
 # otherwise QGC merges drones that share an ID into one vehicle
-./run-px4-sitl-docker.sh --system-id 1 --name px4-1 --home 42.3898,-71.1476,14,270
-./run-px4-sitl-docker.sh --system-id 2 --name px4-2 --home 42.3898,-71.1472,14,270
+./run-px4-sitl-docker.sh --system-id 1 --name px4-1 --home 8.893321,7.264172,400,0
+./run-px4-sitl-docker.sh --system-id 2 --name px4-2 --home 8.893321,7.264572,400,0
 
 # Briech GCS connects automatically to UDP 14550
 ```

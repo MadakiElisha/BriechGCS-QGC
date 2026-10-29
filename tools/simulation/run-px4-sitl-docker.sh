@@ -10,7 +10,7 @@ export MSYS_NO_PATHCONV=1
 IMAGE_NAME="${PX4_SITL_IMAGE:-px4io/px4-sitl-sih:latest}"
 CONTAINER_NAME="${PX4_SITL_CONTAINER:-briech-px4-sitl}"
 SIMULATION_MODEL="${PX4_SIM_MODEL:-sihsim_quadx}"
-HOME_POSITION="${PX4_HOME:-42.3898,-71.1476,14.0,270.0}"
+HOME_POSITION="${PX4_HOME:-8.893321,7.264172,400.0,0.0}"
 SPEED_FACTOR="${PX4_SIM_SPEED_FACTOR:-1}"
 # 250 matches the Briech GCS simulation panel. Give each extra drone its own ID
 # (and --name), or QGC merges drones that share an ID into one vehicle.

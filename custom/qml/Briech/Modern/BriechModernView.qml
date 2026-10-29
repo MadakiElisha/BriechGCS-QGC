@@ -89,7 +89,12 @@ Item {
     property real riskPulse: 0
     property string pendingVehicleAction: ""
     property double pendingVehicleActionStartedAt: 0
-    property var defaultCenter: QtPositioning.coordinate(9.0765, 7.3986)
+    // Saved home of the ground station: map fallback centre and the GCS marker's
+    // position while the OS has no location fix.
+    property var defaultCenter: QtPositioning.coordinate(8.893321, 7.264172)
+    readonly property var liveGcsPosition: QGroundControl.qgcPositionManger.gcsPosition
+    readonly property bool gcsMarkerIsLive: !!liveGcsPosition && liveGcsPosition.isValid
+    readonly property var gcsMarkerCoordinate: gcsMarkerIsLive ? liveGcsPosition : defaultCenter
     property var speedHistory: []
     property var altitudeHistory: []
     property var batteryHistory: []
@@ -130,7 +135,7 @@ Item {
     property var demoFlightRoute: []
     property var demoFlightTrail: []
     property bool stationReadyPanelOpen: true
-    property string simulationHome: "42.3898,-71.1476,14.0,270.0"
+    property string simulationHome: "8.893321,7.264172,400.0,0.0"
     property string simulationSpeedup: "1"
 
     BriechDialog {
@@ -1728,11 +1733,8 @@ Item {
         if (activeVehicle && activeVehicle.coordinate.isValid) {
             return activeVehicle.coordinate
         }
-        if (QGroundControl.qgcPositionManger.gcsPosition && QGroundControl.qgcPositionManger.gcsPosition.isValid) {
-            return QGroundControl.qgcPositionManger.gcsPosition
-        }
-        if (modernMap && modernMap.gcsPosition && modernMap.gcsPosition.isValid) {
-            return modernMap.gcsPosition
+        if (gcsMarkerIsLive) {
+            return liveGcsPosition
         }
         return defaultCenter
     }
@@ -4577,12 +4579,9 @@ Item {
             modernMap._disableVehicleTracking = false
             modernMap.center = activeVehicle.coordinate
             modernMap.zoomLevel = Math.max(modernMap.zoomLevel, 16)
-        } else if (modernMap.gcsPosition.isValid) {
-            modernMap.center = modernMap.gcsPosition
+        } else if (gcsMarkerCoordinate.isValid) {
+            modernMap.center = gcsMarkerCoordinate
             modernMap.zoomLevel = Math.max(modernMap.zoomLevel, 14)
-        } else if (defaultCenter.isValid) {
-            modernMap.center = defaultCenter
-            modernMap.zoomLevel = Math.max(modernMap.zoomLevel, 12)
         }
         QGroundControl.flightMapPosition = modernMap.center
         QGroundControl.flightMapZoom = modernMap.zoomLevel
@@ -5595,6 +5594,58 @@ Item {
                         }
                         onMapReadyChanged: root.initializeModernMapType()
 
+                        // Hides the stock GCS marker (B badge) so the Briech marker below
+                        // replaces it; live-location centring is done by applyLiveGcsLocation.
+                        gcsPosition: QtPositioning.coordinate()
+
+                        // Ground station marker: the Briech drone logo at the live OS
+                        // location, or at the saved home (labelled HOME) without a fix.
+                        MapQuickItem {
+                            id: gcsMarker
+                            coordinate: root.gcsMarkerCoordinate
+                            visible: coordinate.isValid
+                            anchorPoint.x: gcsMarkerIcon.width / 2
+                            anchorPoint.y: gcsMarkerIcon.height / 2
+                            z: QGroundControl.zOrderMapItems
+
+                            sourceItem: Column {
+                                spacing: 2
+
+                                Image {
+                                    id: gcsMarkerIcon
+                                    width: 28
+                                    height: 28
+                                    source: "qrc:/Briech/res/logoBlack.png"
+                                    sourceSize.width: 56
+                                    sourceSize.height: 56
+                                    mipmap: true
+                                    fillMode: Image.PreserveAspectFit
+                                }
+
+                                Rectangle {
+                                    visible: !root.gcsMarkerIsLive
+                                    anchors.horizontalCenter: gcsMarkerIcon.horizontalCenter
+                                    width: homeLabel.implicitWidth + 8
+                                    height: homeLabel.implicitHeight + 2
+                                    radius: 2
+                                    color: "#040507"
+                                    border.color: root.gold
+                                    border.width: 1
+
+                                    Text {
+                                        id: homeLabel
+                                        anchors.centerIn: parent
+                                        text: "HOME"
+                                        color: root.gold
+                                        font.pixelSize: 9
+                                        font.bold: true
+                                        font.letterSpacing: 1
+                                        font.family: "Share Tech Mono"
+                                    }
+                                }
+                            }
+                        }
+
                         // Distance between consecutive waypoints, at each leg's midpoint.
                         MapItemView {
                             model: root.activeModernSection === "fly" ? root.missionSegmentLabels() : []
@@ -5625,19 +5676,6 @@ Item {
                                         font.bold: true
                                         font.family: "monospace"
                                     }
-                                }
-                            }
-                        }
-
-                        onGcsPositionChanged: {
-                            if (!root.liveGcsLocationReceived && !root.activeVehicle && modernMap.gcsPosition.isValid && !QGroundControl.flightMapPosition.isValid) {
-                                modernMap.center = modernMap.gcsPosition
-                                QGroundControl.flightMapPosition = modernMap.gcsPosition
-                                root.riskZoneViewportRevision++
-                                root.airspaceTileRevision++
-                                if (root.riskDataSourceUsesMap()) {
-                                    riskMapRefreshTimer.interval = 4000
-                                    riskMapRefreshTimer.restart()
                                 }
                             }
                         }

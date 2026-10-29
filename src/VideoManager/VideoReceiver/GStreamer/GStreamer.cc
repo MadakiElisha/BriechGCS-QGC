@@ -214,6 +214,9 @@ void _setGstEnvVars()
         qputenv("GST_PLUGIN_SYSTEM_PATH", pluginDir.toUtf8().constData());
         qputenv("GST_PLUGIN_PATH_1_0", pluginDir.toUtf8().constData());
         qputenv("GST_PLUGIN_PATH", pluginDir.toUtf8().constData());
+        // The scanner runs from libexec but its DLLs (glib, gstreamer) are in bin;
+        // without bin on PATH it fails to load and plugin loading hangs.
+        qputenv("PATH", (QDir::toNativeSeparators(binDir) + QStringLiteral(";") + qEnvironmentVariable("PATH")).toUtf8());
     }
 #endif
 }
