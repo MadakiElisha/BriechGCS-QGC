@@ -7,10 +7,13 @@ import QtQuick.Layouts
 import QGroundControl
 import Custom.Widgets 1.0
 
+import "FleetFormat.js" as FleetFormat
+
 // Fleet list: one card per vehicle QGC is connected to. Clicking a card makes
 // that vehicle the active one, which is the vehicle every command acts on.
 // Until FleetLink exists this lists QGC vehicles only, with live values.
-Rectangle {
+// FleetLayer draws the frame around this and the other Fleet sections.
+Item {
     id: root
 
     signal closeRequested()
@@ -22,52 +25,11 @@ Rectangle {
     readonly property var vehicles: QGroundControl.multiVehicleManager.vehicles
     readonly property var activeVehicle: QGroundControl.multiVehicleManager.activeVehicle
 
-    width: 252
-    height: Math.min(maximumHeight, header.height + cardList.contentHeight + statusRow.height + 2)
-    radius: 2
-    color: "#080a0e"
-    border.color: Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.25)
-    border.width: 1
-
-    function batteryPercent(vehicle) {
-        if (!vehicle || !vehicle.batteries || vehicle.batteries.count === 0) {
-            return NaN
-        }
-        // Report the lowest pack, as the Modern view header does.
-        let lowest = NaN
-        for (let i = 0; i < vehicle.batteries.count; i++) {
-            const battery = vehicle.batteries.get(i)
-            const percent = battery && battery.percentRemaining ? Number(battery.percentRemaining.rawValue) : NaN
-            if (!isNaN(percent) && (isNaN(lowest) || percent < lowest)) {
-                lowest = percent
-            }
-        }
-        return lowest
-    }
-
-    function batteryTone(percent) {
-        if (isNaN(percent)) {
-            return BriechTheme.mutedColor
-        }
-        return percent > 30 ? BriechTheme.okColor : (percent > 20 ? BriechTheme.warnColor : BriechTheme.errColor)
-    }
-
-    function linkPercent(vehicle) {
-        const loss = vehicle ? Number(vehicle.mavlinkLossPercent) : NaN
-        return isNaN(loss) ? NaN : Math.round(Math.max(0, Math.min(100, 100 - loss)))
-    }
-
-    function factText(fact, decimals, suffix) {
-        if (!fact) {
-            return "--"
-        }
-        const value = Number(fact.rawValue)
-        return isNaN(value) ? "--" : value.toFixed(decimals) + suffix
-    }
+    width: 250
+    height: Math.min(maximumHeight, header.height + cardList.contentHeight)
 
     Column {
         anchors.fill: parent
-        anchors.margins: 1
 
         // Header: "FLEET — N VEHICLES" and close.
         Item {
@@ -116,7 +78,7 @@ Rectangle {
         ListView {
             id: cardList
             width: parent.width
-            height: root.height - header.height - statusRow.height - 2
+            height: root.height - header.height
             clip: true
             model: root.vehicles
             boundsBehavior: Flickable.StopAtBounds
@@ -124,47 +86,6 @@ Rectangle {
 
             delegate: FleetVehicleCard {
                 width: cardList.width
-            }
-        }
-
-        // Honest status line: what is and is not wired up yet.
-        Rectangle {
-            id: statusRow
-            width: parent.width
-            height: 26
-            color: "#05070a"
-
-            Text {
-                anchors.left: parent.left
-                anchors.leftMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                text: "COORDINATOR: NOT CONNECTED · 3D: " + (FleetSettings.quick3DAvailable ? "OK" : "2D")
-                color: BriechTheme.mutedColor
-                font.pixelSize: 8
-                font.letterSpacing: 1
-                font.family: "Share Tech Mono"
-            }
-
-            Text {
-                anchors.right: parent.right
-                anchors.rightMargin: 10
-                anchors.verticalCenter: parent.verticalCenter
-                text: "DISABLE"
-                color: disableArea.containsMouse ? BriechTheme.errColor : BriechTheme.mutedColor
-                font.pixelSize: 8
-                font.bold: true
-                font.letterSpacing: 1
-                font.family: "Share Tech Mono"
-
-                MouseArea {
-                    id: disableArea
-                    anchors.fill: parent
-                    anchors.margins: -6
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    // Turning Fleet off deactivates the Loader that owns this panel.
-                    onClicked: FleetSettings.enabled = false
-                }
             }
         }
     }
@@ -176,10 +97,10 @@ Rectangle {
         required property var object
 
         readonly property bool isActive: object === root.activeVehicle
-        readonly property real battery: root.batteryPercent(object)
-        readonly property color batteryTone: root.batteryTone(battery)
-        readonly property real link: root.linkPercent(object)
-        readonly property bool batteryLow: !isNaN(battery) && battery < 20
+        readonly property real battery: FleetFormat.batteryPercent(object)
+        readonly property color batteryTone: FleetFormat.batteryTone(battery, BriechTheme)
+        readonly property real link: FleetFormat.linkPercent(object)
+        readonly property bool batteryLow: !isNaN(battery) && battery < FleetFormat.lowBatteryPercent
 
         height: 112
         color: isActive ? "#11141b" : (cardArea.containsMouse ? "#0d1016" : "transparent")
@@ -274,7 +195,7 @@ Rectangle {
 
                     Text {
                         anchors.centerIn: parent
-                        text: isNaN(card.battery) ? "--" : Math.round(card.battery) + "%"
+                        text: FleetFormat.batteryText(card.battery)
                         color: card.batteryTone
                         font.pixelSize: 7
                         font.bold: true
@@ -289,25 +210,19 @@ Rectangle {
                 rowSpacing: 3
                 columnSpacing: 6
 
-                CardValue { label: "ALT"; value: root.factText(card.object.altitudeRelative, 1, "m") }
-                CardValue { label: "ASPD"; value: root.factText(card.object.airSpeed, 1, "") }
+                CardValue { label: "ALT"; value: FleetFormat.factText(card.object.altitudeRelative, 1, "m") }
+                CardValue { label: "ASPD"; value: FleetFormat.factText(card.object.airSpeed, 1, "") }
                 CardValue {
                     label: "BATT"
-                    value: isNaN(card.battery) ? "--" : Math.round(card.battery) + "%"
+                    value: FleetFormat.batteryText(card.battery)
                     tone: card.batteryTone
                 }
-                CardValue {
-                    label: "HDG"
-                    value: {
-                        const heading = card.object.heading ? Number(card.object.heading.rawValue) : NaN
-                        return isNaN(heading) ? "--" : ("000" + ((Math.round(heading) % 360 + 360) % 360)).slice(-3) + "°"
-                    }
-                }
+                CardValue { label: "HDG"; value: FleetFormat.headingText(card.object) }
                 CardValue { label: "MODE"; value: String(card.object.flightMode).toUpperCase(); tone: BriechTheme.okColor }
                 CardValue {
                     label: "LINK"
                     value: isNaN(card.link) ? "--" : card.link + "%"
-                    tone: isNaN(card.link) ? BriechTheme.mutedColor : (card.link >= 90 ? BriechTheme.okColor : (card.link >= 70 ? BriechTheme.warnColor : BriechTheme.errColor))
+                    tone: FleetFormat.linkTone(card.link, BriechTheme)
                 }
             }
         }

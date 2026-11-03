@@ -108,6 +108,7 @@ Item {
     property var modernNavSections: [
         { label: "FLY", key: "fly", icon: "/qmlimages/PaperPlane.svg" },
         { label: "PLAN", key: "plan", icon: "/qmlimages/Plan.svg" },
+        { label: "FLEET", key: "fleet", icon: "qrc:/custom/img/fleetNav.svg" },
         { label: "ANALYZE", key: "analyze", icon: "/qmlimages/Analyze.svg" },
         { label: "VEHICLE", key: "vehicle", icon: "/qmlimages/Gears.svg" }
     ]
@@ -3315,6 +3316,24 @@ Item {
         }
     }
 
+    // Content of the FLEET tab; see Fleet/FleetManagementPage.qml.
+    Component {
+        id: fleetPageComponent
+
+        Loader {
+            id: fleetPageLoader
+            source: "qrc:/Briech/qml/Fleet/FleetManagementPage.qml"
+
+            Connections {
+                target: fleetPageLoader.item
+                ignoreUnknownSignals: true
+                function onEnableRequested() { root.requestFleetEnable(null) }
+                function onShowOnMapRequested(vehicle) { root.showFleetVehicleOnMap(vehicle) }
+                function onOpenVehicleSetupRequested(vehicle) { root.openFleetVehicleSetup(vehicle) }
+            }
+        }
+    }
+
     Component {
         id: vehicleViewComponent
 
@@ -4449,6 +4468,43 @@ Item {
         pushToast(qsTr("Fleet"), qsTr("BRCH-%1 is now the active vehicle.").arg(vehicle.id), "info", 2200)
     }
 
+    // Asks before turning Fleet on; shared by the FLEET chip and the FLEET tab.
+    function requestFleetEnable(onEnabled) {
+        confirmBriechAction(qsTr("Enable Fleet"),
+                            qsTr("Turn on the Fleet layer? It stays on until you disable it."),
+                            function() {
+                                FleetSettings.enabled = true
+                                if (onEnabled) {
+                                    onEnabled()
+                                }
+                            },
+                            qsTr("ENABLE"))
+    }
+
+    // FLEET tab "Show on map": hand the vehicle's position to the shared map
+    // state, then switch to FLY, which centres on it (syncFlyMapFromSharedState).
+    function showFleetVehicleOnMap(vehicle) {
+        if (!vehicle || !vehicle.coordinate || !vehicle.coordinate.isValid) {
+            return
+        }
+        QGroundControl.flightMapPosition = detachedCoordinate(vehicle.coordinate)
+        QGroundControl.flightMapZoom = Math.max(QGroundControl.flightMapZoom, 16)
+        activateModernSection("fly")
+    }
+
+    // FLEET tab "Open vehicle setup": the VEHICLE page configures the active
+    // vehicle, so make this one active first.
+    function openFleetVehicleSetup(vehicle) {
+        if (!vehicle) {
+            return
+        }
+        if (QGroundControl.multiVehicleManager.activeVehicle !== vehicle) {
+            QGroundControl.multiVehicleManager.activeVehicle = vehicle
+            pushToast(qsTr("Fleet"), qsTr("BRCH-%1 is now the active vehicle.").arg(vehicle.id), "info", 2200)
+        }
+        activateModernSection("vehicle")
+    }
+
     function selectRiskZone(kind) {
         const zones = visibleRiskZones().filter(function(zone) { return zone.kind === kind })
         if (zones.length === 0) {
@@ -5334,7 +5390,6 @@ Item {
                 Item { Layout.fillWidth: true }
 
                 RowLayout {
-                    Layout.preferredWidth: 440
                     Layout.fillHeight: true
                     Layout.rightMargin: 4
                     spacing: 0
@@ -7227,13 +7282,7 @@ Item {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     if (!FleetSettings.enabled) {
-                                        root.confirmBriechAction(qsTr("Enable Fleet"),
-                                                                 qsTr("Turn on the Fleet layer? It stays on until you disable it."),
-                                                                 function() {
-                                                                     FleetSettings.enabled = true
-                                                                     fleetLayerLoader.open = true
-                                                                 },
-                                                                 qsTr("ENABLE"))
+                                        root.requestFleetEnable(function() { fleetLayerLoader.open = true })
                                         return
                                     }
                                     fleetLayerLoader.open = !fleetLayerLoader.open
@@ -7316,6 +7365,14 @@ Item {
                             target: fleetLayerLoader.item
                             property: "maximumHeight"
                             value: Math.max(140, fleetLayerLoader.parent.height - fleetLayerLoader.y - 110)
+                            when: fleetLayerLoader.status === Loader.Ready
+                        }
+
+                        // The Fleet map layer draws on this view's map.
+                        Binding {
+                            target: fleetLayerLoader.item
+                            property: "map"
+                            value: modernMap
                             when: fleetLayerLoader.status === Loader.Ready
                         }
 
@@ -7770,6 +7827,14 @@ Item {
                     { label: "AIRSPACE", value: root.visibleRiskZones().length + " ZONES" },
                     { label: "UPLOAD", value: root.activeVehicle ? "VEHICLE" : "NO LINK" }
                 ]
+            }
+
+            // FLEET tab. ModernWorkspacePage loads the page only while visible.
+            ModernWorkspacePage {
+                anchors.fill: parent
+                anchors.leftMargin: root.modernActionSidebarWidth
+                visible: root.activeModernSection === "fleet"
+                contentComponent: fleetPageComponent
             }
 
             ModernWorkspacePage {
