@@ -46,7 +46,7 @@ jobs:
         if: |
           steps.title_check.outcome == 'failure' &&
           github.event.pull_request.user.type != 'Bot'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           sparse-checkout: .github/prompts
           sparse-checkout-cone-mode: false
@@ -56,7 +56,7 @@ jobs:
         if: |
           steps.title_check.outcome == 'failure' &&
           github.event.pull_request.user.type != 'Bot'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           result-encoding: string
           script: |
@@ -103,7 +103,7 @@ jobs:
           steps.title_check.outcome == 'failure' &&
           github.event.pull_request.user.type != 'Bot'
         continue-on-error: true
-        uses: actions/ai-inference@v2
+        uses: actions/ai-inference@v3
         with:
           prompt-file: .github/prompts/pr-title-suggestion.prompt.yml
           max-tokens: 100
@@ -114,7 +114,7 @@ jobs:
 
       - name: Comment title suggestion
         if: steps.title_check.outcome == 'failure' && steps.suggest.outputs.response
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           SUGGESTED_TITLE: ${{ steps.suggest.outputs.response }}
         with:
@@ -184,7 +184,7 @@ jobs:
 
       - name: Minimize suggestion if title valid
         if: steps.title_check.outcome == 'success'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const pr = context.payload.pull_request;
@@ -294,7 +294,7 @@ jobs:
 
     steps:
       - name: Label PR by changed files
-        uses: actions/labeler@v6
+        uses: actions/labeler@v7
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           sync-labels: true
