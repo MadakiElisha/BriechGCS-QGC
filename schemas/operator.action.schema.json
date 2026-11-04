@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.briech.invalid/v1/operator.action.schema.json",
+  "title": "operator.action, version 1",
+  "description": "QGC to coordinator on every operator decision and every command outcome. One action_id ties the phases together: decision (a named operator approved or rejected an alert), command (QGC sent a command to a vehicle, from an approval or from Hold all / Return all), outcome (the vehicle confirmed, refused or did not answer).",
+  "allOf": [
+    { "$ref": "envelope.schema.json" },
+    {
+      "properties": {
+        "data": {
+          "if": { "properties": { "phase": { "const": "decision" } } },
+          "then": { "required": ["alert_id", "decision"] }
+        }
+      }
+    },
+    {
+      "properties": {
+        "data": {
+          "if": { "properties": { "phase": { "const": "command" } } },
+          "then": { "required": ["vehicle_id", "command"] }
+        }
+      }
+    },
+    {
+      "properties": {
+        "data": {
+          "if": { "properties": { "phase": { "const": "outcome" } } },
+          "then": { "required": ["vehicle_id", "command", "outcome"] }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "type": { "const": "operator.action" },
+    "data": {
+      "type": "object",
+      "required": ["action_id", "operator_id", "phase"],
+      "properties": {
+        "action_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$" },
+        "operator_id": { "$ref": "common.schema.json#/$defs/sourceId" },
+        "phase": { "enum": ["decision", "command", "outcome"] },
+        "alert_id": { "type": "string", "pattern": "^a-[A-Za-z0-9_.:-]{1,96}$" },
+        "decision": { "enum": ["approve", "reject"] },
+        "vehicle_id": { "$ref": "common.schema.json#/$defs/vehicleId" },
+        "command": { "enum": ["goto", "orbit", "hold", "return"] },
+        "outcome": { "enum": ["confirmed", "refused", "no_response"] },
+        "extra_confirmation": {
+          "type": "boolean",
+          "description": "True when the operator had to confirm again because the vehicle's data was stale."
+        },
+        "detail": { "type": "string", "maxLength": 200 }
+      }
+    }
+  }
+}

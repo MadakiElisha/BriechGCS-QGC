@@ -1,0 +1,13 @@
+# Who may publish and subscribe where. Each device's MQTT username is its
+# device id, so %u below is that id: a device can publish only under its own
+# id. Anything not allowed here is refused. For QoS 0 the refusal is silent:
+# the publisher sees no error and nobody receives the message.
+
+# The coordinator reads every Briech topic and publishes nothing.
+user coordinator
+topic read briech/v1/#
+
+# Every device (edge computer or tower adapter): its own three topics, write only.
+pattern write briech/v1/edge/%u/detection
+pattern write briech/v1/edge/%u/status
+pattern write briech/v1/asset/%u/state

@@ -119,6 +119,12 @@ set(CUSTOM_SOURCES
     # Briech Fleet layer: keep all fleet C++ in src/Fleet/
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetSettings.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetSettings.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetProtocol.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetProtocol.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetLinkWorker.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetLinkWorker.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetLink.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetLink.h
     CACHE INTERNAL "" FORCE
 )
 

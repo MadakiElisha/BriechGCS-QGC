@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.briech.invalid/v1/asset.state.schema.json",
+  "title": "asset.state, version 1",
+  "description": "Tower adapter to coordinator over MQTT on briech/v1/asset/<asset_id>/state (retained, every 1 to 5 s), then coordinator to QGC over the WebSocket. On MQTT, data.asset_id must equal the id in the topic and src.",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "type": { "const": "asset.state" },
+    "data": { "$ref": "common.schema.json#/$defs/asset" }
+  }
+}

@@ -4,6 +4,7 @@
 #include "BriechDetectionController.h"
 #include "BriechEnergyPredictor.h"
 #include "BriechSafetyMonitor.h"
+#include "FleetLink.h"
 #include "FleetSettings.h"
 #include "QmlComponentInfo.h"
 #include "QGCLoggingCategory.h"
@@ -54,6 +55,10 @@ QGCCorePlugin *CustomPlugin::instance()
 
 void CustomPlugin::cleanup()
 {
+    if (_fleetLink) {
+        _fleetLink->stop();     // closes the socket and joins the worker thread before teardown
+    }
+
     if (_qmlEngine) {
         _qmlEngine->removeUrlInterceptor(_selector);
     }
@@ -278,9 +283,23 @@ QQmlApplicationEngine* CustomPlugin::createQmlApplicationEngine(QObject* parent)
     qmlRegisterType<BriechDetectionController>("Custom.Widgets", 1, 0, "BriechDetectionController");
     qmlRegisterType<BriechEnergyPredictor>("Custom.Widgets", 1, 0, "BriechEnergyPredictor");
     qmlRegisterType<BriechSafetyMonitor>("Custom.Widgets", 1, 0, "BriechSafetyMonitor");
-    // One shared switch for the whole app; the QML engine owns the instance.
-    qmlRegisterSingletonType<FleetSettings>("Custom.Widgets", 1, 0, "FleetSettings",
-        [](QQmlEngine *, QJSEngine *) -> QObject * { return new FleetSettings(); });
+    // One shared Fleet switch and one coordinator link for the whole app. Both are
+    // owned here so C++ (the link's start/stop, later the reporter and dispatch)
+    // and QML see the same instances.
+    auto *fleetSettings = new FleetSettings(this);
+    _fleetLink = new FleetLink(this);
+    qmlRegisterSingletonInstance("Custom.Widgets", 1, 0, "FleetSettings", fleetSettings);
+    qmlRegisterSingletonInstance("Custom.Widgets", 1, 0, "FleetLink", _fleetLink);
+    // The link, and its worker thread, run only while Fleet is enabled.
+    const auto applyFleetEnabled = [fleetSettings, link = _fleetLink] {
+        if (fleetSettings->enabled()) {
+            link->start();
+        } else {
+            link->stop();
+        }
+    };
+    connect(fleetSettings, &FleetSettings::enabledChanged, _fleetLink, applyFleetEnabled);
+    applyFleetEnabled();
 
     _qmlEngine = QGCCorePlugin::createQmlApplicationEngine(parent);
     _qmlEngine->addImportPath("qrc:/qml/Custom/Widgets");

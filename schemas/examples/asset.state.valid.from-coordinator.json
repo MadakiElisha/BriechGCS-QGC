@@ -1,0 +1,19 @@
+{
+  "v": 1,
+  "type": "asset.state",
+  "id": "asset.state-3f9a1c0d2b4e",
+  "ts": "2026-10-26T10:30:05.400Z",
+  "src": "coordinator",
+  "data": {
+    "asset_id": "tower-01",
+    "kind": "tower",
+    "name": "Tower 01 (pilot)",
+    "pos": {
+      "lat": 6.524,
+      "lon": 3.379
+    },
+    "health": "ok",
+    "link": "offline",
+    "last_seen_ts": "2026-10-26T10:30:05.400Z"
+  }
+}

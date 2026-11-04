@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.briech.invalid/v1/edge.status.schema.json",
+  "title": "edge.status, version 1",
+  "description": "Edge computer to coordinator over MQTT on briech/v1/edge/<source_id>/status, retained, every 5 s. The same message with state offline is set as the MQTT last will, so the broker announces a silent device at once.",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "type": { "const": "edge.status" },
+    "data": {
+      "type": "object",
+      "required": ["state"],
+      "properties": {
+        "state": { "enum": ["online", "degraded", "offline"] },
+        "model_version": { "type": "string", "maxLength": 64 },
+        "model_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "uptime_s": { "type": "number", "minimum": 0 },
+        "fps": { "type": "number", "minimum": 0 },
+        "queue_len": { "type": "integer", "minimum": 0, "description": "Detections waiting in the disk queue." },
+        "cpu_temp_c": { "type": "number" }
+      }
+    }
+  }
+}

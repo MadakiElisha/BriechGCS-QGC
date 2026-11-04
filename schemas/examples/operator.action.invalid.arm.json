@@ -1,0 +1,14 @@
+{
+  "v": 1,
+  "type": "operator.action",
+  "id": "oa-qgc-000011",
+  "ts": "2026-10-26T10:30:05.400Z",
+  "src": "qgc-op-001",
+  "data": {
+    "action_id": "act-3",
+    "operator_id": "op-001",
+    "phase": "command",
+    "vehicle_id": 3,
+    "command": "arm"
+  }
+}

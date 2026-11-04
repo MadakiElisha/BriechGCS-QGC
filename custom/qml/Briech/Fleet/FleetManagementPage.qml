@@ -133,7 +133,7 @@ Rectangle {
                 }
 
                 Text {
-                    text: "Vehicles connected to this ground station · coordinator data appears once FleetLink is connected"
+                    text: "Vehicles connected to this ground station · coordinator: " + FleetLink.stateText.toLowerCase()
                     color: BriechTheme.mutedColor
                     font.pixelSize: 11
                     font.family: "Share Tech Mono"
@@ -175,8 +175,11 @@ Rectangle {
                 }
                 SummaryTile {
                     label: "COORDINATOR"
-                    value: "NOT CONNECTED"
-                    tone: BriechTheme.mutedColor
+                    // CONNECTED, CONNECTING, RETRYING IN 4 S, UNAUTHORIZED or DISABLED
+                    value: FleetLink.stateText
+                    tone: FleetLink.state === FleetLink.Connected ? BriechTheme.okColor
+                        : FleetLink.state === FleetLink.Unauthorized ? BriechTheme.errColor
+                        : BriechTheme.mutedColor
                 }
             }
 
@@ -282,7 +285,8 @@ Rectangle {
         }
     }
 
-    // A coordinator section that has no data source yet.
+    // A coordinator section that has no data source yet. The link may be up
+    // before the models that turn its messages into rows exist (FleetModels).
     component CoordinatorTile: Rectangle {
         id: coordinatorTile
 
@@ -310,7 +314,9 @@ Rectangle {
             }
 
             Text {
-                text: "AWAITING COORDINATOR - FleetLink not connected"
+                text: FleetLink.state === FleetLink.Connected
+                      ? "COORDINATOR CONNECTED - NOT SHOWN HERE YET"
+                      : "AWAITING COORDINATOR - " + FleetLink.stateText
                 color: BriechTheme.mutedColor
                 font.pixelSize: 10
                 font.family: "Share Tech Mono"

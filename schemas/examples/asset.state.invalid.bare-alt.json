@@ -1,0 +1,16 @@
+{
+  "v": 1,
+  "type": "asset.state",
+  "id": "as-tower01-000502",
+  "ts": "2026-10-26T10:30:05.400Z",
+  "src": "tower-01",
+  "data": {
+    "asset_id": "tower-01",
+    "pos": {
+      "lat": 6.524,
+      "lon": 3.379,
+      "alt": 45.0
+    },
+    "health": "ok"
+  }
+}

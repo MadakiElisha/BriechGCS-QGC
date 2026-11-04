@@ -1,0 +1,12 @@
+# Fixed assets the coordinator knows about. An asset's id is also its MQTT
+# login and the id in its topics, so tower-01 publishes on
+# briech/v1/asset/tower-01/state and briech/v1/edge/tower-01/*.
+#
+# pos is where the asset stands (WGS84 degrees, alt_amsl_m in metres above sea
+# level). A tower adapter's own asset.state overrides it.
+
+assets:
+  - id: tower-01
+    kind: tower
+    name: Tower 01 (pilot)
+    pos: { lat: 6.5240, lon: 3.3790, alt_amsl_m: 45.0 }

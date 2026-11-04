@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.briech.invalid/v1/alert.new.schema.json",
+  "title": "alert.new, version 1",
+  "description": "Coordinator to QGC when a track raises an alert.",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "type": { "const": "alert.new" },
+    "data": { "$ref": "common.schema.json#/$defs/alert" }
+  }
+}

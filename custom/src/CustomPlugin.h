@@ -8,6 +8,7 @@
 
 class CustomOptions;
 class CustomPlugin;
+class FleetLink;
 class CustomSettings;
 class QQmlApplicationEngine;
 
@@ -74,6 +75,10 @@ public:
     /// We override this so we can get access to QQmlApplicationEngine and use it to register our qml module
     QQmlApplicationEngine *createQmlApplicationEngine(QObject *parent) final;
 
+    /// The coordinator link, for the other Fleet classes (reporter, dispatch, models).
+    /// Null until the QML engine is created.
+    FleetLink *fleetLink() const { return _fleetLink; }
+
 private slots:
     void _advancedChanged(bool advanced);
 
@@ -83,6 +88,7 @@ private:
     CustomOptions *_options = nullptr;
     QQmlApplicationEngine *_qmlEngine = nullptr;
     class CustomOverrideInterceptor *_selector = nullptr;
+    FleetLink *_fleetLink = nullptr;
     QVariantList _customSettingsList; // Not to be mixed up with QGCCorePlugin implementation
 };
 

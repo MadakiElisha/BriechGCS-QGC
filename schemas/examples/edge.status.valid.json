@@ -1,0 +1,15 @@
+{
+  "v": 1,
+  "type": "edge.status",
+  "id": "s-tower01-000101",
+  "ts": "2026-10-26T10:30:05.400Z",
+  "src": "tower-01",
+  "data": {
+    "state": "online",
+    "model_version": "det-person-vehicle-0.1.0",
+    "uptime_s": 3600,
+    "fps": 12.5,
+    "queue_len": 0,
+    "cpu_temp_c": 61.0
+  }
+}

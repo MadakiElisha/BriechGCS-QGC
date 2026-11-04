@@ -1,0 +1,2 @@
+# sim/ tools beyond the coordinator's own (ground-core/requirements*.txt): fly_mission.py
+pymavlink==2.4.47

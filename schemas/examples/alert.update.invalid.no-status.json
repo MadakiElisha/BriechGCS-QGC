@@ -1,0 +1,11 @@
+{
+  "v": 1,
+  "type": "alert.update",
+  "id": "alert.update-1b7d3f9e0a12",
+  "ts": "2026-10-26T10:30:05.400Z",
+  "src": "coordinator",
+  "data": {
+    "alert_id": "a-102",
+    "confidence": 0.9
+  }
+}

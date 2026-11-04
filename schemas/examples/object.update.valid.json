@@ -1,0 +1,27 @@
+{
+  "v": 1,
+  "type": "object.update",
+  "id": "object.update-5d1c9e2a7b30",
+  "ts": "2026-10-26T10:30:05.400Z",
+  "src": "coordinator",
+  "data": {
+    "object_id": "o-45",
+    "class": "person",
+    "confidence": 0.88,
+    "pos": {
+      "lat": 6.5251,
+      "lon": 3.3801,
+      "error_m": 6.0
+    },
+    "velocity": {
+      "east_ms": 0.8,
+      "north_ms": 0.3
+    },
+    "seen_by": [
+      "tower-01"
+    ],
+    "last_seen_ts": "2026-10-26T10:30:05.400Z",
+    "snapshot_id": "snap-8f3a2c",
+    "status": "active"
+  }
+}

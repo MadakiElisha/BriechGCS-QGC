@@ -1,0 +1,26 @@
+{
+  "v": 1,
+  "type": "vehicle.state",
+  "id": "vs-qgc-000044",
+  "ts": "2026-10-26T10:30:05.400Z",
+  "src": "qgc-op-001",
+  "data": {
+    "vehicles": [
+      {
+        "name": "BRCH-03",
+        "pos": {
+          "lat": 6.5244,
+          "lon": 3.3792
+        },
+        "heading_deg": 212,
+        "groundspeed_ms": 11.2,
+        "battery_pct": 74,
+        "mode": "Auto",
+        "armed": true,
+        "flying": true,
+        "link_quality_pct": 92,
+        "can_take_task": true
+      }
+    ]
+  }
+}

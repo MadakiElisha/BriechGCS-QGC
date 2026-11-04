@@ -1,0 +1,19 @@
+{
+  "v": 1,
+  "type": "asset.state",
+  "id": "as-tower01-000501",
+  "ts": "2026-10-26T10:30:05.400Z",
+  "src": "tower-01",
+  "data": {
+    "asset_id": "tower-01",
+    "pos": {
+      "lat": 6.524,
+      "lon": 3.379,
+      "alt_amsl_m": 45.0
+    },
+    "health": "ok",
+    "camera_heading_deg": 42.0,
+    "mains_power": true,
+    "temp_c": 38.5
+  }
+}

@@ -1,0 +1,29 @@
+name: fleet-cpp
+
+# FleetLink and the other Fleet C++ that does not need QGC, built and tested on
+# their own (custom/test/Fleet). The full QGC build stays in its own workflow.
+on:
+  push:
+    paths: [ "custom/src/Fleet/**", "custom/test/Fleet/**", "schemas/**", ".github/workflows/fleet-cpp.yml" ]
+  pull_request:
+    paths: [ "custom/src/Fleet/**", "custom/test/Fleet/**", "schemas/**", ".github/workflows/fleet-cpp.yml" ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.10.1"
+          modules: qtwebsockets
+          cache: true
+      - run: sudo apt-get install -y ninja-build
+      - run: cmake -S custom/test/Fleet -B build/fleet-tests -G Ninja -DCMAKE_BUILD_TYPE=Debug
+      - run: cmake --build build/fleet-tests
+      - run: ctest --test-dir build/fleet-tests --output-on-failure
+        env:
+          QT_QPA_PLATFORM: offscreen

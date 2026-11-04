@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.briech.invalid/v1/alert.update.schema.json",
+  "title": "alert.update, version 1",
+  "description": "Coordinator to QGC when an alert changes: its status, position, confidence or proposal. Only alert_id and status are required; fields left out are unchanged.",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "type": { "const": "alert.update" },
+    "data": {
+      "$ref": "common.schema.json#/$defs/alertFields",
+      "required": ["alert_id", "status"]
+    }
+  }
+}

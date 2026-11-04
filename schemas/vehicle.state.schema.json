@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.briech.invalid/v1/vehicle.state.schema.json",
+  "title": "vehicle.state, version 1",
+  "description": "QGC to coordinator every 1 s, one entry per vehicle QGC has. Flight data itself never goes through the coordinator; this report only lets the coordinator suggest a drone.",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "type": { "const": "vehicle.state" },
+    "data": {
+      "type": "object",
+      "required": ["vehicles"],
+      "properties": {
+        "vehicles": { "type": "array", "maxItems": 64, "items": { "$ref": "common.schema.json#/$defs/vehicle" } }
+      }
+    }
+  }
+}

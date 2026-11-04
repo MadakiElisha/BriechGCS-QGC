@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.briech.invalid/v1/envelope.schema.json",
+  "title": "Briech message envelope, version 1",
+  "description": "The outer shape every Briech message shares. Each message schema adds the exact type and the shape of data.",
+  "type": "object",
+  "required": ["v", "type", "id", "ts", "src", "data"],
+  "properties": {
+    "v": { "const": 1, "description": "Message version." },
+    "type": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_.]{0,39}$",
+      "description": "What is inside data, e.g. detection or asset.state. A receiver ignores types it does not know."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
+      "description": "Unique id of this message."
+    },
+    "ts": {
+      "$ref": "common.schema.json#/$defs/timestamp",
+      "description": "When the message was made, UTC."
+    },
+    "src": {
+      "$ref": "common.schema.json#/$defs/sourceId",
+      "description": "Who sent it: a device id, an operator client, or coordinator."
+    },
+    "data": { "type": "object" }
+  }
+}

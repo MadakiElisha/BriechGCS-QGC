@@ -1,0 +1,31 @@
+# One pilot tower watching two people walk past it. Positions are WGS84
+# degrees; velocity is metres per second east and north.
+source: tower-01
+model_version: fake-0.1.0
+status_every_s: 5
+state_every_s: 2
+
+asset:
+  pos: { lat: 6.5240, lon: 3.3790, alt_amsl_m: 45.0 }
+  health: ok
+  camera_heading_deg: 30.0
+  mains_power: true
+
+objects:
+  - track_id: 17
+    class: person
+    confidence: 0.91
+    start: { lat: 6.5251, lon: 3.3801 }
+    velocity: { east_ms: 1.2, north_ms: 0.4 }
+    error_m: 6.0
+    every_s: 0.5
+
+  - track_id: 18
+    class: vehicle
+    confidence: 0.84
+    start: { lat: 6.5232, lon: 3.3775 }
+    velocity: { east_ms: 0.0, north_ms: 5.0 }
+    error_m: 9.0
+    every_s: 1.0
+    start_s: 4
+    stop_s: 60
