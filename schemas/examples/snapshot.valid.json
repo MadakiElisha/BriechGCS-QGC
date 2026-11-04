@@ -1,0 +1,103 @@
+{
+  "v": 1,
+  "type": "snapshot",
+  "id": "snapshot-0c4b2e8a9f13",
+  "ts": "2026-10-26T10:30:05.400Z",
+  "src": "coordinator",
+  "data": {
+    "assets": [
+      {
+        "asset_id": "tower-01",
+        "kind": "tower",
+        "name": "Tower 01 (pilot)",
+        "pos": {
+          "lat": 6.524,
+          "lon": 3.379
+        },
+        "health": "ok",
+        "link": "online",
+        "last_seen_ts": "2026-10-26T10:30:05.400Z"
+      }
+    ],
+    "vehicles": [
+      {
+        "vehicle_id": 3,
+        "name": "BRCH-03",
+        "pos": {
+          "lat": 6.5244,
+          "lon": 3.3792,
+          "alt_rel_m": 80.0,
+          "alt_amsl_m": 112.0
+        },
+        "heading_deg": 212,
+        "groundspeed_ms": 11.2,
+        "battery_pct": 74,
+        "mode": "Auto",
+        "armed": true,
+        "flying": true,
+        "link_quality_pct": 92,
+        "can_take_task": true,
+        "last_seen_ts": "2026-10-26T10:30:05.400Z"
+      }
+    ],
+    "objects": [
+      {
+        "object_id": "o-45",
+        "class": "person",
+        "confidence": 0.88,
+        "pos": {
+          "lat": 6.5251,
+          "lon": 3.3801,
+          "error_m": 6.0
+        },
+        "velocity": {
+          "east_ms": 0.8,
+          "north_ms": 0.3
+        },
+        "seen_by": [
+          "tower-01"
+        ],
+        "last_seen_ts": "2026-10-26T10:30:05.400Z",
+        "snapshot_id": "snap-8f3a2c",
+        "status": "active"
+      }
+    ],
+    "alerts": [
+      {
+        "alert_id": "a-102",
+        "object_id": "o-45",
+        "severity": "high",
+        "reason": "Person inside zone north-fence",
+        "zone_id": "north-fence",
+        "class": "person",
+        "confidence": 0.88,
+        "pos": {
+          "lat": 6.5251,
+          "lon": 3.3801,
+          "error_m": 6.0
+        },
+        "seen_by": [
+          "tower-01"
+        ],
+        "snapshot_id": "snap-8f3a2c",
+        "expires_ts": "2026-10-26T10:32:05Z",
+        "status": "open",
+        "proposal": {
+          "vehicle_id": 3,
+          "action": "orbit",
+          "radius_m": 40,
+          "alt_rel_m": 60,
+          "eta_s": 45,
+          "battery_after_pct": 64,
+          "alternatives": [
+            {
+              "vehicle_id": 5,
+              "eta_s": 71,
+              "battery_after_pct": 52
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

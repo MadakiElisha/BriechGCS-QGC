@@ -1,0 +1,16 @@
+{
+  "v": 1,
+  "type": "operator.action",
+  "id": "oa-qgc-000007",
+  "ts": "2026-10-26T10:30:05.400Z",
+  "src": "qgc-op-001",
+  "data": {
+    "action_id": "act-a102-1",
+    "operator_id": "op-001",
+    "alert_id": "a-102",
+    "phase": "decision",
+    "decision": "approve",
+    "vehicle_id": 3,
+    "command": "orbit"
+  }
+}

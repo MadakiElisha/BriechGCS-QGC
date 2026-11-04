@@ -1,0 +1,12 @@
+{
+  "v": 1,
+  "type": "hello",
+  "id": "h-qgc-0001",
+  "ts": "2026-10-26T10:30:05.400Z",
+  "src": "qgc-op-001",
+  "data": {
+    "operator_id": "op-001",
+    "client": "qgc",
+    "client_version": "5.0.0-briech"
+  }
+}

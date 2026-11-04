@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.briech.invalid/v1/hello.schema.json",
+  "title": "hello, version 1",
+  "description": "QGC to coordinator, the first message on every WebSocket connection. The coordinator answers with a snapshot.",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "type": { "const": "hello" },
+    "data": {
+      "type": "object",
+      "required": ["operator_id", "client"],
+      "properties": {
+        "operator_id": { "$ref": "common.schema.json#/$defs/sourceId" },
+        "client": { "type": "string", "maxLength": 64, "description": "qgc, or probe for the stand-in client." },
+        "client_version": { "type": "string", "maxLength": 64 }
+      }
+    }
+  }
+}

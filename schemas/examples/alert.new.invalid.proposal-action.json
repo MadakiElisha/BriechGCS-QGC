@@ -1,0 +1,42 @@
+{
+  "v": 1,
+  "type": "alert.new",
+  "id": "alert.new-8e2f1a6c4d03",
+  "ts": "2026-10-26T10:30:05.400Z",
+  "src": "coordinator",
+  "data": {
+    "alert_id": "a-102",
+    "object_id": "o-45",
+    "severity": "high",
+    "reason": "Person inside zone north-fence",
+    "zone_id": "north-fence",
+    "class": "person",
+    "confidence": 0.88,
+    "pos": {
+      "lat": 6.5251,
+      "lon": 3.3801,
+      "error_m": 6.0
+    },
+    "seen_by": [
+      "tower-01"
+    ],
+    "snapshot_id": "snap-8f3a2c",
+    "expires_ts": "2026-10-26T10:32:05Z",
+    "status": "open",
+    "proposal": {
+      "vehicle_id": 3,
+      "action": "arm",
+      "radius_m": 40,
+      "alt_rel_m": 60,
+      "eta_s": 45,
+      "battery_after_pct": 64,
+      "alternatives": [
+        {
+          "vehicle_id": 5,
+          "eta_s": 71,
+          "battery_after_pct": 52
+        }
+      ]
+    }
+  }
+}

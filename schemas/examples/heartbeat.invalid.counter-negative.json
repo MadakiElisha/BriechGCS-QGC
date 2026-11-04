@@ -1,0 +1,14 @@
+{
+  "v": 1,
+  "type": "heartbeat",
+  "id": "heartbeat-7a3e5c1b9d21",
+  "ts": "2026-10-26T10:30:05.400Z",
+  "src": "coordinator",
+  "data": {
+    "seq": 42,
+    "uptime_s": 84.0,
+    "counters": {
+      "drop_schema": -1
+    }
+  }
+}

@@ -167,3 +167,11 @@ Qt*-linux*.tar.*
 .github/styles/
 .gemini/
 .pytest_cache/
+
+# Briech: dev certificates, secrets and local runtime state (never commit)
+ops/certs/
+ops/secrets/
+ground-core/.venv/
+ground-core/var/
+# QGC ignores every Makefile (generated); ops/Makefile is ours: make -C ops ...
+!ops/Makefile

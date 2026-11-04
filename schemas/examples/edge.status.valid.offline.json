@@ -1,0 +1,10 @@
+{
+  "v": 1,
+  "type": "edge.status",
+  "id": "s-tower01-will",
+  "ts": "2026-10-26T10:30:05.400Z",
+  "src": "tower-01",
+  "data": {
+    "state": "offline"
+  }
+}

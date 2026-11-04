@@ -1,0 +1,24 @@
+{
+  "v": 1,
+  "type": "detection",
+  "id": "d-tower01-000812",
+  "ts": "2026-10-26T10:30:05.400Z",
+  "src": "tower-01",
+  "data": {
+    "class": "person",
+    "confidence": 0.91,
+    "track_id": 17,
+    "geo": {
+      "lat": 6.5251,
+      "lon": 3.3801,
+      "error_m": 6.0
+    },
+    "bbox": {
+      "x": 0.41,
+      "y": 0.52,
+      "w": 0.05,
+      "h": 0.14
+    },
+    "snapshot_id": "snap-8f3a2c"
+  }
+}

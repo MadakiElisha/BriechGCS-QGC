@@ -9,9 +9,8 @@ Rectangle {
 
     signal disableRequested()
 
-    /// True once FleetLink reports a live coordinator connection. FleetLink
-    /// does not exist yet, so nothing sets this and the row reads NOT CONNECTED.
-    property bool connected: false
+    /// True while FleetLink has a live coordinator connection.
+    property bool connected: FleetLink.state === FleetLink.Connected
 
     height: 26
     color: "#05070a"
@@ -37,7 +36,8 @@ Rectangle {
         }
 
         Text {
-            text: "COORDINATOR: " + (root.connected ? "CONNECTED" : "NOT CONNECTED")
+            // CONNECTED, CONNECTING, RETRYING IN 4 S, UNAUTHORIZED or DISABLED
+            text: "COORDINATOR: " + FleetLink.stateText
                   + " · 3D: " + (FleetSettings.quick3DAvailable ? "OK" : "2D")
             color: root.connected ? BriechTheme.okColor : BriechTheme.mutedColor
             font.pixelSize: 8

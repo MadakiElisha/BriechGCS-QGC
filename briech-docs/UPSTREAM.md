@@ -70,6 +70,8 @@ movable into `custom/`; **fix** = a known problem.
 | `MODERN_VIEW_HANDOFF.md` | Root-level handoff notes containing personal paths | fix: move into `briech-docs/` without personal paths (section 12, P1) |
 | `wps (1).kml` | Sample waypoints at the root | fix: move into `sim/` (section 12, P0, George) |
 | `b/`, `b2/`, `b3/` | Committed CMake build output, with a personal path in `b3/` | fix: stop tracking (section 12, P0, George) |
+| `.gitignore` | Appended a Briech block: `ops/certs/`, `ops/secrets/`, `ground-core/.venv/`, `ground-core/var/`, and `!ops/Makefile` (the stock `Makefile` rule would hide it) | keep: dev certificates, MQTT passwords and tokens must never be committed (handoff section 6) |
+| `.github/workflows/ground-core.yml` | New workflow (not a stock file, listed so it is not mistaken for one): schema checks and coordinator tests | keep |
 
 ## Windows build notes found while checking
 

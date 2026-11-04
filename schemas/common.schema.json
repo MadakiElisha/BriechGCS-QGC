@@ -1,0 +1,457 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.briech.invalid/v1/common.schema.json",
+  "title": "Shared definitions for Briech messages, version 1",
+  "description": "Not a message. Other schemas reference these definitions so every message uses the same conventions: UTC time, WGS84 degrees, metres, metres per second, whole-percent battery, confidence 0 to 1, and an altitude that always says which kind it is.",
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$",
+      "description": "UTC, ISO 8601, ending in Z. Senders include milliseconds."
+    },
+    "sourceId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+      "description": "A device, asset or client id. Lower case letters, digits and hyphens. On MQTT it is also the login name and the id in the topic."
+    },
+    "lat": {
+      "type": "number",
+      "minimum": -90,
+      "maximum": 90
+    },
+    "lon": {
+      "type": "number",
+      "minimum": -180,
+      "maximum": 180
+    },
+    "errorM": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Honest estimate, in metres, of how far off a ground position may be. Never zero, never left out of a position that carries it."
+    },
+    "altRelM": {
+      "type": "number",
+      "description": "Metres above the takeoff point."
+    },
+    "altAmslM": {
+      "type": "number",
+      "description": "Metres above mean sea level."
+    },
+    "headingDeg": {
+      "type": "number",
+      "minimum": 0,
+      "exclusiveMaximum": 360,
+      "description": "Degrees clockwise from true north."
+    },
+    "speedMs": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Metres per second."
+    },
+    "percent": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "vehicleId": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 255,
+      "description": "MAVLink system id of the vehicle, as QGC knows it."
+    },
+    "geoPoint": {
+      "type": "object",
+      "description": "A ground position with its error.",
+      "required": [
+        "lat",
+        "lon",
+        "error_m"
+      ],
+      "properties": {
+        "lat": {
+          "$ref": "#/$defs/lat"
+        },
+        "lon": {
+          "$ref": "#/$defs/lon"
+        },
+        "error_m": {
+          "$ref": "#/$defs/errorM"
+        }
+      }
+    },
+    "assetPos": {
+      "type": "object",
+      "description": "Where a fixed asset stands. A bare alt is never allowed: say alt_amsl_m.",
+      "required": [
+        "lat",
+        "lon"
+      ],
+      "properties": {
+        "lat": {
+          "$ref": "#/$defs/lat"
+        },
+        "lon": {
+          "$ref": "#/$defs/lon"
+        },
+        "alt_amsl_m": {
+          "$ref": "#/$defs/altAmslM"
+        }
+      },
+      "not": {
+        "required": [
+          "alt"
+        ]
+      }
+    },
+    "asset": {
+      "type": "object",
+      "description": "The state of one fixed asset, such as a sentry tower. Sent by the tower adapter in asset.state and by the coordinator in asset.state and snapshot. Fields marked coordinator are filled only by the coordinator.",
+      "required": [
+        "asset_id"
+      ],
+      "properties": {
+        "asset_id": {
+          "$ref": "#/$defs/sourceId"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[a-z_]{1,32}$",
+          "description": "tower today. From assets.yaml (coordinator)."
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Display name. From assets.yaml (coordinator)."
+        },
+        "pos": {
+          "$ref": "#/$defs/assetPos"
+        },
+        "health": {
+          "enum": [
+            "ok",
+            "degraded",
+            "fault"
+          ],
+          "description": "The asset's own view of its health."
+        },
+        "camera_heading_deg": {
+          "$ref": "#/$defs/headingDeg"
+        },
+        "battery_pct": {
+          "$ref": "#/$defs/percent"
+        },
+        "mains_power": {
+          "type": "boolean"
+        },
+        "temp_c": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "link": {
+          "enum": [
+            "online",
+            "offline",
+            "unknown"
+          ],
+          "description": "Coordinator: online or offline from the edge computer's retained status and last will."
+        },
+        "last_seen_ts": {
+          "$ref": "#/$defs/timestamp",
+          "description": "Coordinator: when anything was last heard from this asset."
+        }
+      }
+    },
+    "vehicle": {
+      "type": "object",
+      "description": "One drone as QGC sees it over MAVLink.",
+      "required": [
+        "vehicle_id",
+        "name",
+        "mode",
+        "armed",
+        "flying"
+      ],
+      "properties": {
+        "vehicle_id": {
+          "$ref": "#/$defs/vehicleId"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "pos": {
+          "type": "object",
+          "required": [
+            "lat",
+            "lon"
+          ],
+          "properties": {
+            "lat": {
+              "$ref": "#/$defs/lat"
+            },
+            "lon": {
+              "$ref": "#/$defs/lon"
+            },
+            "alt_rel_m": {
+              "$ref": "#/$defs/altRelM"
+            },
+            "alt_amsl_m": {
+              "$ref": "#/$defs/altAmslM"
+            }
+          },
+          "not": {
+            "required": [
+              "alt"
+            ]
+          },
+          "description": "A bare alt is never allowed: say alt_rel_m or alt_amsl_m."
+        },
+        "heading_deg": {
+          "$ref": "#/$defs/headingDeg"
+        },
+        "groundspeed_ms": {
+          "$ref": "#/$defs/speedMs"
+        },
+        "battery_pct": {
+          "$ref": "#/$defs/percent"
+        },
+        "mode": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "armed": {
+          "type": "boolean"
+        },
+        "flying": {
+          "type": "boolean"
+        },
+        "link_quality_pct": {
+          "$ref": "#/$defs/percent"
+        },
+        "can_take_task": {
+          "type": "boolean"
+        },
+        "last_seen_ts": {
+          "$ref": "#/$defs/timestamp",
+          "description": "Coordinator: when this vehicle was last reported by any QGC."
+        }
+      }
+    },
+    "object": {
+      "type": "object",
+      "description": "A tracked object on the ground, built by the coordinator from one or more detections.",
+      "required": [
+        "object_id",
+        "class",
+        "confidence",
+        "pos",
+        "seen_by",
+        "last_seen_ts"
+      ],
+      "properties": {
+        "object_id": {
+          "type": "string",
+          "pattern": "^o-[A-Za-z0-9_.:-]{1,96}$"
+        },
+        "class": {
+          "type": "string",
+          "pattern": "^[a-z_]{1,32}$"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "pos": {
+          "$ref": "#/$defs/geoPoint"
+        },
+        "velocity": {
+          "type": "object",
+          "required": [
+            "east_ms",
+            "north_ms"
+          ],
+          "properties": {
+            "east_ms": {
+              "type": "number"
+            },
+            "north_ms": {
+              "type": "number"
+            }
+          }
+        },
+        "seen_by": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sourceId"
+          }
+        },
+        "last_seen_ts": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "snapshot_id": {
+          "$ref": "#/$defs/snapshotId"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "lost",
+            "removed"
+          ],
+          "description": "removed means drop it from the map."
+        }
+      }
+    },
+    "snapshotId": {
+      "type": "string",
+      "pattern": "^snap-[a-z0-9]{6,32}$",
+      "description": "Id returned by POST /api/v1/snapshots. The picture itself never travels inside a message."
+    },
+    "proposal": {
+      "type": "object",
+      "description": "A rule-based suggestion attached to an alert. Decision support only: nothing is sent until an operator approves.",
+      "required": [
+        "vehicle_id",
+        "action"
+      ],
+      "properties": {
+        "vehicle_id": {
+          "$ref": "#/$defs/vehicleId"
+        },
+        "action": {
+          "enum": [
+            "goto",
+            "orbit"
+          ]
+        },
+        "radius_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "alt_rel_m": {
+          "$ref": "#/$defs/altRelM"
+        },
+        "eta_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "battery_after_pct": {
+          "$ref": "#/$defs/percent"
+        },
+        "alternatives": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "required": [
+              "vehicle_id"
+            ],
+            "properties": {
+              "vehicle_id": {
+                "$ref": "#/$defs/vehicleId"
+              },
+              "eta_s": {
+                "type": "number",
+                "minimum": 0
+              },
+              "battery_after_pct": {
+                "$ref": "#/$defs/percent"
+              }
+            }
+          }
+        }
+      }
+    },
+    "alertFields": {
+      "type": "object",
+      "description": "Every field an alert can carry. alert.new and snapshot require the full set; alert.update requires only alert_id and status.",
+      "properties": {
+        "alert_id": {
+          "type": "string",
+          "pattern": "^a-[A-Za-z0-9_.:-]{1,96}$"
+        },
+        "object_id": {
+          "type": "string",
+          "pattern": "^o-[A-Za-z0-9_.:-]{1,96}$"
+        },
+        "severity": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "zone_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "class": {
+          "type": "string",
+          "pattern": "^[a-z_]{1,32}$"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "pos": {
+          "$ref": "#/$defs/geoPoint"
+        },
+        "seen_by": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sourceId"
+          }
+        },
+        "snapshot_id": {
+          "$ref": "#/$defs/snapshotId"
+        },
+        "expires_ts": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "acknowledged",
+            "approved",
+            "rejected",
+            "expired",
+            "resolved"
+          ]
+        },
+        "operator_id": {
+          "$ref": "#/$defs/sourceId",
+          "description": "Who last changed the status."
+        },
+        "proposal": {
+          "$ref": "#/$defs/proposal"
+        }
+      }
+    },
+    "alert": {
+      "$ref": "#/$defs/alertFields",
+      "required": [
+        "alert_id",
+        "object_id",
+        "severity",
+        "reason",
+        "class",
+        "confidence",
+        "pos",
+        "seen_by"
+      ]
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.briech.invalid/v1/heartbeat.schema.json",
+  "title": "heartbeat, version 1",
+  "description": "Coordinator to QGC every 2 s, so QGC hears something at least every 3 s and can tell a quiet coordinator from a dead one (offline banner after 10 s of silence).",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "type": { "const": "heartbeat" },
+    "data": {
+      "type": "object",
+      "required": ["seq", "uptime_s"],
+      "properties": {
+        "seq": { "type": "integer", "minimum": 0 },
+        "uptime_s": { "type": "number", "minimum": 0 },
+        "counters": {
+          "type": "object",
+          "description": "Counts of dropped and handled messages by reason, e.g. drop_schema, drop_topic, drop_queue.",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        }
+      }
+    }
+  }
+}

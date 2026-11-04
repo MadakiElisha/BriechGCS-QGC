@@ -1,0 +1,21 @@
+# Local broker for development: make -C ops broker
+name: briech
+
+services:
+  broker:
+    image: eclipse-mosquitto:2.0.20
+    container_name: briech-broker
+    restart: unless-stopped
+    ports:
+      - "${BRIECH_MQTT_PORT:-8883}:8883"
+    volumes:
+      - ./mosquitto:/mosquitto/config:ro
+      # Only what the broker needs: never the CA key.
+      - ./certs/ca.crt:/mosquitto/certs/ca.crt:ro
+      - ./certs/server.crt:/mosquitto/certs/server.crt:ro
+      - ./certs/server.key:/mosquitto/certs/server.key:ro
+      - ./secrets:/mosquitto/secrets:ro
+      - broker-data:/mosquitto/data
+
+volumes:
+  broker-data:

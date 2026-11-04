@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.briech.invalid/v1/detection.schema.json",
+  "title": "detection, version 1",
+  "description": "Edge computer to coordinator over MQTT on briech/v1/edge/<source_id>/detection, up to 10 per second per source. geo is left out when the target has no ground position (for example above the horizon); a made-up position is never sent.",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "type": { "const": "detection" },
+    "data": {
+      "type": "object",
+      "required": ["class", "confidence", "track_id", "bbox"],
+      "properties": {
+        "class": { "type": "string", "pattern": "^[a-z_]{1,32}$", "description": "person or vehicle today." },
+        "confidence": { "$ref": "common.schema.json#/$defs/confidence" },
+        "track_id": { "type": "integer", "minimum": 0, "description": "The edge tracker id. Stable for one object on one camera." },
+        "geo": { "$ref": "common.schema.json#/$defs/geoPoint" },
+        "bbox": {
+          "type": "object",
+          "description": "Box in the frame, 0 to 1, from the top-left corner.",
+          "required": ["x", "y", "w", "h"],
+          "properties": {
+            "x": { "type": "number", "minimum": 0, "maximum": 1 },
+            "y": { "type": "number", "minimum": 0, "maximum": 1 },
+            "w": { "type": "number", "minimum": 0, "maximum": 1 },
+            "h": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "snapshot_id": { "$ref": "common.schema.json#/$defs/snapshotId" },
+        "late": { "type": "boolean", "description": "True when sent from the disk queue more than 60 s after it was made. No live alert is raised from it." }
+      }
+    }
+  }
+}

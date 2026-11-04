@@ -1,0 +1,13 @@
+{
+  "v": 1,
+  "type": "snapshot",
+  "id": "snapshot-0c4b2e8a9f14",
+  "ts": "2026-10-26T10:30:05.400Z",
+  "src": "coordinator",
+  "data": {
+    "assets": [],
+    "vehicles": [],
+    "objects": [],
+    "alerts": []
+  }
+}
