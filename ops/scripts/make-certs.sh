@@ -20,6 +20,8 @@ if [[ -f ca.key && "${FORCE:-0}" != "1" ]]; then
 else
   openssl req -x509 -newkey rsa:3072 -sha256 -nodes -days 1825 \
     -subj "/O=Briech/CN=Briech Fleet dev CA" \
+    -addext "basicConstraints=critical,CA:TRUE" \
+    -addext "keyUsage=critical,keyCertSign,cRLSign" \
     -keyout ca.key -out ca.crt 2>/dev/null
   echo "made CA: $dir/ca.crt"
 fi
