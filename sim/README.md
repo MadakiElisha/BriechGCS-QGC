@@ -41,9 +41,15 @@ MAVLink to UDP 14550 on this machine:
 
 ```sh
 sim/px4-sitl.sh up 3       # drones 1, 2, 3
+sim/px4-sitl.sh up 10      # the ten-drone fleet (spike S5; make -C ops sim-10)
+FIRST_ID=3 sim/px4-sitl.sh up 8   # drones 3..10, next to two already running
 sim/px4-sitl.sh status
 sim/px4-sitl.sh down
 ```
+
+On Windows run it from Git Bash. The script sets `MSYS_NO_PATHCONV=1`
+itself: without it Git Bash turned `--entrypoint /bin/sh` into a Windows path
+and no container started.
 
 QGC needs nothing extra: its default auto-connect UDP 14550 link picks up
 every system id. Tried on 2026-11-04 (macOS, Docker Desktop 29.x): three
@@ -66,5 +72,37 @@ stays connected and shows the flights. If a drone reports `Preflight Fail`
 for baro, compass or battery after a cold start of several simulators, its
 simulated sensors timed out: `docker restart briech-sitl-<n>` fixes it.
 
-Still to do for S5: run it with 10, record CPU and QGC frame rate, and drive
-the drones from MAVSDK.
+To check QGC's attitude displays (the Fleet 3D view and the attitude
+indicators) against a known attitude, `attitude_check.py` takes one drone up
+and holds it at roll -20, pitch +12 and then a 90-degree right turn in
+OFFBOARD, before switching it to HOLD:
+
+```sh
+ground-core/.venv/bin/python sim/attitude_check.py --vehicle 3
+```
+
+On Windows the virtualenv's Python is `ground-core/.venv/Scripts/python`.
+`--vehicles` picks drones, so drones you did not start can stay on the ground
+(`--vehicles 3,4,5,6,7,8,9,10`). The script refuses a drone that is already
+armed.
+
+### Ten drones (spike S5), 2026-11-10
+
+Windows 11, 16 logical cores, 16 GB, Docker Desktop (WSL 2 VM with 3.8 GB),
+BriechUAS Release build, broker, coordinator and fake tower running.
+
+- Ten SIH drones ran on one machine: two started by hand
+  (`tools/simulation/run-px4-sitl-docker.sh`, ids 1 and 2) and eight with
+  `FIRST_ID=3 sim/px4-sitl.sh up 8`. All ten appeared in QGC within a few
+  seconds on the default UDP 14550 link.
+- Each container used about 40 MB and 27% of one core at idle.
+- `fly_mission.py --vehicles 3,...,10` flew eight 150 m squares at 30 to
+  100 m, returned and landed them all.
+- After a `commander land`, three of eight drones refused to arm again
+  ("Resolve system health failures first", the `system` arming check).
+  `docker restart briech-sitl-<n>` cleared it. Check first with
+  `docker exec briech-sitl-<n> sh -c 'cd /root/.local/share/px4/rootfs && /opt/px4/bin/px4-commander check'`.
+- MAVSDK was not tried: `fly_mission.py` (pymavlink) covers what we need.
+
+QGC with the ten drones (main-thread stall meter, Release): see
+`briech-docs/spikes.md`, S2.

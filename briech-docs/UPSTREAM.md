@@ -20,7 +20,7 @@ movable into `custom/`; **fix** = a known problem.
 
 | File | Change | Why | Status |
 |---|---|---|---|
-| `src/UI/MainWindow.qml` | Briech toolbar, `briechModernView` Loader, `showBriechModernView()`, Modern view open by default, frameless window with resize grips, settings/analyze/vehicle page helpers | Mounts the Briech Modern view; the stock view switcher lives here | keep. **fix**: resize grips at lines 832-835 log `ReferenceError: modelData is not defined` (24 warnings at startup), so edge resizing probably does not work |
+| `src/UI/MainWindow.qml` | Briech toolbar, `briechModernView` Loader, `showBriechModernView()`, Modern view open by default, frameless window with resize grips, settings/analyze/vehicle page helpers | Mounts the Briech Modern view; the stock view switcher lives here | keep. Fixed 2026-11-09: the resize-grip delegate now declares `required property var modelData` (the file uses `ComponentBehavior: Bound`), which ends the `modelData is not defined` warnings at lines 832-835 and makes edge resizing work |
 | `src/UI/toolbar/SelectViewDropdown.qml` | Adds the "Briech Modern" entry | Lets the operator reach the Modern view | keep |
 | `src/FlyView/FlyView.qml` | Custom fly layer only visible with an active vehicle | Briech overlay should not show with no vehicle | review |
 | `src/QmlControls/PlanView.qml` | Narrower right panel | Briech layout | review |
@@ -60,14 +60,15 @@ movable into `custom/`; **fix** = a known problem.
 | `Makefile` | **An accidental line at the end**: `The file /Users/mac/BriechGCS-QGC/build/Debug/QGroundControl does not exist.` (commit `8886fd7e4`) | Shell output pasted in by mistake | **fix**: delete the line; it breaks `make docker` |
 | `android/gradle/wrapper/gradle-wrapper.properties` | Gradle version | Android build | review |
 | `android/.gradle/...` | Gradle cache files committed | By accident | **fix**: remove from git, add to `.gitignore` |
-| `custom-example/` | Deleted | Replaced by `custom/` | keep. Note that `.github/actions/custom-build` still copies `custom-example`, so CI custom builds now fail outright |
+| `custom-example/` | Deleted | Replaced by `custom/` | keep. `.github/actions/custom-build` still copies `custom-example`; the Custom Build workflow no longer calls it (next row) |
+| `.github/workflows/custom-build.yml` | Triggers on `custom/**` and branch `main` (were `custom-example/**` and `master`); drops the "Enable custom build" step that copied `custom-example` to `custom`; the boot test runs `BriechUAS-x86_64.AppImage` (was `Custom-QGroundControl-…`, the AppImage is named after `QGC_APP_NAME`) | The plugin is committed in `custom/` and the default branch is `main`, so the stock workflow never ran, and would have failed at the copy step if it had (handoff section 12, P1) | keep |
 
 ## Tools and repository root
 
 | File | Change | Status |
 |---|---|---|
 | `tools/simulation/*`, `tools/README.md`, `tools/generate-app-icons.ps1` | PX4 SIH and ArduCopter SITL scripts, icon generator | keep; the handoff moves simulation into `sim/` later |
-| `MODERN_VIEW_HANDOFF.md` | Root-level handoff notes containing personal paths | fix: move into `briech-docs/` without personal paths (section 12, P1) |
+| `MODERN_VIEW_HANDOFF.md` | Root-level handoff notes containing personal paths | fixed: moved to `briech-docs/MODERN_VIEW_HANDOFF.md`, personal paths replaced with `<repo>` (section 12, P1) |
 | `wps (1).kml` | Sample waypoints at the root | fix: move into `sim/` (section 12, P0, George) |
 | `b/`, `b2/`, `b3/` | Committed CMake build output, with a personal path in `b3/` | fix: stop tracking (section 12, P0, George) |
 | `.gitignore` | Appended a Briech block: `ops/certs/`, `ops/secrets/`, `ground-core/.venv/`, `ground-core/var/`, and `!ops/Makefile` (the stock `Makefile` rule would hide it) | keep: dev certificates, MQTT passwords and tokens must never be committed (handoff section 6) |

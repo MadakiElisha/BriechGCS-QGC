@@ -1,0 +1,18 @@
+# Watch zones (read-only in the first release). A track of a watched class
+# inside a zone raises one alert. These are not geofences: geofences are set on
+# the autopilot and enforced by the vehicle, with or without the coordinator.
+#
+# polygon corners are [lat, lon], WGS84 degrees, in order around the edge.
+
+zones:
+  # On the path of sim/scenarios/tower-walk.yaml: track 17 walks in about 20 s
+  # after the publisher starts.
+  - id: north-fence
+    name: north-fence
+    severity: high
+    classes: [person, vehicle]
+    polygon:
+      - [6.52500, 3.38030]
+      - [6.52500, 3.38150]
+      - [6.52620, 3.38150]
+      - [6.52620, 3.38030]

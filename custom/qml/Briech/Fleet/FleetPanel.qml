@@ -24,6 +24,16 @@ Item {
 
     readonly property var vehicles: QGroundControl.multiVehicleManager.vehicles
     readonly property var activeVehicle: QGroundControl.multiVehicleManager.activeVehicle
+    // Link percentages, sampled once a second (see FleetFormat.linkPercent).
+    property var linkPercents: ({})
+
+    Timer {
+        interval: 1000
+        repeat: true
+        running: root.visible
+        triggeredOnStart: true
+        onTriggered: root.linkPercents = FleetFormat.sampleLinkPercents(root.vehicles)
+    }
 
     width: 250
     height: Math.min(maximumHeight, header.height + cardList.contentHeight)
@@ -49,7 +59,41 @@ Item {
                 font.family: "Share Tech Mono"
             }
 
+            // Opens or closes the attitude view (Fleet3DView) beside the panel.
+            Rectangle {
+                anchors.right: closeText.left
+                anchors.rightMargin: 10
+                anchors.verticalCenter: parent.verticalCenter
+                width: attitudeText.implicitWidth + 12
+                height: 18
+                radius: 2
+                color: FleetSettings.attitudeViewOpen ? Qt.rgba(201 / 255, 168 / 255, 76 / 255, 0.18) : "transparent"
+                border.color: FleetSettings.attitudeViewOpen ? BriechTheme.goldAccent : Qt.rgba(1, 1, 1, 0.18)
+                border.width: 1
+
+                Text {
+                    id: attitudeText
+                    anchors.centerIn: parent
+                    text: "3D"
+                    color: FleetSettings.attitudeViewOpen ? BriechTheme.goldAccent
+                         : (attitudeArea.containsMouse ? BriechTheme.textColor : BriechTheme.mutedColor)
+                    font.pixelSize: 9
+                    font.bold: true
+                    font.family: "Share Tech Mono"
+                }
+
+                MouseArea {
+                    id: attitudeArea
+                    anchors.fill: parent
+                    anchors.margins: -3
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: FleetSettings.attitudeViewOpen = !FleetSettings.attitudeViewOpen
+                }
+            }
+
             Text {
+                id: closeText
                 anchors.right: parent.right
                 anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
@@ -99,8 +143,13 @@ Item {
         readonly property bool isActive: object === root.activeVehicle
         readonly property real battery: FleetFormat.batteryPercent(object)
         readonly property color batteryTone: FleetFormat.batteryTone(battery, BriechTheme)
-        readonly property real link: FleetFormat.linkPercent(object)
+        readonly property real link: FleetFormat.sampledLink(root.linkPercents, card.object.id)
         readonly property bool batteryLow: !isNaN(battery) && battery < FleetFormat.lowBatteryPercent
+        // Data age, from FleetDataAge once a second: amber after 3 s, grey and
+        // stale after 10 s. A stale card is dimmed: its values are not current.
+        readonly property int ageLevel: FleetFormat.vehicleAgeLevel(FleetDataAge.levels, object.id)
+        readonly property var ageSeconds: FleetFormat.vehicleAgeSeconds(FleetDataAge.seconds, object.id)
+        readonly property bool stale: ageLevel === FleetFormat.ageGrey
 
         height: 112
         color: isActive ? "#11141b" : (cardArea.containsMouse ? "#0d1016" : "transparent")
@@ -124,6 +173,7 @@ Item {
             RowLayout {
                 width: parent.width
                 spacing: 6
+                opacity: card.stale ? 0.55 : 1
 
                 Text {
                     text: "BRCH-" + card.object.id
@@ -143,9 +193,20 @@ Item {
                     font.family: "Share Tech Mono"
                 }
 
-                // Status pill: battery low outranks armed / standby.
+                // How long ago this drone was last heard.
+                Text {
+                    text: FleetFormat.ageText(card.ageSeconds)
+                    color: FleetFormat.ageTone(card.ageLevel, BriechTheme)
+                    font.pixelSize: 9
+                    font.bold: card.ageLevel === FleetFormat.ageAmber
+                    font.family: "Share Tech Mono"
+                }
+
+                // Status pill: stale outranks battery low, which outranks armed / standby.
                 Rectangle {
-                    readonly property color tone: card.batteryLow ? BriechTheme.errColor : (card.object.armed ? BriechTheme.okColor : BriechTheme.blueColor)
+                    readonly property color tone: card.stale ? BriechTheme.mutedColor
+                                                : card.batteryLow ? BriechTheme.errColor
+                                                : (card.object.armed ? BriechTheme.okColor : BriechTheme.blueColor)
                     Layout.preferredWidth: pillText.implicitWidth + 12
                     Layout.preferredHeight: 16
                     radius: 2
@@ -156,7 +217,7 @@ Item {
                     Text {
                         id: pillText
                         anchors.centerIn: parent
-                        text: card.batteryLow ? "BATT LOW" : (card.object.armed ? "ARMED" : "STANDBY")
+                        text: card.stale ? "STALE" : card.batteryLow ? "BATT LOW" : (card.object.armed ? "ARMED" : "STANDBY")
                         color: parent.tone
                         font.pixelSize: 8
                         font.bold: true
@@ -207,6 +268,7 @@ Item {
             GridLayout {
                 width: parent.width
                 columns: 3
+                opacity: card.stale ? 0.55 : 1
                 rowSpacing: 3
                 columnSpacing: 6
 

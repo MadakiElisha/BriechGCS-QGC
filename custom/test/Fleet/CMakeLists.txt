@@ -24,13 +24,23 @@ add_library(FleetLinkCore STATIC
     ${FLEET_SRC}/FleetLinkWorker.h
     ${FLEET_SRC}/FleetLink.cc
     ${FLEET_SRC}/FleetLink.h
+    ${FLEET_SRC}/FleetModels.cc
+    ${FLEET_SRC}/FleetModels.h
+    ${FLEET_SRC}/FleetVehicleState.cc
+    ${FLEET_SRC}/FleetVehicleState.h
+    ${FLEET_SRC}/FleetOperatorActions.cc
+    ${FLEET_SRC}/FleetOperatorActions.h
+    ${FLEET_SRC}/FleetDataAge.cc
+    ${FLEET_SRC}/FleetDataAge.h
+    ${FLEET_SRC}/FleetAudit.cc
+    ${FLEET_SRC}/FleetAudit.h
 )
 target_include_directories(FleetLinkCore PUBLIC ${FLEET_SRC})
 target_link_libraries(FleetLinkCore PUBLIC Qt6::Core Qt6::Network Qt6::WebSockets)
 
 enable_testing()
 
-foreach(test tst_FleetProtocol tst_FleetLink)
+foreach(test tst_FleetProtocol tst_FleetLink tst_FleetModels tst_FleetVehicleState tst_FleetOperatorActions tst_FleetDataAge tst_FleetAudit)
     add_executable(${test} ${test}.cc)
     target_link_libraries(${test} PRIVATE FleetLinkCore Qt6::Test)
     target_compile_definitions(${test} PRIVATE BRIECH_REPO_DIR="${BRIECH_REPO_DIR}")

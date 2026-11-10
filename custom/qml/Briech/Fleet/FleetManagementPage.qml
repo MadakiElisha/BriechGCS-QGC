@@ -14,19 +14,24 @@ import "FleetFormat.js" as FleetFormat
 //
 // The Modern view loads this only while the FLEET tab is selected, so it costs
 // nothing otherwise. It never creates a map (the FLY map is reused through
-// "Show on map") and never sends flight commands.
+// "Show on map") and never sends flight commands itself: APPROVE and REJECT
+// only ask the Modern view, which confirms with the operator before
+// FleetDispatch sends anything.
 //
-// Rows come from `model`: QGC's connected vehicles today. Part B's
-// FleetAssetModel is meant to replace it here; the roster has one model
-// property and one delegate so that swap stays small. Coordinator-only data
-// (tasking, detections, alerts) is shown as awaiting the coordinator, never as
-// an empty "all clear".
+// The roster lists QGC's connected vehicles (`model`). Below it, the
+// coordinator's towers, detections and alerts come from FleetAssetModel,
+// FleetObjectModel and FleetAlertModel. While the coordinator is not connected
+// those sections say so, and any rows left over read STALE; they never show an
+// empty "all clear" nobody checked.
 Rectangle {
     id: root
 
     signal enableRequested()
     signal showOnMapRequested(var vehicle)
     signal openVehicleSetupRequested(var vehicle)
+    /// APPROVE / REJECT on an alert with a proposal; the Modern view confirms first.
+    signal approveAlertRequested(string alertId)
+    signal rejectAlertRequested(string alertId)
 
     /// Roster source. Each row needs an "object" role holding the vehicle.
     property var model: QGroundControl.multiVehicleManager.vehicles
@@ -39,6 +44,16 @@ Rectangle {
     property string sortKey: "id"
 
     readonly property var vehicles: QGroundControl.multiVehicleManager.vehicles
+    // Link percentages, sampled once a second (see FleetFormat.linkPercent).
+    property var linkPercents: ({})
+
+    Timer {
+        interval: 1000
+        repeat: true
+        running: true
+        triggeredOnStart: true
+        onTriggered: root.linkPercents = FleetFormat.sampleLinkPercents(root.vehicles)
+    }
     readonly property var activeVehicle: QGroundControl.multiVehicleManager.activeVehicle
     readonly property color hairline: Qt.rgba(1, 1, 1, 0.075)
     readonly property color panelColor: "#080a0e"
@@ -115,6 +130,15 @@ Rectangle {
         ColumnLayout {
             spacing: 12
 
+            // Coordinator silent for 10 s: say so above everything else.
+            FleetOfflineBanner {
+                Layout.fillWidth: true
+                Layout.leftMargin: 20
+                Layout.rightMargin: 20
+                Layout.topMargin: visible ? 12 : 0
+                Layout.preferredHeight: height
+            }
+
             // Title.
             ColumnLayout {
                 Layout.fillWidth: true
@@ -150,7 +174,7 @@ Rectangle {
                 readonly property int armed: FleetFormat.armedCount(root.vehicles)
                 readonly property int airborne: FleetFormat.flyingCount(root.vehicles)
                 readonly property int lowBattery: FleetFormat.lowBatteryCount(root.vehicles)
-                readonly property real worstLink: FleetFormat.worstLinkPercent(root.vehicles)
+                readonly property real worstLink: FleetFormat.worstLinkPercent(root.linkPercents)
 
                 SummaryTile { label: "VEHICLES"; value: root.vehicles.count }
                 SummaryTile {
@@ -172,6 +196,13 @@ Rectangle {
                     label: "WORST LINK"
                     value: isNaN(parent.worstLink) ? "--" : parent.worstLink + "%"
                     tone: FleetFormat.linkTone(parent.worstLink, BriechTheme)
+                }
+                SummaryTile {
+                    label: "ACTIVE ALERTS"
+                    // "--" until the coordinator has been heard: no source is not "0 alerts".
+                    readonly property bool known: FleetLink.state === FleetLink.Connected || FleetAlertModel.count > 0
+                    value: known ? FleetAlertModel.activeCount : "--"
+                    tone: known && FleetAlertModel.activeCount > 0 ? BriechTheme.errColor : BriechTheme.textColor
                 }
                 SummaryTile {
                     label: "COORDINATOR"
@@ -232,17 +263,61 @@ Rectangle {
                 }
             }
 
-            // Coordinator-only sections.
+            // Coordinator data. The schemas have no tasking message, so the
+            // third section is the coordinator's fixed assets (towers).
             RowLayout {
+                Layout.fillWidth: true
+                // A nested layout fills by default; the roster above takes the spare height.
+                Layout.fillHeight: false
+                Layout.preferredHeight: 160
+                Layout.leftMargin: 20
+                Layout.rightMargin: 20
+                spacing: 8
+
+                CoordinatorList {
+                    title: "ASSETS"
+                    model: FleetAssetModel
+                    emptyText: "NO ASSETS REPORTED"
+                    rowDelegate: AssetRow {}
+                }
+                CoordinatorList {
+                    title: "DETECTIONS"
+                    model: FleetObjectModel
+                    emptyText: "NO DETECTIONS"
+                    rowDelegate: ObjectRow {}
+                }
+                CoordinatorList {
+                    title: "ALERTS"
+                    model: FleetAlertModel
+                    // Alerts still waiting for a decision (or carrying one out)
+                    // first, so the one that needs APPROVE is never below a
+                    // list of expired ones. Same order as the model otherwise.
+                    listModel: SortFilterProxyModel {
+                        model: FleetAlertModel
+                        sorters: [
+                            FunctionSorter {
+                                function sort(lhsData: AlertOrderRow, rhsData: AlertOrderRow): int {
+                                    return root.alertRank(lhsData.status) - root.alertRank(rhsData.status)
+                                }
+                            }
+                        ]
+                    }
+                    emptyText: "NO ALERTS"
+                    rowDelegate: AlertRow {}
+                }
+            }
+
+            AuditRow {
+                Layout.fillWidth: true
+                Layout.leftMargin: 20
+                Layout.rightMargin: 20
+            }
+
+            LinkMessages {
                 Layout.fillWidth: true
                 Layout.leftMargin: 20
                 Layout.rightMargin: 20
                 Layout.bottomMargin: 16
-                spacing: 8
-
-                CoordinatorTile { title: "TASKING / ASSIGNMENTS" }
-                CoordinatorTile { title: "DETECTIONS" }
-                CoordinatorTile { title: "ALERTS" }
             }
         }
     }
@@ -285,27 +360,301 @@ Rectangle {
         }
     }
 
-    // A coordinator section that has no data source yet. The link may be up
-    // before the models that turn its messages into rows exist (FleetModels).
-    component CoordinatorTile: Rectangle {
-        id: coordinatorTile
+    // One coordinator section: a title, the link state or row count, and a
+    // compact list. Rows kept from before a disconnect stay, marked STALE.
+    component CoordinatorList: Rectangle {
+        id: coordinatorSection
 
         property string title
+        property var model
+        /// What the list shows; the same rows as model, possibly sorted.
+        property var listModel: model
+        property string emptyText
+        property Component rowDelegate
+
+        readonly property bool connected: FleetLink.state === FleetLink.Connected
+        readonly property string awaitingText: "AWAITING COORDINATOR - " + FleetLink.stateText
 
         Layout.fillWidth: true
-        Layout.preferredHeight: 52
+        Layout.fillHeight: true
         color: root.panelColor
         border.color: root.hairline
         border.width: 1
 
-        Column {
+        RowLayout {
+            id: sectionHeader
             anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
             anchors.leftMargin: 12
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 4
+            anchors.rightMargin: 12
+            height: 30
 
             Text {
-                text: coordinatorTile.title
+                text: coordinatorSection.title
+                color: BriechTheme.goldAccent
+                font.pixelSize: 10
+                font.bold: true
+                font.letterSpacing: 1.5
+                font.family: "Share Tech Mono"
+            }
+
+            Item { Layout.fillWidth: true }
+
+            Text {
+                Layout.maximumWidth: coordinatorSection.width * 0.7
+                text: coordinatorSection.connected ? String(coordinatorSection.model.count) : coordinatorSection.awaitingText
+                color: coordinatorSection.connected ? BriechTheme.textColor : BriechTheme.warnColor
+                elide: Text.ElideRight
+                font.pixelSize: 10
+                font.family: "Share Tech Mono"
+            }
+        }
+
+        Text {
+            anchors.centerIn: parent
+            anchors.verticalCenterOffset: 12
+            visible: coordinatorSection.model.count === 0
+            text: coordinatorSection.connected ? coordinatorSection.emptyText : coordinatorSection.awaitingText
+            color: BriechTheme.mutedColor
+            font.pixelSize: 10
+            font.letterSpacing: 1
+            font.family: "Share Tech Mono"
+        }
+
+        ListView {
+            id: sectionList
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: sectionHeader.bottom
+            anchors.bottom: parent.bottom
+            anchors.margins: 1
+            clip: true
+            model: coordinatorSection.listModel
+            delegate: coordinatorSection.rowDelegate
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar { policy: sectionList.contentHeight > sectionList.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
+        }
+    }
+
+    // Base for a coordinator row: fixed height, hairline below, faded when stale.
+    component CoordinatorRow: Rectangle {
+        required property int ageSeconds
+        required property bool stale
+
+        width: ListView.view ? ListView.view.width : 0
+        height: 24
+        color: "transparent"
+        opacity: stale ? 0.55 : 1
+
+        Rectangle {
+            anchors.bottom: parent.bottom
+            width: parent.width
+            height: 1
+            color: Qt.rgba(1, 1, 1, 0.05)
+        }
+    }
+
+    // Age, or the age and STALE once the row is stale.
+    component AgeCell: RowCell {
+        property int ageSeconds
+        property bool stale
+
+        cellWidth: 74
+        horizontalAlignment: Text.AlignRight
+        text: FleetFormat.ageText(ageSeconds) + (stale ? " STALE" : "")
+        color: stale ? BriechTheme.warnColor : BriechTheme.mutedColor
+        font.pixelSize: 10
+    }
+
+    component AssetRow: CoordinatorRow {
+        id: assetRow
+
+        required property string asset_id
+        required property var name
+        required property var kind
+        required property var health
+        required property var link
+        required property var battery_pct
+        required property var mains_power
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            spacing: 8
+
+            RowCell {
+                Layout.fillWidth: true
+                text: FleetFormat.has(assetRow.name) ? assetRow.name : assetRow.asset_id
+                font.pixelSize: 10
+            }
+            RowCell { cellWidth: 44; text: FleetFormat.wordText(assetRow.kind); color: BriechTheme.mutedColor; font.pixelSize: 10 }
+            RowCell {
+                cellWidth: 64
+                text: FleetFormat.wordText(assetRow.health)
+                color: FleetFormat.healthTone(assetRow.health, BriechTheme)
+                font.pixelSize: 10
+            }
+            RowCell {
+                cellWidth: 56
+                text: FleetFormat.wordText(assetRow.link)
+                color: FleetFormat.assetLinkTone(assetRow.link, BriechTheme)
+                font.pixelSize: 10
+            }
+            RowCell {
+                cellWidth: 52
+                // A battery reading if there is one, else whether it is on mains.
+                text: FleetFormat.has(assetRow.battery_pct) ? assetRow.battery_pct + "%"
+                      : (assetRow.mains_power === true ? "MAINS" : "--")
+                color: BriechTheme.mutedColor
+                font.pixelSize: 10
+            }
+            AgeCell { ageSeconds: assetRow.ageSeconds; stale: assetRow.stale }
+        }
+    }
+
+    component ObjectRow: CoordinatorRow {
+        id: objectRow
+
+        required property string object_id
+        required property var className
+        required property var confidence
+        required property var pos
+        required property var seen_by
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            spacing: 8
+
+            RowCell { Layout.fillWidth: true; text: FleetFormat.wordText(objectRow.className); font.pixelSize: 10 }
+            RowCell { cellWidth: 36; text: FleetFormat.confidenceText(objectRow.confidence); font.pixelSize: 10 }
+            RowCell { cellWidth: 44; text: FleetFormat.errorText(objectRow.pos); color: BriechTheme.mutedColor; font.pixelSize: 10 }
+            RowCell {
+                cellWidth: 64
+                text: objectRow.seen_by ? objectRow.seen_by.join(",") : "--"
+                color: BriechTheme.mutedColor
+                font.pixelSize: 10
+            }
+            AgeCell { ageSeconds: objectRow.ageSeconds; stale: objectRow.stale }
+        }
+    }
+
+    component AlertRow: CoordinatorRow {
+        id: alertRow
+
+        required property string alert_id
+        required property var severity
+        required property var className
+        required property var confidence
+        required property var reason
+        required property var status
+        required property bool active
+        required property var proposal
+
+        /// The coordinator proposed a vehicle and nobody has decided yet.
+        readonly property bool decidable: !!proposal && (status === "open" || status === "acknowledged")
+
+        // Closed alerts stay listed, dimmed.
+        opacity: stale || !active ? 0.55 : 1
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            spacing: 8
+
+            RowCell {
+                cellWidth: 48
+                text: FleetFormat.wordText(alertRow.severity)
+                color: FleetFormat.severityTone(alertRow.severity, BriechTheme)
+                font.pixelSize: 10
+                font.bold: true
+            }
+            RowCell { cellWidth: 56; text: FleetFormat.wordText(alertRow.className); font.pixelSize: 10 }
+            RowCell { cellWidth: 36; text: FleetFormat.confidenceText(alertRow.confidence); font.pixelSize: 10 }
+            RowCell {
+                Layout.fillWidth: true
+                text: FleetFormat.has(alertRow.reason) ? alertRow.reason : "--"
+                color: BriechTheme.mutedColor
+                font.pixelSize: 10
+            }
+            RowCell { cellWidth: 84; text: FleetFormat.wordText(alertRow.status); font.pixelSize: 10 }
+            AgeCell { ageSeconds: alertRow.ageSeconds; stale: alertRow.stale }
+            // Only ask: the Modern view shows the proposal and confirms before anything is sent.
+            SmallButton {
+                visible: alertRow.decidable
+                text: "APPROVE"
+                tone: BriechTheme.okColor
+                onClicked: root.approveAlertRequested(alertRow.alert_id)
+            }
+            SmallButton {
+                visible: alertRow.decidable
+                text: "REJECT"
+                tone: BriechTheme.mutedColor
+                onClicked: root.rejectAlertRequested(alertRow.alert_id)
+            }
+        }
+    }
+
+    component SmallButton: Rectangle {
+        id: smallButton
+
+        signal clicked()
+
+        property string text
+        property color tone
+
+        Layout.preferredWidth: smallText.implicitWidth + 12
+        Layout.preferredHeight: 18
+        radius: 2
+        color: smallArea.containsMouse ? Qt.rgba(1, 1, 1, 0.06) : "transparent"
+        border.color: tone
+        border.width: 1
+
+        Text {
+            id: smallText
+            anchors.centerIn: parent
+            text: smallButton.text
+            color: smallButton.tone
+            font.pixelSize: 9
+            font.bold: true
+            font.letterSpacing: 1
+            font.family: "Share Tech Mono"
+        }
+
+        MouseArea {
+            id: smallArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: smallButton.clicked()
+        }
+    }
+
+    // The local hash-chained log of operator actions (FleetAudit): how many
+    // entries, and whether the chain still verifies. VERIFY re-reads the file.
+    component AuditRow: Rectangle {
+        id: auditRow
+
+        // Not checked until the operator asks; never shown as OK before that.
+        property var result: null
+
+        Layout.preferredHeight: 28
+        color: root.panelColor
+        border.color: root.hairline
+        border.width: 1
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 12
+            anchors.rightMargin: 8
+            spacing: 10
+
+            Text {
+                text: "LOCAL AUDIT"
                 color: BriechTheme.goldAccent
                 font.pixelSize: 10
                 font.bold: true
@@ -314,10 +663,113 @@ Rectangle {
             }
 
             Text {
-                text: FleetLink.state === FleetLink.Connected
-                      ? "COORDINATOR CONNECTED - NOT SHOWN HERE YET"
-                      : "AWAITING COORDINATOR - " + FleetLink.stateText
+                text: FleetAudit.count + (FleetAudit.count === 1 ? " ENTRY" : " ENTRIES")
+                      + (FleetAudit.lastError.length > 0 ? " · WRITE FAILED: " + FleetAudit.lastError : "")
+                color: FleetAudit.lastError.length > 0 ? BriechTheme.errColor : BriechTheme.mutedColor
+                elide: Text.ElideRight
+                Layout.fillWidth: true
+                font.pixelSize: 10
+                font.family: "Share Tech Mono"
+            }
+
+            Text {
+                text: !auditRow.result ? "--"
+                      : auditRow.result.ok ? "CHAIN OK"
+                      : "BROKEN AT #" + auditRow.result.firstBroken
+                color: !auditRow.result ? BriechTheme.mutedColor
+                       : auditRow.result.ok ? BriechTheme.okColor : BriechTheme.errColor
+                font.pixelSize: 10
+                font.bold: !!auditRow.result
+                font.family: "Share Tech Mono"
+            }
+
+            SmallButton {
+                text: "VERIFY"
+                tone: BriechTheme.goldAccent
+                onClicked: auditRow.result = FleetAudit.verify()
+            }
+        }
+
+        // A new entry makes an earlier result out of date.
+        Connections {
+            target: FleetAudit
+            function onChanged() { auditRow.result = null }
+        }
+    }
+
+    // Debug list of what FleetLink received, collapsed by default.
+    component LinkMessages: Rectangle {
+        id: messages
+
+        property bool expanded: false
+
+        Layout.preferredHeight: expanded ? 28 + 132 : 28
+        color: root.panelColor
+        border.color: root.hairline
+        border.width: 1
+
+        RowLayout {
+            id: messagesHeader
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            height: 28
+
+            Text {
+                text: "LINK MESSAGES"
+                color: BriechTheme.goldAccent
+                font.pixelSize: 10
+                font.bold: true
+                font.letterSpacing: 1.5
+                font.family: "Share Tech Mono"
+            }
+
+            Text {
+                text: "LAST " + FleetLink.recentMessages.length + " · DROPPED " + FleetLink.droppedCount
+                color: FleetLink.droppedCount > 0 ? BriechTheme.warnColor : BriechTheme.mutedColor
+                font.pixelSize: 10
+                font.family: "Share Tech Mono"
+            }
+
+            Item { Layout.fillWidth: true }
+
+            Text {
+                text: messages.expanded ? "HIDE ▴" : "SHOW ▾"
                 color: BriechTheme.mutedColor
+                font.pixelSize: 10
+                font.family: "Share Tech Mono"
+            }
+        }
+
+        MouseArea {
+            anchors.fill: messagesHeader
+            cursorShape: Qt.PointingHandCursor
+            onClicked: messages.expanded = !messages.expanded
+        }
+
+        ListView {
+            id: messageList
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: messagesHeader.bottom
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            anchors.bottomMargin: 6
+            visible: messages.expanded
+            clip: true
+            model: messages.expanded ? FleetLink.recentMessages : []
+            boundsBehavior: Flickable.StopAtBounds
+
+            delegate: Text {
+                required property string modelData
+
+                width: messageList.width
+                text: modelData
+                color: BriechTheme.mutedColor
+                elide: Text.ElideRight
                 font.pixelSize: 10
                 font.family: "Share Tech Mono"
             }
@@ -441,6 +893,8 @@ Rectangle {
                     HeaderCell { label: "GPS"; cellWidth: 92 }
                     HeaderCell { label: "LINK"; cellWidth: 44 }
                     HeaderCell { label: "COMMS"; cellWidth: 52 }
+                    HeaderCell { label: "AGE"; cellWidth: 40 }
+                    HeaderCell { label: "LAST FLEET CMD"; cellWidth: 140 }
                 }
             }
 
@@ -463,6 +917,19 @@ Rectangle {
     // Role data the sorters read from each proxy row.
     component RosterRow: QtObject {
         property var object
+    }
+
+    component AlertOrderRow: QtObject {
+        property string status
+    }
+
+    /// Sort rank: waiting for a decision (as FleetAlertModel counts active: no
+    /// status, open, acknowledged) first, then approved, then closed.
+    function alertRank(status) {
+        if (!status || status === "open" || status === "acknowledged") {
+            return 0
+        }
+        return status === "approved" ? 1 : 2
     }
 
     component HeaderCell: Text {
@@ -500,8 +967,11 @@ Rectangle {
         readonly property bool selected: object === root.selectedVehicle
         readonly property bool isActive: object === root.activeVehicle
         readonly property real battery: FleetFormat.batteryPercent(object)
-        readonly property real link: FleetFormat.linkPercent(object)
+        readonly property real link: FleetFormat.sampledLink(root.linkPercents, object.id)
         readonly property bool commsLost: !!object.vehicleLinkManager && object.vehicleLinkManager.communicationLost
+        // Data age (FleetDataAge, once a second): amber after 3 s, grey and stale after 10 s.
+        readonly property int ageLevel: FleetFormat.vehicleAgeLevel(FleetDataAge.levels, object.id)
+        readonly property bool stale: ageLevel === FleetFormat.ageGrey
 
         height: 40
         color: selected ? "#11141b" : (rowArea.containsMouse ? "#0d1016" : "transparent")
@@ -517,6 +987,7 @@ Rectangle {
             anchors.leftMargin: 14
             anchors.rightMargin: 10
             spacing: 8
+            opacity: row.stale ? 0.55 : 1
 
             RowCell {
                 cellWidth: 70
@@ -547,6 +1018,22 @@ Rectangle {
                 cellWidth: 52
                 text: row.commsLost ? "LOST" : "OK"
                 color: row.commsLost ? BriechTheme.errColor : BriechTheme.okColor
+            }
+            RowCell {
+                cellWidth: 40
+                text: FleetFormat.ageText(FleetFormat.vehicleAgeSeconds(FleetDataAge.seconds, row.object.id)) + (row.stale ? "!" : "")
+                color: FleetFormat.ageTone(row.ageLevel, BriechTheme)
+                font.bold: row.ageLevel === FleetFormat.ageAmber || row.stale
+            }
+            RowCell {
+                // The last Hold all / Return all / approved proposal and what the vehicle answered.
+                readonly property string fleetCommand: FleetDispatch.vehicleStatus[String(row.object.id)] || ""
+                cellWidth: 140
+                text: fleetCommand.length > 0 ? fleetCommand : "--"
+                color: fleetCommand.indexOf("CONFIRMED") >= 0 ? BriechTheme.okColor
+                     : fleetCommand.indexOf("REFUSED") >= 0 ? BriechTheme.errColor
+                     : fleetCommand.indexOf("NO RESPONSE") >= 0 ? BriechTheme.warnColor
+                     : BriechTheme.mutedColor
             }
         }
 

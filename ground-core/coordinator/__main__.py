@@ -11,11 +11,14 @@ from aiohttp import web
 
 from .api_operator import OPERATOR_PATH, create_app
 from .app import Coordinator
+from .audit import AuditLog
 from .bus import MqttBus
 from .config import Config
 from .fusion import Fusion
 from .registry import Registry
 from .schemas import MessageValidator
+from .store import StateStore
+from .zones import load_zones
 
 log = logging.getLogger("coordinator")
 
@@ -24,7 +27,16 @@ async def run(config: Config) -> None:
     validator = MessageValidator(config.schema_dir)
     log.info("schemas: %s", ", ".join(sorted(validator.types)))
     registry = Registry.from_file(config.assets_file)
-    coordinator = Coordinator(config, validator, registry, Fusion())
+    zones = load_zones(config.zones_file)
+    log.info("zones: %d from %s", len(zones), config.zones_file)
+    if config.data_dir is not None:
+        audit = AuditLog(config.data_dir / "audit.sqlite")
+        store = StateStore(config.data_dir / "state.sqlite")
+        log.info("audit log and saved state in %s", config.data_dir)
+    else:
+        audit = store = None
+        log.warning("BRIECH_DATA_DIR=memory: no audit log on disk, nothing survives a restart")
+    coordinator = Coordinator(config, validator, registry, Fusion(), zones=zones, audit=audit, store=store)
     if not config.operator_tokens:
         log.warning("no operator tokens set (BRIECH_OPERATOR_TOKENS): QGC cannot connect")
 
@@ -46,20 +58,35 @@ async def run(config: Config) -> None:
     log.info("operator WebSocket on %s://%s:%d%s", scheme, config.http_host, config.http_port, OPERATOR_PATH)
 
     heartbeat = asyncio.create_task(coordinator.run_heartbeat())
+    ticker = asyncio.create_task(coordinator.run_ticker())
     stop = asyncio.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
-    await stop.wait()
-
-    log.info("stopping")
-    heartbeat.cancel()
-    bus.stop()
-    await runner.cleanup()
+        try:
+            loop.add_signal_handler(sig, stop.set)
+        except NotImplementedError:
+            # Windows has no loop signal handlers: Ctrl+C cancels this task instead,
+            # and the finally below still shuts down cleanly.
+            pass
+    try:
+        await stop.wait()
+    finally:
+        log.info("stopping")
+        heartbeat.cancel()
+        ticker.cancel()
+        bus.stop()
+        await runner.cleanup()
+        coordinator.save()
+        if audit is not None:
+            audit.close()
+            store.close()
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    asyncio.run(run(Config.from_env()))
+    try:
+        asyncio.run(run(Config.from_env()))
+    except KeyboardInterrupt:
+        pass    # Windows: Ctrl+C arrives here after run() has cleaned up
 
 
 if __name__ == "__main__":

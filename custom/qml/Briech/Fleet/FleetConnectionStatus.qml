@@ -21,9 +21,13 @@ Rectangle {
         color: Qt.rgba(1, 1, 1, 0.075)
     }
 
+    // Stops short of DISABLE: a long state ("RETRYING IN 19 S") used to run
+    // under it. The text is cut with "…" instead.
     Row {
         anchors.left: parent.left
         anchors.leftMargin: 12
+        anchors.right: disableText.left
+        anchors.rightMargin: 8
         anchors.verticalCenter: parent.verticalCenter
         spacing: 6
 
@@ -36,6 +40,8 @@ Rectangle {
         }
 
         Text {
+            width: parent.width - 12
+            elide: Text.ElideRight
             // CONNECTED, CONNECTING, RETRYING IN 4 S, UNAUTHORIZED or DISABLED
             text: "COORDINATOR: " + FleetLink.stateText
                   + " · 3D: " + (FleetSettings.quick3DAvailable ? "OK" : "2D")
@@ -47,6 +53,7 @@ Rectangle {
     }
 
     Text {
+        id: disableText
         anchors.right: parent.right
         anchors.rightMargin: 10
         anchors.verticalCenter: parent.verticalCenter

@@ -11,21 +11,10 @@ Item {
     property var totalToolInsets:   _totalToolInsets    // The insets updated for the custom overlay additions
     property var mapControl
 
-    readonly property string noGPS:         qsTr("NO GPS")
-    readonly property real   indicatorValueWidth:   ScreenTools.defaultFontPixelWidth * 7
-
     property var    _activeVehicle:         QGroundControl.multiVehicleManager.activeVehicle
-    property real   _indicatorDiameter:     ScreenTools.defaultFontPixelWidth * 18
-    property real   _indicatorsHeight:      ScreenTools.defaultFontPixelHeight
-    property var    _sepColor:              qgcPal.globalTheme === QGCPalette.Light ? Qt.rgba(0,0,0,0.5) : Qt.rgba(1,1,1,0.5)
-    property color  _indicatorsColor:       qgcPal.text
-    property bool   _isVehicleGps:          _activeVehicle ? _activeVehicle.gps.count.rawValue > 1 && _activeVehicle.gps.hdop.rawValue < 1.4 : false
-    property string _altitude:              _activeVehicle ? (isNaN(_activeVehicle.altitudeRelative.value) ? "0.0" : _activeVehicle.altitudeRelative.value.toFixed(1)) + ' ' + _activeVehicle.altitudeRelative.units : "0.0"
-    property string _distanceStr:           isNaN(_distance) ? "0" : _distance.toFixed(0) + ' ' + QGroundControl.unitsConversion.appSettingsHorizontalDistanceUnitsString
-    property real   _heading:               _activeVehicle   ? _activeVehicle.heading.rawValue : 0
-    property real   _distance:              _activeVehicle ? _activeVehicle.distanceToHome.rawValue : 0
-    property string _messageTitle:          ""
-    property string _messageText:           ""
+    // NaN when there is no vehicle or it reports no heading: shown as "---",
+    // never as a made-up 000.
+    property real   _heading:               _activeVehicle ? _factNumber(_activeVehicle.heading, NaN) : NaN
     property real   _toolsMargin:           ScreenTools.defaultFontPixelWidth * 0.75
     property real   _stripTopMargin:        parentToolInsets.topEdgeLeftInset + (_toolsMargin * 0.75)
 
@@ -45,7 +34,10 @@ Item {
     }
 
     function _formatHeading(value) {
-        const safeHeading = isNaN(value) ? 0 : ((Math.round(value) % 360) + 360) % 360
+        if (isNaN(value)) {
+            return "---"
+        }
+        const safeHeading = ((Math.round(value) % 360) + 360) % 360
         return ("000" + safeHeading).slice(-3)
     }
 
@@ -115,21 +107,10 @@ Item {
         return !isNaN(airspeed) && airspeed > 0.1 ? "ASPD" : "GSPD"
     }
 
-    function secondsToHHMMSS(timeS) {
-        var sec_num = parseInt(timeS, 10);
-        var hours   = Math.floor(sec_num / 3600);
-        var minutes = Math.floor((sec_num - (hours * 3600)) / 60);
-        var seconds = sec_num - (hours * 3600) - (minutes * 60);
-        if (hours   < 10) {hours   = "0"+hours;}
-        if (minutes < 10) {minutes = "0"+minutes;}
-        if (seconds < 10) {seconds = "0"+seconds;}
-        return hours+':'+minutes+':'+seconds;
-    }
-
     QGCToolInsets {
         id:                     _totalToolInsets
         leftEdgeTopInset:       parentToolInsets.leftEdgeTopInset
-        leftEdgeCenterInset:    exampleRectangle.leftEdgeCenterInset
+        leftEdgeCenterInset:    parentToolInsets.leftEdgeCenterInset
         leftEdgeBottomInset:    parentToolInsets.leftEdgeBottomInset
         rightEdgeTopInset:      parentToolInsets.rightEdgeTopInset
         rightEdgeCenterInset:   parentToolInsets.rightEdgeCenterInset
@@ -140,26 +121,6 @@ Item {
         bottomEdgeLeftInset:    parentToolInsets.bottomEdgeLeftInset
         bottomEdgeCenterInset:  parentToolInsets.bottomEdgeCenterInset
         bottomEdgeRightInset:   parent.height - attitudeIndicator.y
-    }
-
-    // This is an example of how you can use parent tool insets to position an element on the custom fly view layer
-    // - we use parent topEdgeLeftInset to position the widget below the toolstrip
-    // - we use parent bottomEdgeLeftInset to dodge the virtual joystick if enabled
-    // - we use the parent leftEdgeTopInset to size our element to the same width as the ToolStripAction
-    // - we export the width of this element as the leftEdgeCenterInset so that the map will recenter if the vehicle flys behind this element
-    Rectangle {
-        id: exampleRectangle
-        visible: false // to see this example, set this to true. To view insets, enable the insets viewer FlyView.qml
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        anchors.topMargin: parentToolInsets.topEdgeLeftInset + _toolsMargin
-        anchors.bottomMargin: parentToolInsets.bottomEdgeLeftInset + _toolsMargin
-        anchors.leftMargin: _toolsMargin
-        width: parentToolInsets.leftEdgeTopInset - _toolsMargin
-        color: 'red'
-
-        property real leftEdgeCenterInset: visible ? x + width : 0
     }
 
     Rectangle {
@@ -179,12 +140,21 @@ Item {
             anchors.fill: parent
             anchors.margins: 4
 
+            // Whole degrees: the tape repaints when the shown heading changes,
+            // not on every sub-degree update. (It used to repaint only on resize,
+            // so the ticks stayed at the first heading while the number moved.)
+            readonly property int shownHeading: isNaN(_heading) ? -1 : Math.round(_heading)
+            onShownHeadingChanged: requestPaint()
+
             onPaint: {
                 const ctx = getContext("2d")
                 ctx.reset()
                 ctx.clearRect(0, 0, width, height)
+                if (shownHeading < 0) {
+                    return  // no heading: an empty tape, with "---" in the box
+                }
                 const centerX = width / 2
-                const heading = _heading
+                const heading = shownHeading
                 const pixelsPerDegree = width / 60
                 const bottomY = height - 4
 
@@ -288,12 +258,12 @@ Item {
                     { k: "ALT", v: _activeVehicle ? _factText(_activeVehicle.altitudeRelative, "--") : "--", u: "m" },
                     { k: _speedKey(), v: _speedText(), u: "m/s" },
                     { k: "GSPD", v: _activeVehicle ? _factText(_activeVehicle.groundSpeed, "--") : "--", u: "m/s" },
-                    { k: "HDG", v: _activeVehicle ? _formatHeading(_factNumber(_activeVehicle.heading, NaN)) : "---", u: "deg" },
+                    { k: "HDG", v: _formatHeading(_heading), u: "deg" },
                     { k: "DIST HOME", v: _activeVehicle ? _factText(_activeVehicle.distanceToHome, "--") : "--", u: "m" },
                     { k: "NEXT WP", v: _distanceToNextWpText(), u: _activeVehicle && _distanceToNextWpText() !== "--" ? "m" : "" },
                     { k: "TIME", v: _activeVehicle && _activeVehicle.flightTime ? _activeVehicle.flightTime.valueString : "--:--:--", u: "" },
                     { k: "BATT", v: _vehicleBatteryPercent(), u: "" },
-                    { k: "MODE", v: _activeVehicle ? _activeVehicle.flightMode : "STBY", u: "" }
+                    { k: "MODE", v: _activeVehicle && _activeVehicle.flightMode ? _activeVehicle.flightMode : "--", u: "" }
                 ]
 
                 Rectangle {
@@ -393,11 +363,12 @@ Item {
             source:             "/custom/img/compass_needle.svg"
             fillMode:           Image.PreserveAspectFit
             sourceSize.height:  height
+            visible:            !isNaN(_heading)   // no needle when the heading is unknown
             transform: [
                 Rotation {
                     origin.x:   headingNeedle.width  / 2
                     origin.y:   headingNeedle.height / 2
-                    angle:      _heading
+                    angle:      isNaN(_heading) ? 0 : _heading
                 }]
         }
 

@@ -1,0 +1,29 @@
+# A second tower watching the same person as tower-walk.yaml's track 17, from
+# another angle: its own track id, a slightly different position and a larger
+# error. Run it beside tower-walk.yaml: the coordinator should report one
+# object seen by both towers, not two.
+#
+#   make -C ops publisher                                  # tower-01
+#   make -C ops publisher SCENARIO=two-towers.yaml         # tower-02
+#
+# tower-02 is not listed in ground-core/config/assets.yaml, so its own
+# asset.state is dropped as an unknown asset; its detections are used.
+source: tower-02
+model_version: fake-0.1.0
+status_every_s: 5
+state_every_s: 2
+
+asset:
+  pos: { lat: 6.5262, lon: 3.3795, alt_amsl_m: 44.0 }
+  health: ok
+  camera_heading_deg: 120.0
+  mains_power: true
+
+objects:
+  - track_id: 5
+    class: person
+    confidence: 0.82
+    start: { lat: 6.52512, lon: 3.38012 }     # about 3 m from tower-01's sighting
+    velocity: { east_ms: 1.2, north_ms: 0.4 }
+    error_m: 8.0
+    every_s: 0.5

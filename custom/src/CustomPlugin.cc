@@ -4,8 +4,16 @@
 #include "BriechDetectionController.h"
 #include "BriechEnergyPredictor.h"
 #include "BriechSafetyMonitor.h"
+#include "FleetAudit.h"
+#include "FleetDataAge.h"
+#include "FleetDispatch.h"
 #include "FleetLink.h"
+#include "FleetModels.h"
 #include "FleetSettings.h"
+#include "FleetVehicleReporter.h"
+#include "MAVLinkProtocol.h"
+#include "MultiVehicleManager.h"
+#include "Vehicle.h"
 #include "QmlComponentInfo.h"
 #include "QGCLoggingCategory.h"
 #include "QGCPalette.h"
@@ -14,6 +22,7 @@
 #include "BrandImageSettings.h"
 
 #include <QtCore/QApplicationStatic>
+#include <QtCore/QStandardPaths>
 #include <QtQml/QQmlApplicationEngine>
 #include <QtQml/QQmlFile>
 #include <QtQml/qqml.h>
@@ -290,13 +299,41 @@ QQmlApplicationEngine* CustomPlugin::createQmlApplicationEngine(QObject* parent)
     _fleetLink = new FleetLink(this);
     qmlRegisterSingletonInstance("Custom.Widgets", 1, 0, "FleetSettings", fleetSettings);
     qmlRegisterSingletonInstance("Custom.Widgets", 1, 0, "FleetLink", _fleetLink);
-    // The link, and its worker thread, run only while Fleet is enabled.
-    const auto applyFleetEnabled = [fleetSettings, link = _fleetLink] {
+    // The rows QML shows from the link: assets, detected objects and alerts.
+    // Fed by the link's snapshot and batches, emptied when the link is turned off.
+    _fleetModels = new FleetModels(this);
+    _fleetModels->attach(_fleetLink);
+    qmlRegisterSingletonInstance("Custom.Widgets", 1, 0, "FleetAssetModel", _fleetModels->assets());
+    qmlRegisterSingletonInstance("Custom.Widgets", 1, 0, "FleetObjectModel", _fleetModels->objects());
+    qmlRegisterSingletonInstance("Custom.Widgets", 1, 0, "FleetAlertModel", _fleetModels->alerts());
+    // Reports QGC's vehicles to the coordinator every second while the link is up.
+    new FleetVehicleReporter(_fleetLink, this);
+    // Seconds since each drone was last heard (amber after 3 s, grey after 10 s),
+    // from every MAVLink message; published to QML once a second.
+    auto *dataAge = new FleetDataAge(this);
+    connect(MAVLinkProtocol::instance(), &MAVLinkProtocol::messageReceived, dataAge,
+            [dataAge](LinkInterface *, const mavlink_message_t &message) { dataAge->heard(message.sysid); });
+    connect(MultiVehicleManager::instance(), &MultiVehicleManager::vehicleRemoved, dataAge,
+            [dataAge](Vehicle *vehicle) { dataAge->forget(vehicle->id()); });
+    qmlRegisterSingletonInstance("Custom.Widgets", 1, 0, "FleetDataAge", dataAge);
+    // Hold all, Return all and alert approvals: sent to vehicles directly, then
+    // recorded as operator.action through the link, and in the local
+    // hash-chained audit log (fleet-audit.jsonl in QGC's app data folder).
+    auto *audit = new FleetAudit(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+                                     + QStringLiteral("/fleet-audit.jsonl"), this);
+    qmlRegisterSingletonInstance("Custom.Widgets", 1, 0, "FleetAudit", audit);
+    auto *dispatch = new FleetDispatch(_fleetLink, _fleetModels->alerts(), dataAge, this);
+    dispatch->setAudit(audit);
+    qmlRegisterSingletonInstance("Custom.Widgets", 1, 0, "FleetDispatch", dispatch);
+    // The link, and its worker thread, run only while Fleet is enabled; so does
+    // the data-age tracking, so with Fleet off QGC does no extra work.
+    const auto applyFleetEnabled = [fleetSettings, link = _fleetLink, dataAge] {
         if (fleetSettings->enabled()) {
             link->start();
         } else {
             link->stop();
         }
+        dataAge->setActive(fleetSettings->enabled());
     };
     connect(fleetSettings, &FleetSettings::enabledChanged, _fleetLink, applyFleetEnabled);
     applyFleetEnabled();

@@ -12,18 +12,28 @@
 #   HOME_LAT/LON     first drone's home, default the Briech test field
 #   SPACING_DEG      longitude step between homes, default 0.0003 (about 33 m)
 #   SPEED_FACTOR     simulation speed, default 1
+#   FIRST_ID         system id of the first drone, default 1. Use it to add
+#                    drones next to ones already running (for example two
+#                    started by the app's simulation button or by hand):
+#                    FIRST_ID=3 sim/px4-sitl.sh up 8 starts ids 3..10.
 #
 # Each container runs PX4 instance 0 on its own Docker network, so there are no
 # port clashes; the vehicles are told apart only by system id (1..N). Spike S5
 # (ten drones) is this script with N=10: record CPU and what QGC does in
 # sim/README.md.
 set -euo pipefail
+# Git Bash on Windows rewrites arguments that look like POSIX paths
+# (--entrypoint /bin/sh became "C:/Program Files/Git/usr/bin/sh" and the
+# container failed to start). The paths here are inside the container, so turn
+# that off; other shells ignore the variable.
+export MSYS_NO_PATHCONV=1
 
 IMAGE="${PX4_IMAGE:-px4io/px4-sitl-sih:latest}"
 HOME_LAT="${HOME_LAT:-8.8929377}"
 HOME_LON="${HOME_LON:-7.2639897}"
 SPACING_DEG="${SPACING_DEG:-0.0003}"
 SPEED_FACTOR="${SPEED_FACTOR:-1}"
+FIRST_ID="${FIRST_ID:-1}"
 PREFIX="briech-sitl-"
 
 # Same start-up as BriechSimulationController: PX4's MAVLink and DDS go to the
@@ -39,7 +49,11 @@ up() {
   if ! [[ "$n" =~ ^[0-9]+$ ]] || (( n < 1 || n > 20 )); then
     echo "N must be 1 to 20" >&2; exit 1
   fi
-  for i in $(seq 1 "$n"); do
+  # MAVLink system ids are 1..255; 255 is QGC's own, so stop at 254.
+  if ! [[ "$FIRST_ID" =~ ^[0-9]+$ ]] || (( FIRST_ID < 1 || FIRST_ID + n - 1 > 254 )); then
+    echo "FIRST_ID must be 1 or more, and FIRST_ID + N - 1 at most 254" >&2; exit 1
+  fi
+  for i in $(seq "$FIRST_ID" $((FIRST_ID + n - 1))); do
     local name="$PREFIX$i"
     docker rm -f "$name" >/dev/null 2>&1 || true
     local lon

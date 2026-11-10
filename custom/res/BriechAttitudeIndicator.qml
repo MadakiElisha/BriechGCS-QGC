@@ -1,4 +1,4 @@
- pragma ComponentBehavior: Bound
+pragma ComponentBehavior: Bound
 
 import QtQuick
 
@@ -12,7 +12,6 @@ Item {
     property var vehicle: null
     property real size: 320
     property bool showHeading: true
-    property real pitchClampDegrees: 35
     property color frameColor: Qt.rgba(0.10, 0.14, 0.20, 0.96)
     property color bezelColor: Qt.rgba(0.80, 0.84, 0.90, 0.18)
 
@@ -76,8 +75,15 @@ Item {
     readonly property string _altText: altitudeDisplayText()
     readonly property string _vsiText: vsiDisplayText()
     readonly property string _headingText: normalizedHeadingText()
-    readonly property real _clampedPitch: Math.max(-pitchClampDegrees, Math.min(pitchClampDegrees, _pitchAngle))
-    readonly property real _pitchOffset: (_clampedPitch / pitchClampDegrees) * (size * 0.18)
+    // One pitch scale for everything drawn on the instrument. It must equal the
+    // sky/ground background's (CustomArtificialHorizon: pitch * height / 45,
+    // the same as QGC's own attitude indicator), or the ladder and the white
+    // horizon line disagree with the real horizon. They used to use
+    // 0.18 * size per 35 degrees, about 4.3 times too compressed, so in a
+    // pitched climb or dive the ladder showed near-level while the background
+    // had moved off the dial.
+    readonly property real _pixelsPerDegree: size / 45
+    readonly property real _pitchOffset: _pitchAngle * _pixelsPerDegree
 
     function batteryPercent() {
         if (!vehicle) {
@@ -141,7 +147,7 @@ Item {
                     anchors.centerIn: parent
                     rotation: -root._rollAngle
 
-                    readonly property real yOffset: (-modelData / root.pitchClampDegrees) * (attitudeMask.height * 0.18) + root._pitchOffset
+                    readonly property real yOffset: -modelData * root._pixelsPerDegree + root._pitchOffset
                     readonly property real lineWidth: Math.abs(modelData) === 10 ? attitudeMask.width * 0.22 : attitudeMask.width * 0.17
 
                     Rectangle {
@@ -176,14 +182,23 @@ Item {
                 }
             }
 
-            Rectangle {
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.verticalCenter: parent.verticalCenter
-                y: root._pitchOffset
-                width: parent.width * 0.78
-                height: 2
-                color: "#f2f7ff"
+            // Horizon line. It is drawn in a disc-sized item rotated about the
+            // disc centre, like the ladder, so roll turns it about the centre
+            // and pitch moves it with the background. (Before, a vertical-centre
+            // anchor overrode its y, so it never moved with pitch.)
+            Item {
+                width: attitudeMask.width
+                height: attitudeMask.height
+                anchors.centerIn: parent
                 rotation: -root._rollAngle
+
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    y: parent.height * 0.5 + root._pitchOffset - height / 2
+                    width: parent.width * 0.78
+                    height: 2
+                    color: "#f2f7ff"
+                }
             }
         }
 

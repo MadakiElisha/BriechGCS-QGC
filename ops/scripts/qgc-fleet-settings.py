@@ -13,12 +13,16 @@ section is touched. Quit QGC first: it rewrites the file when it exits.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-DEFAULT_INI = Path.home() / ".config" / "briechuas.com" / "BriechUAS Daily.ini"
+if sys.platform == "win32":
+    DEFAULT_INI = Path(os.environ["APPDATA"]) / "Briech UAS" / "BriechUAS Daily.ini"
+else:
+    DEFAULT_INI = Path.home() / ".config" / "briechuas.com" / "BriechUAS Daily.ini"
 
 
 def fleet_section(values: dict[str, str]) -> str:
@@ -54,7 +58,8 @@ def main() -> int:
             "url": args.url,
             "token": token,
             "operatorId": args.operator,
-            "caFile": str(args.ca.resolve()),
+            # Forward slashes: QSettings reads a backslash in an .ini file as an escape.
+            "caFile": args.ca.resolve().as_posix(),
         }
 
     new = fleet_section(values)

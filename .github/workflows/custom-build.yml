@@ -1,15 +1,17 @@
 name: Custom Build
 
+# Briech: our plugin lives in custom/ (not custom-example/) and the default
+# branch is main, so the stock triggers never fired. See briech-docs/UPSTREAM.md.
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths:
-      - 'custom-example/**'
+      - 'custom/**'
       - '.github/workflows/custom-build.yml'
   pull_request:
-    branches: [master]
+    branches: [main]
     paths:
-      - 'custom-example/**'
+      - 'custom/**'
       - '.github/workflows/custom-build.yml'
   workflow_dispatch:
 
@@ -42,9 +44,6 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 1
-
-      - name: Enable custom build
-        uses: ./.github/actions/custom-build
 
       - name: Get build config
         id: config
@@ -90,4 +89,4 @@ jobs:
 
       - name: Verify Custom AppImage
         working-directory: ${{ runner.temp }}/build
-        run: xvfb-run -a ./Custom-QGroundControl-x86_64.AppImage --simple-boot-test
+        run: xvfb-run -a ./BriechUAS-x86_64.AppImage --simple-boot-test
