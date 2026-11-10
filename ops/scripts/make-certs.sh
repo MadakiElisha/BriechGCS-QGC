@@ -33,10 +33,11 @@ done
 
 openssl req -newkey rsa:2048 -sha256 -nodes -subj "/O=Briech/CN=briech-ground" \
   -keyout server.key -out server.csr 2>/dev/null
+# A real file, not <(...): a native Windows openssl cannot open /dev/fd paths.
+printf "subjectAltName=%s\nextendedKeyUsage=serverAuth\nkeyUsage=digitalSignature,keyEncipherment\n" "$san" > server.ext
 openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days 825 -sha256 \
-  -extfile <(printf "subjectAltName=%s\nextendedKeyUsage=serverAuth\nkeyUsage=digitalSignature,keyEncipherment\n" "$san") \
-  -out server.crt 2>/dev/null
-rm -f server.csr
+  -extfile server.ext -out server.crt 2>/dev/null
+rm -f server.csr server.ext
 # The broker container reads the key as its own user, so it cannot be 0600 to us alone.
 chmod 600 ca.key
 chmod 644 ca.crt server.crt server.key

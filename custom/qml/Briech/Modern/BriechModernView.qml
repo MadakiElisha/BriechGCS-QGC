@@ -71,8 +71,6 @@ Item {
     property bool modernWatermarkEnabled: true
     property string lastRiskDataUrl: ""
     property string lastAirportRiskDataUrl: ""
-    property bool openAipTileOverlayEnabled: true
-    property int airspaceTileRevision: 0
     property string airspaceCountryCode: "NG"
     property bool loadCountryAirspace: true
 
@@ -135,6 +133,23 @@ Item {
     property bool px4SITLConnectRequested: false
     property var demoFlightRoute: []
     property var demoFlightTrail: []
+    // MAVLink link statistics, sampled once a second by linkStatsTimer. QGC
+    // announces mavlinkLossPercent and mavlinkLossCount with mavlinkStatusChanged,
+    // which fires for every MAVLink message, so a binding that read them directly
+    // re-ran (with everything else it reads) hundreds of times a second per drone.
+    property real sampledLinkLossPercent: NaN
+    property var sampledLinkLossCount: undefined
+    // The active vehicle's position as plain numbers, copied once per position
+    // report (updateLivePosition). Reading activeVehicle.coordinate in
+    // JavaScript creates a QGeoCoordinate wrapper that stays connected to the
+    // vehicle's coordinateChanged until the garbage collector frees it.
+    // Bindings that did that on every report piled up thousands of wrappers,
+    // and freeing them blocked the UI for seconds in flight. Numbers create no
+    // wrappers; livePosition() builds an unconnected coordinate when needed.
+    property real liveLatitude: NaN
+    property real liveLongitude: NaN
+    property real liveAltitude: NaN
+    readonly property bool livePositionValid: !isNaN(liveLatitude) && !isNaN(liveLongitude)
     property bool stationReadyPanelOpen: true
     property string simulationHome: "8.893321,7.264172,400.0,0.0"
     property string simulationSpeedup: "1"
@@ -161,6 +176,9 @@ Item {
         }
     }
 
+    // Two managers on purpose: one for OpenAIP airspaces, one for airports.
+    // They fetch different endpoints, so nothing is requested twice; the airport
+    // one is limited to one request per 30 s to stay inside OpenAIP's rate limit.
     BriechAirspaceManager {
         id: riskDataManager
         apiKey: root.openAipToken
@@ -363,8 +381,8 @@ Item {
         const liveIndex = missionTimelineLiveIndex()
         let remainingDistance = 0
         const firstTarget = missionCoordinateAt(liveIndex)
-        const liveVehicleCoordinate = activeVehicle && activeVehicle.coordinate && activeVehicle.coordinate.isValid
-            ? activeVehicle.coordinate
+        const liveVehicleCoordinate = activeVehicle && livePositionValid
+            ? livePosition()
             : QtPositioning.coordinate()
 
         if (liveVehicleCoordinate.isValid && firstTarget && firstTarget.isValid) {
@@ -510,7 +528,7 @@ Item {
             : QtPositioning.coordinate()
         const returnDistance = missionEndCoordinate && missionEndCoordinate.isValid
             ? distanceMetersBetween(missionEndCoordinate, homeCoordinate)
-            : (activeVehicle.coordinate && activeVehicle.coordinate.isValid ? distanceMetersBetween(activeVehicle.coordinate, homeCoordinate) : 0)
+            : (livePositionValid ? distanceMetersBetween(livePosition(), homeCoordinate) : 0)
 
         const estimate = currentPercent - (percentPerMeter * (remainingMissionDistance + returnDistance))
         if (isNaN(estimate)) {
@@ -536,7 +554,7 @@ Item {
             rootEnergyPredictor.clear()
             return
         }
-        const current = energyCoordinateMap(activeVehicle.coordinate)
+        const current = energyCoordinateMap(livePosition())
         const home = energyCoordinateMap(activeVehicle.homePosition)
         if (Object.keys(current).length === 0 || Object.keys(home).length === 0) {
             rootEnergyPredictor.clear()
@@ -727,7 +745,7 @@ Item {
         // defaultCenter is a fixed, valid coordinate, so check it first: reading
         // activeVehicle.coordinate here made every binding that calls this
         // re-run on each GPS message, which froze the UI with several drones.
-        return defaultCenter.isValid || QGroundControl.flightMapPosition.isValid || (activeVehicle && activeVehicle.coordinate.isValid)
+        return defaultCenter.isValid || QGroundControl.flightMapPosition.isValid || (!!activeVehicle && livePositionValid)
     }
 
     function headingText() {
@@ -1225,7 +1243,7 @@ Item {
     function vehicleLinkModel() {
         return [
             { label: "QUALITY", value: linkQualityText(), tone: isNaN(linkQualityValue()) ? root.dim : (linkQualityValue() < 90 ? root.warn : root.ok) },
-            { label: "LOSS", value: activeVehicle ? String(activeVehicle.mavlinkLossCount || 0) : "--", tone: root.text },
+            { label: "LOSS", value: activeVehicle && sampledLinkLossCount !== undefined ? String(sampledLinkLossCount) : "--", tone: root.text },
             { label: "MESSAGES", value: messageCountText(), tone: Number(messageCountText()) > 0 ? root.warn : root.ok },
             { label: "RC", value: activeVehicle ? String(activeVehicle.rcRSSI || "--") : "--", tone: guidedActionsEnabled() ? root.ok : root.warn }
         ]
@@ -1235,7 +1253,7 @@ Item {
         return [
             { label: "GPS", value: gpsStatusText(), tone: gpsStatusText() === "NO FIX" ? root.warn : root.ok },
             { label: "DETAIL", value: gpsDetailText(), tone: root.text },
-            { label: "COORD", value: activeVehicle && activeVehicle.coordinate.isValid ? activeVehicle.coordinate.latitude.toFixed(6) + ", " + activeVehicle.coordinate.longitude.toFixed(6) : "--", tone: root.text },
+            { label: "COORD", value: activeVehicle && livePositionValid ? liveLatitude.toFixed(6) + ", " + liveLongitude.toFixed(6) : "--", tone: root.text },
             { label: "HOME", value: activeVehicle && activeVehicle.homePosition && activeVehicle.homePosition.isValid ? "SET" : "--", tone: activeVehicle && activeVehicle.homePosition && activeVehicle.homePosition.isValid ? root.ok : root.dim }
         ]
     }
@@ -1287,8 +1305,27 @@ Item {
         if (!activeVehicle) {
             return NaN
         }
-        const lossPercent = Number(activeVehicle.mavlinkLossPercent)
+        const lossPercent = sampledLinkLossPercent
         return isNaN(lossPercent) ? NaN : Math.round(Math.max(0, Math.min(100, 100 - lossPercent)))
+    }
+
+    function livePosition() {
+        return livePositionValid ? QtPositioning.coordinate(liveLatitude, liveLongitude, liveAltitude)
+                                 : QtPositioning.coordinate()
+    }
+
+    function updateLivePosition() {
+        const c = activeVehicle ? activeVehicle.coordinate : null
+        const valid = !!c && c.isValid
+        liveLatitude = valid ? c.latitude : NaN
+        liveLongitude = valid ? c.longitude : NaN
+        liveAltitude = valid && !isNaN(c.altitude) ? c.altitude : NaN
+    }
+
+    function sampleLinkStats() {
+        // Read imperatively: no binding depends on the per-message notify signal.
+        sampledLinkLossPercent = activeVehicle ? Number(activeVehicle.mavlinkLossPercent) : NaN
+        sampledLinkLossCount = activeVehicle ? activeVehicle.mavlinkLossCount : undefined
     }
 
     function linkQualityText() {
@@ -1343,7 +1380,7 @@ Item {
 
     function missionDescriptorText() {
         if (activeVehicle) {
-            return qsTr("BRCH-%1 / %2").arg(activeVehicle.id).arg(activeVehicle.coordinate.isValid ? qsTr("Live Session") : qsTr("Link Pending"))
+            return qsTr("BRCH-%1 / %2").arg(activeVehicle.id).arg(livePositionValid ? qsTr("Live Session") : qsTr("Link Pending"))
         }
         return qsTr("No active mission")
     }
@@ -1436,7 +1473,7 @@ Item {
             {
                 title: "LINK STATUS",
                 body: activeVehicle
-                    ? qsTr("MAVLink packet delivery is %1 with %2 lost messages recorded in this connection.").arg(linkQualityText()).arg(activeVehicle.mavlinkLossCount)
+                    ? qsTr("MAVLink packet delivery is %1 with %2 lost messages recorded in this connection.").arg(linkQualityText()).arg(sampledLinkLossCount === undefined ? "--" : sampledLinkLossCount)
                     : qsTr("Connect a vehicle to inspect MAVLink packet delivery and message loss."),
                 badge: linkQualityText(),
                 tone: isNaN(linkQualityValue()) ? root.dim : (linkQualityValue() < 90 ? root.warn : root.ok)
@@ -1687,28 +1724,29 @@ Item {
         refreshAirportRiskDataForMap()
     }
 
+    // The OpenAIP key is not part of these URLs: the airspace managers send it
+    // in the x-openaip-api-key header (apiKey / apiKeyHeader above), so it never
+    // appears in a URL, a log or an error message.
     function openAipRiskDataSource() {
         if (!openAipToken || openAipToken.length === 0) {
             return ""
         }
-        const encodedToken = encodeURIComponent(openAipToken)
         if (loadCountryAirspace && airspaceCountryCode.length > 0) {
             return "https://api.core.openaip.net/api/airspaces?page=1&limit=1000&approved=true&country="
-                + encodeURIComponent(airspaceCountryCode) + "&apiKey=" + encodedToken
+                + encodeURIComponent(airspaceCountryCode)
         }
-        return "https://api.core.openaip.net/api/airspaces?page=1&limit=1000&approved=true&bbox={bbox}&apiKey=" + encodedToken
+        return "https://api.core.openaip.net/api/airspaces?page=1&limit=1000&approved=true&bbox={bbox}"
     }
 
     function openAipAirportDataSource() {
         if (!openAipToken || openAipToken.length === 0) {
             return ""
         }
-        const encodedToken = encodeURIComponent(openAipToken)
         if (loadCountryAirspace && airspaceCountryCode.length > 0) {
             return "https://api.core.openaip.net/api/airports?page=1&limit=1000&country="
-                + encodeURIComponent(airspaceCountryCode) + "&apiKey=" + encodedToken
+                + encodeURIComponent(airspaceCountryCode)
         }
-        return "https://api.core.openaip.net/api/airports?page=1&limit=1000&bbox={bbox}&apiKey=" + encodedToken
+        return "https://api.core.openaip.net/api/airports?page=1&limit=1000&bbox={bbox}"
     }
 
     function loadDefaultRealRiskData() {
@@ -1731,8 +1769,8 @@ Item {
         if (QGroundControl.flightMapPosition.isValid) {
             return QGroundControl.flightMapPosition
         }
-        if (activeVehicle && activeVehicle.coordinate.isValid) {
-            return activeVehicle.coordinate
+        if (activeVehicle && livePositionValid) {
+            return livePosition()
         }
         if (gcsMarkerIsLive) {
             return liveGcsPosition
@@ -1752,7 +1790,6 @@ Item {
             QGroundControl.flightMapPosition = coordinate
         }
         riskZoneViewportRevision++
-        airspaceTileRevision++
         if (riskDataSourceUsesMap()) {
             riskMapRefreshTimer.restart()
         }
@@ -1782,9 +1819,6 @@ Item {
         }
         if (riskDataManager.status === "ready" || airportDataManager.status === "ready") {
             return visibleRiskZones().length + " ZONES"
-        }
-        if (airspaceTileOverlayActive()) {
-            return "TILES ON"
         }
         if (riskDataManager.status === "loading" || airportDataManager.status === "loading") {
             return "LOADING"
@@ -1816,10 +1850,10 @@ Item {
         if (riskDataManager.status === "loading" || airportDataManager.status === "loading") {
             return root.warn
         }
-        if ((riskDataManager.status === "error" || airportDataManager.status === "error") && !root.airspaceTileOverlayActive()) {
+        if (riskDataManager.status === "error" || airportDataManager.status === "error") {
             return root.err
         }
-        return root.airspaceTileOverlayActive() ? root.gold : root.dim
+        return root.dim
     }
 
     function airspaceBadgeText() {
@@ -1828,9 +1862,6 @@ Item {
         }
         if (riskDataManager.status === "ready" || airportDataManager.status === "ready") {
             return visibleRiskZones().length > 0 ? "AIRSPACE LIVE" : "NO AIRSPACE"
-        }
-        if (airspaceTileOverlayActive()) {
-            return "AIRSPACE TILE"
         }
         if (riskDataManager.status === "loading" || airportDataManager.status === "loading") {
             return "AIRSPACE..."
@@ -2032,7 +2063,6 @@ Item {
             loadDefaultRealRiskData()
         }
         pushToast(qsTr("Settings"), cleanToken.length > 0 ? qsTr("OpenAIP key saved.") : qsTr("OpenAIP key cleared."), "ok", 2200)
-        airspaceTileRevision++
     }
 
     function boundsForCenter(center, radiusDegrees) {
@@ -2051,8 +2081,8 @@ Item {
 
     function mapBounds(paddingRatio) {
         if (!modernMap || !modernMap.mapReady || modernMap.width <= 0 || modernMap.height <= 0) {
-            if (activeVehicle && activeVehicle.coordinate.isValid) {
-                return boundsForCenter(activeVehicle.coordinate, 0.25)
+            if (activeVehicle && livePositionValid) {
+                return boundsForCenter(livePosition(), 0.25)
             }
             if (QGroundControl.flightMapPosition.isValid) {
                 return boundsForCenter(QGroundControl.flightMapPosition, 0.25)
@@ -2196,98 +2226,6 @@ Item {
 
     function clamp(value, minValue, maxValue) {
         return Math.max(minValue, Math.min(maxValue, value))
-    }
-
-    function airspaceTileOverlayActive() {
-        return openAipTileOverlayEnabled && openAipToken && openAipToken.length > 0
-    }
-
-    function longitudeToTileX(longitude, zoom) {
-        const tileCount = Math.pow(2, zoom)
-        return Math.floor((longitude + 180) / 360 * tileCount)
-    }
-
-    function latitudeToTileY(latitude, zoom) {
-        const safeLatitude = clamp(latitude, -85.05112878, 85.05112878)
-        const radians = safeLatitude * Math.PI / 180
-        const tileCount = Math.pow(2, zoom)
-        return Math.floor((1 - Math.log(Math.tan(radians) + 1 / Math.cos(radians)) / Math.PI) / 2 * tileCount)
-    }
-
-    function tileXToLongitude(x, zoom) {
-        return x / Math.pow(2, zoom) * 360 - 180
-    }
-
-    function tileYToLatitude(y, zoom) {
-        const value = Math.PI * (1 - 2 * y / Math.pow(2, zoom))
-        const radians = Math.atan((Math.exp(value) - Math.exp(-value)) / 2)
-        return radians * 180 / Math.PI
-    }
-
-    function openAipTileUrl(zoom, x, y) {
-        const subdomains = ["a", "b", "c"]
-        const subdomain = subdomains[Math.abs((x + y + zoom) % subdomains.length)]
-        return "https://" + subdomain + ".api.tiles.openaip.net/api/data/openaip/"
-            + zoom + "/" + x + "/" + y + ".png?apiKey=" + encodeURIComponent(openAipToken)
-    }
-
-    function openAipTileModel() {
-        const revision = airspaceTileRevision
-        if (!airspaceTileOverlayActive() || !modernMap || !modernMap.mapReady) {
-            return []
-        }
-
-        const bounds = mapBounds(0.05)
-        if (!bounds) {
-            return []
-        }
-
-        const zoom = clamp(Math.floor(modernMap.zoomLevel), 3, 12)
-        const tileCount = Math.pow(2, zoom)
-        let xMin = clamp(longitudeToTileX(bounds.west, zoom), 0, tileCount - 1)
-        let xMax = clamp(longitudeToTileX(bounds.east, zoom), 0, tileCount - 1)
-        let yMin = clamp(latitudeToTileY(bounds.north, zoom), 0, tileCount - 1)
-        let yMax = clamp(latitudeToTileY(bounds.south, zoom), 0, tileCount - 1)
-
-        if (xMax < xMin) {
-            const tempX = xMin
-            xMin = xMax
-            xMax = tempX
-        }
-        if (yMax < yMin) {
-            const tempY = yMin
-            yMin = yMax
-            yMax = tempY
-        }
-
-        const maxTilesPerAxis = 5
-        const centerX = clamp(longitudeToTileX(bounds.center.longitude, zoom), 0, tileCount - 1)
-        const centerY = clamp(latitudeToTileY(bounds.center.latitude, zoom), 0, tileCount - 1)
-        if (xMax - xMin + 1 > maxTilesPerAxis) {
-            xMin = clamp(centerX - 2, 0, tileCount - 1)
-            xMax = clamp(xMin + maxTilesPerAxis - 1, 0, tileCount - 1)
-        }
-        if (yMax - yMin + 1 > maxTilesPerAxis) {
-            yMin = clamp(centerY - 2, 0, tileCount - 1)
-            yMax = clamp(yMin + maxTilesPerAxis - 1, 0, tileCount - 1)
-        }
-
-        const tileSize = 256 * Math.pow(2, modernMap.zoomLevel - zoom)
-        const tiles = []
-        for (let x = xMin; x <= xMax; x++) {
-            for (let y = yMin; y <= yMax; y++) {
-                tiles.push({
-                    id: zoom + "/" + x + "/" + y + "/" + revision,
-                    x: x,
-                    y: y,
-                    z: zoom,
-                    size: tileSize,
-                    coordinate: QtPositioning.coordinate(tileYToLatitude(y, zoom), tileXToLongitude(x, zoom)),
-                    url: openAipTileUrl(zoom, x, y)
-                })
-            }
-        }
-        return tiles
     }
 
     function refreshRiskDataForMap(force) {
@@ -2803,10 +2741,18 @@ Item {
                                         anchors.margins: 10
                                         spacing: 6
 
-                                        Row {
+                                        // An Item, not a Row: a Row ignores anchors, so the
+                                        // status would not sit at the right edge.
+                                        Item {
                                             width: parent.width
+                                            height: Math.max(missionTitle.implicitHeight, missionStatus.implicitHeight)
 
                                             Text {
+                                                id: missionTitle
+                                                anchors.left: parent.left
+                                                anchors.right: missionStatus.left
+                                                anchors.rightMargin: 8
+                                                elide: Text.ElideRight
                                                 text: recentMissionCard.modelData.title
                                                 color: "#f8fafc"
                                                 font.pixelSize: 18
@@ -2815,6 +2761,7 @@ Item {
                                             }
 
                                             Text {
+                                                id: missionStatus
                                                 anchors.right: parent.right
                                                 text: recentMissionCard.modelData.status
                                                 color: recentMissionCard.modelData.tone
@@ -3330,6 +3277,8 @@ Item {
                 function onEnableRequested() { root.requestFleetEnable(null) }
                 function onShowOnMapRequested(vehicle) { root.showFleetVehicleOnMap(vehicle) }
                 function onOpenVehicleSetupRequested(vehicle) { root.openFleetVehicleSetup(vehicle) }
+                function onApproveAlertRequested(alertId) { root.requestAlertApproval(alertId) }
+                function onRejectAlertRequested(alertId) { root.requestAlertRejection(alertId) }
             }
         }
     }
@@ -4402,14 +4351,6 @@ Item {
             }
             seen[kind].count++
         }
-        if (controls.length === 0 && airspaceTileOverlayActive()) {
-            return [
-                { label: "NFZ", key: "nfz", tone: root.err, count: 0 },
-                { label: "RESTRICTED", key: "restricted", tone: root.warn, count: 0 },
-                { label: "ADVISORY", key: "advisory", tone: root.blue, count: 0 },
-                { label: "RADAR", key: "radar", tone: "#a855f7", count: 0 }
-            ]
-        }
         return controls
     }
 
@@ -4505,14 +4446,81 @@ Item {
         activateModernSection("vehicle")
     }
 
+    // Fleet HOLD ALL / RETURN ALL: name every vehicle it will command, then send
+    // through FleetDispatch (directly to the vehicles, coordinator or not).
+    function requestFleetCommand(command) {
+        const targets = FleetDispatch.fleetCommandTargets()
+        if (targets.length === 0) {
+            pushToast(qsTr("Fleet"), qsTr("No vehicle is flying."), "info", 2500)
+            return
+        }
+        const hold = command === "hold"
+        confirmBriechAction(hold ? qsTr("Hold all") : qsTr("Return all"),
+                            (hold ? qsTr("Stop these vehicles where they are (Hold): %1")
+                                  : qsTr("Send these vehicles home (Return to launch): %1")).arg(targets.join(", ")),
+                            function() {
+                                if (hold) {
+                                    FleetDispatch.holdAll()
+                                } else {
+                                    FleetDispatch.returnAll()
+                                }
+                            },
+                            hold ? qsTr("HOLD ALL") : qsTr("RETURN ALL"),
+                            hold ? root.gold : BriechTheme.warnColor)
+    }
+
+    // Fleet alert APPROVE: show what the proposal will do and confirm. Stale
+    // vehicle or alert data needs a second, explicit confirmation.
+    function requestAlertApproval(alertId) {
+        const proposal = FleetDispatch.proposalFor(alertId)
+        if (!proposal.command) {
+            pushToast(qsTr("Fleet"), qsTr("%1: %2.").arg(alertId).arg(proposal.problem), "crit", 3500)
+            return
+        }
+        let message = qsTr("Send %1 to %2 the alert position.").arg(proposal.vehicleName)
+                          .arg(proposal.command === "orbit" ? qsTr("orbit") : qsTr("fly to"))
+        if (proposal.eta_s !== undefined) {
+            message += " " + qsTr("ETA %1 s.").arg(Math.round(proposal.eta_s))
+        }
+        if (proposal.battery_after_pct !== undefined) {
+            message += " " + qsTr("Battery after: %1%.").arg(Math.round(proposal.battery_after_pct))
+        }
+        if (proposal.problem) {
+            message += "\n" + qsTr("It cannot be sent now: %1. Approving records the decision only.").arg(proposal.problem)
+        }
+        confirmBriechAction(qsTr("Approve %1").arg(alertId), message, function() {
+            if (!proposal.stale) {
+                FleetDispatch.approveAlert(alertId, false)
+                return
+            }
+            Qt.callLater(function() {
+                confirmBriechAction(qsTr("Data is stale"),
+                                    proposal.staleReason
+                                        ? qsTr("Data is not current: %1. Send anyway?").arg(proposal.staleReason)
+                                        : qsTr("%1's position or the alert has not been updated recently. Send anyway?").arg(proposal.vehicleName),
+                                    function() { FleetDispatch.approveAlert(alertId, true) },
+                                    qsTr("SEND ANYWAY"),
+                                    BriechTheme.errColor)
+            })
+        }, qsTr("APPROVE"), BriechTheme.okColor)
+    }
+
+    function requestAlertRejection(alertId) {
+        confirmBriechAction(qsTr("Reject %1").arg(alertId),
+                            qsTr("Reject the coordinator's proposal? Nothing is sent to any vehicle."),
+                            function() { FleetDispatch.rejectAlert(alertId) },
+                            qsTr("REJECT"))
+    }
+
+    // FleetDispatch outcomes and refusals, wherever the operator is.
+    Connections {
+        target: FleetDispatch
+        function onNotice(title, message, tone) { root.pushToast(title, message, tone, 4500) }
+    }
+
     function selectRiskZone(kind) {
         const zones = visibleRiskZones().filter(function(zone) { return zone.kind === kind })
         if (zones.length === 0) {
-            if (airspaceTileOverlayActive()) {
-                selectedRiskZone = selectedRiskZone === kind ? "" : kind
-                pushToast(qsTr("Airspace"), qsTr("%1 tile layer is visible; vector zone data is not available here yet.").arg(kind.toUpperCase()), "info", 2600)
-                return
-            }
             pushToast(qsTr("Risk Zone"), qsTr("No active %1 zone is available.").arg(kind.toUpperCase()), "warn", 2200)
             return
         }
@@ -4607,7 +4615,6 @@ Item {
         }
         updateSelectedMapKindFromActiveType()
         riskZoneViewportRevision++
-        airspaceTileRevision++
     }
 
     function coordinatesClose(a, b) {
@@ -4931,6 +4938,28 @@ Item {
         onTriggered: root.refreshTelemetrySamples()
     }
 
+
+    Timer {
+        id: linkStatsTimer
+        interval: 1000
+        repeat: true
+        running: !!root.activeVehicle
+        triggeredOnStart: true
+        onTriggered: root.sampleLinkStats()
+        onRunningChanged: {
+            root.sampleLinkStats()
+            root.updateLivePosition()
+        }
+    }
+
+    Connections {
+        target: root
+        function onActiveVehicleChanged() {
+            root.sampleLinkStats()
+            root.updateLivePosition()
+        }
+    }
+
     Timer {
         id: safetyAssessmentTimer
         interval: 1000
@@ -5095,10 +5124,11 @@ Item {
         ignoreUnknownSignals: true
 
         function onCoordinateChanged() {
-            if (!root.demoFlightActive || !root.activeVehicle || !root.activeVehicle.coordinate.isValid) {
+            root.updateLivePosition()
+            if (!root.demoFlightActive || !root.livePositionValid) {
                 return
             }
-            const nextCoordinate = root.detachedCoordinate(root.activeVehicle.coordinate)
+            const nextCoordinate = root.livePosition()
             const trail = root.demoFlightTrail.slice(0)
             if (trail.length === 0 || trail[trail.length - 1].distanceTo(nextCoordinate) >= 1.5) {
                 trail.push(nextCoordinate)
@@ -5632,7 +5662,6 @@ Item {
                         onZoomLevelChanged: {
                             QGroundControl.flightMapZoom = modernMap.zoomLevel
                             root.riskZoneViewportRevision++
-                            root.airspaceTileRevision++
                             if (root.riskDataSourceUsesMap()) {
                                 riskMapRefreshTimer.interval = 4000
                                 riskMapRefreshTimer.restart()
@@ -5641,7 +5670,6 @@ Item {
                         onCenterChanged: {
                             QGroundControl.flightMapPosition = modernMap.center
                             root.riskZoneViewportRevision++
-                            root.airspaceTileRevision++
                             if (root.riskDataSourceUsesMap()) {
                                 riskMapRefreshTimer.interval = 4000
                                 riskMapRefreshTimer.restart()
@@ -5778,7 +5806,7 @@ Item {
                         hoverEnabled: true
                         z: 2
 
-                        onPositionChanged: {
+                        onPositionChanged: function(mouse) {
                             const coordinate = modernMap.toCoordinate(Qt.point(mouse.x, mouse.y), false)
                             if (coordinate && coordinate.isValid) {
                                 root.modernMapCursorCoordinate = coordinate
@@ -7043,15 +7071,6 @@ Item {
                                     font.bold: true
                                     font.family: "monospace"
                                 }
-
-                                Text { text: "AIR TILES"; color: root.dim; font.pixelSize: 10; font.bold: true; font.family: "monospace" }
-                                Text {
-                                    text: root.airspaceTileOverlayActive() ? "OPENAIP ON" : "OFF"
-                                    color: root.airspaceTileOverlayActive() ? root.gold : root.dim
-                                    font.pixelSize: 10
-                                    font.bold: true
-                                    font.family: "monospace"
-                                }
                             }
 
                             Text {
@@ -7124,16 +7143,6 @@ Item {
                                         root.refreshAirportRiskDataForMap(true)
                                     }
                                 }
-                                ModernSettingsAction {
-                                    Layout.fillWidth: true
-                                    label: root.openAipTileOverlayEnabled ? "TILES ON" : "TILES OFF"
-                                    tone: root.gold
-                                    enabled: root.openAipToken.length > 0
-                                    onClicked: {
-                                        root.openAipTileOverlayEnabled = !root.openAipTileOverlayEnabled
-                                        root.airspaceTileRevision++
-                                    }
-                                }
                             }
 
                             RowLayout {
@@ -7184,13 +7193,13 @@ Item {
                         anchors.leftMargin: 64
                         anchors.topMargin: 84
                         spacing: 4
-                        visible: root.riskZoneControls().length > 0 || riskDataManager.status !== "idle" || root.airspaceTileOverlayActive()
+                        visible: root.riskZoneControls().length > 0 || riskDataManager.status !== "idle"
                                  || QGroundControl.multiVehicleManager.vehicles.count > 0
 
                         Rectangle {
                             width: 112
                             height: 24
-                            visible: riskDataManager.status !== "idle" || airportDataManager.status !== "idle" || root.airspaceTileOverlayActive()
+                            visible: riskDataManager.status !== "idle" || airportDataManager.status !== "idle"
                             color: "#0c1017"
                             border.color: root.airspaceStateColor()
                             border.width: 1
@@ -7249,27 +7258,32 @@ Item {
                         }
 
                         // FLEET chip: opens and closes the Fleet panel docked below it.
+                        // Turns red with OFFLINE while the coordinator has been silent
+                        // for 10 s, so the warning shows even with the panel closed.
                         Rectangle {
-                            width: 112
+                            id: fleetChip
+                            readonly property bool offline: FleetSettings.enabled && FleetLink.coordinatorSilent
+                            width: Math.max(112, fleetChipRow.implicitWidth + 28)
                             height: 28
                             visible: QGroundControl.multiVehicleManager.vehicles.count > 0
                             color: fleetLayerLoader.active ? "#1a1609" : "#0c1017"
-                            border.color: root.gold
+                            border.color: offline ? root.err : root.gold
                             border.width: fleetLayerLoader.active ? 2 : 1
 
                             Row {
+                                id: fleetChipRow
                                 anchors.centerIn: parent
                                 spacing: 6
 
                                 Text {
                                     text: "✣"
-                                    color: root.gold
+                                    color: fleetChip.offline ? root.err : root.gold
                                     font.pixelSize: 12
                                 }
 
                                 Text {
-                                    text: "FLEET"
-                                    color: root.gold
+                                    text: fleetChip.offline ? "FLEET · OFFLINE" : "FLEET"
+                                    color: fleetChip.offline ? root.err : root.gold
                                     font.pixelSize: 10
                                     font.bold: true
                                     font.family: "monospace"
@@ -7381,6 +7395,8 @@ Item {
                             ignoreUnknownSignals: true
                             function onCloseRequested() { fleetLayerLoader.open = false }
                             function onVehicleFocused(vehicle) { root.focusFleetVehicle(vehicle) }
+                            function onHoldAllRequested() { root.requestFleetCommand("hold") }
+                            function onReturnAllRequested() { root.requestFleetCommand("return") }
                         }
                     }
 
@@ -7664,9 +7680,14 @@ Item {
                                         const cx = width / 2
                                         const cy = height / 2
                                         const roll = -root.hudRollAngle() * Math.PI / 180
-                                        const pitchClamp = 35
-                                        const pitch = Math.max(-pitchClamp, Math.min(pitchClamp, root.hudPitchAngle()))
-                                        const pitchOffset = (pitch / pitchClamp) * (height * 0.18)
+                                        // Same pitch scale as the sky/ground background
+                                        // (CustomArtificialHorizon fills this item:
+                                        // pitch * height / 45, as in QGC's own indicator).
+                                        // The ladder used 0.18 * height per 35 degrees,
+                                        // about 4.3 times too compressed, so in a dive the
+                                        // ladder read near-level over an all-ground disc.
+                                        const pixelsPerDegree = height / 45
+                                        const pitchOffset = root.hudPitchAngle() * pixelsPerDegree
                                         const marks = [30, 20, 10, -10, -20, -30]
 
                                         c.save()
@@ -7682,7 +7703,7 @@ Item {
 
                                         for (let i = 0; i < marks.length; i++) {
                                             const mark = marks[i]
-                                            const y = (-mark / pitchClamp) * (height * 0.18)
+                                            const y = -mark * pixelsPerDegree
                                             const lineWidth = Math.abs(mark) === 10 ? width * 0.22 : width * 0.17
                                             c.beginPath()
                                             c.moveTo(-lineWidth / 2, y)
@@ -8119,18 +8140,6 @@ Item {
                 tone: root.gold
                 onToggled: function(newChecked) {
                     root.modernWatermarkEnabled = newChecked
-                }
-            }
-
-            ModernToggleRow {
-                Layout.fillWidth: true
-                label: "AIR TILES"
-                checked: root.openAipTileOverlayEnabled
-                enabled: root.openAipToken.length > 0
-                tone: root.blue
-                onToggled: function(newChecked) {
-                    root.openAipTileOverlayEnabled = newChecked
-                    root.airspaceTileRevision++
                 }
             }
 
@@ -8811,7 +8820,7 @@ Item {
 
     component ModernViewer3DPanel: Rectangle {
         property bool viewer3DEnabled: QGroundControl.settingsManager.viewer3DSettings.enabled.rawValue
-        readonly property bool hasLivePose: !!root.activeVehicle && root.activeVehicle.coordinate.isValid
+        readonly property bool hasLivePose: !!root.activeVehicle && root.livePositionValid
         readonly property bool missionExecuting: hasLivePose && root.activeVehicle.armed && root.activeVehicle.flying
             && root.activeVehicle.flightMode === root.activeVehicle.missionFlightMode
         readonly property string sceneState: !viewer3DEnabled ? "DISABLED"
@@ -9007,7 +9016,7 @@ Item {
     component ModernOffline3DSimulationPanel: Rectangle {
         id: tacticalSimulation
         readonly property bool hasVehicle: !!root.activeVehicle
-        readonly property bool hasLivePose: hasVehicle && root.activeVehicle.coordinate && root.activeVehicle.coordinate.isValid
+        readonly property bool hasLivePose: hasVehicle && root.livePositionValid
         readonly property bool hasMission: root.missionCoordinates && root.missionCoordinates.length > 0
         readonly property bool executing: hasLivePose && root.activeVehicle.armed && root.activeVehicle.flying
             && root.activeVehicle.flightMode === root.activeVehicle.missionFlightMode
@@ -9122,7 +9131,7 @@ Item {
                         const route = root.missionCoordinates || []
                         const all = []
                         for (let i = 0; i < route.length; i++) if (route[i] && route[i].isValid) all.push(route[i])
-                        const vehicleCoordinate = tacticalSimulation.hasLivePose ? root.activeVehicle.coordinate : null
+                        const vehicleCoordinate = tacticalSimulation.hasLivePose ? root.livePosition() : null
                         if (vehicleCoordinate) all.push(vehicleCoordinate)
                         if (all.length === 0) return
                         let minLat = all[0].latitude, maxLat = minLat, minLon = all[0].longitude, maxLon = minLon
@@ -9801,6 +9810,10 @@ Item {
                     model: metrics
 
                     delegate: Rectangle {
+                        // ComponentBehavior: Bound (top of file) gives a delegate
+                        // modelData only when it declares it.
+                        required property var modelData
+
                         Layout.fillWidth: true
                         Layout.preferredHeight: 74
                         color: "#0c1017"
@@ -9842,13 +9855,11 @@ Item {
                 border.width: 1
                 radius: 6
 
-                Loader {
-                    id: contentLoader
-                    anchors.fill: parent
-                    sourceComponent: contentComponent
-                    visible: contentComponent !== null
-                }
-
+                // No second Loader for contentComponent here: fullContentLoader
+                // above shows it, and only while the page is visible. A Loader
+                // without `active` kept every page's content (Plan, Fleet,
+                // Analyze, Vehicle) alive and hidden, re-evaluating its bindings
+                // on every telemetry update: the in-flight freeze.
                 Item {
                     anchors.fill: parent
                     visible: contentComponent === null

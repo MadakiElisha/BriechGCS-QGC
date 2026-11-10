@@ -180,3 +180,47 @@ async def test_snapshot_upload_rules(client):
 @pytest.mark.parametrize("snapshot_id", ["snap-missing00", "..%2Fsecrets", "snap-ABC123"])
 async def test_snapshot_not_found(client, snapshot_id):
     assert (await client.get(f"/api/v1/snapshots/{snapshot_id}", headers=AUTH)).status == 404
+
+
+# Zones and the audit log over HTTP
+
+from conftest import ADMIN_TOKEN  # noqa: E402
+from coordinator.audit import AuditLog  # noqa: E402
+from coordinator.zones import Zone  # noqa: E402
+
+ADMIN = {"Authorization": f"Bearer {ADMIN_TOKEN}"}
+
+
+async def test_zones_need_the_operator_token(aiohttp_client, coordinator):
+    coordinator.alerts.zones = [Zone("north-fence", "North fence", "high", ((0, 0), (0, 1), (1, 1)))]
+    client = await aiohttp_client(create_app(coordinator))
+    assert (await client.get("/api/v1/zones")).status == 401
+    resp = await client.get("/api/v1/zones", headers=AUTH)
+    body = await resp.json()
+    assert resp.status == 200 and body["zones"][0]["zone_id"] == "north-fence"
+    assert body["zones"][0]["polygon"][1] == {"lat": 0, "lon": 1}
+
+
+async def test_audit_needs_the_admin_token_and_verifies(aiohttp_client, coordinator, tmp_path):
+    coordinator.audit = AuditLog(tmp_path / "audit.sqlite")
+    coordinator.audit.append("alert.new", {"alert_id": "a-1"})
+    coordinator.audit.append("operator.action", {"action_id": "act-1"})
+    client = await aiohttp_client(create_app(coordinator))
+    assert (await client.get("/api/v1/audit")).status == 401
+    assert (await client.get("/api/v1/audit", headers=AUTH)).status == 401   # an operator is not an admin
+    entries = (await (await client.get("/api/v1/audit?after=1", headers=ADMIN)).json())["entries"]
+    assert [e["seq"] for e in entries] == [2]
+    resp = await client.get("/api/v1/audit/verify", headers=ADMIN)
+    assert resp.status == 200 and (await resp.json()) == {"ok": True, "entries": 2, "first_broken": None}
+
+    coordinator.audit._db.execute("UPDATE audit SET payload = '{}' WHERE seq = 1")
+    coordinator.audit._db.commit()
+    resp = await client.get("/api/v1/audit/verify", headers=ADMIN)
+    assert resp.status == 409 and (await resp.json())["first_broken"] == 1
+    coordinator.audit.close()
+
+
+async def test_audit_without_a_log_says_so(client):
+    from conftest import ADMIN_TOKEN as token
+    resp = await client.get("/api/v1/audit/verify", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status == 503

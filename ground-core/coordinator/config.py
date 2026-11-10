@@ -87,14 +87,21 @@ class Config:
 
     operator_tokens: frozenset[str] = frozenset()
     device_tokens: dict[str, str] = field(default_factory=dict)  # token -> device id
+    admin_tokens: frozenset[str] = frozenset()                   # GET /api/v1/audit and /audit/verify
 
     assets_file: Path = GROUND_CORE_DIR / "config" / "assets.yaml"
+    zones_file: Path = GROUND_CORE_DIR / "config" / "zones.yaml"
+    # The audit log and the saved tracks and alerts. None keeps both in memory only.
+    data_dir: Path | None = GROUND_CORE_DIR / "var"
     schema_dir: Path = REPO_DIR / "schemas"
     snapshot_dir: Path = GROUND_CORE_DIR / "var" / "snapshots"
 
     client_queue_size: int = 500
     heartbeat_s: float = 2.0
     hello_timeout_s: float = 5.0
+    asset_silent_s: float = 15.0        # a tower heard from before but silent this long goes offline
+    object_min_interval_s: float = 0.5  # at most 2 object.update per second per object
+    tick_s: float = 0.1                 # how often held object updates and expiries are checked
 
     @property
     def tls_enabled(self) -> bool:
@@ -117,11 +124,15 @@ class Config:
             tls_key=_path(env, "BRIECH_TLS_KEY", None),
             operator_tokens=_token_list(_secret(env, "BRIECH_OPERATOR_TOKENS")),
             device_tokens=_device_tokens(_secret(env, "BRIECH_DEVICE_TOKENS")),
+            admin_tokens=_token_list(_secret(env, "BRIECH_ADMIN_TOKENS")),
             assets_file=_path(env, "BRIECH_ASSETS_FILE", defaults.assets_file),
+            zones_file=_path(env, "BRIECH_ZONES_FILE", defaults.zones_file),
+            data_dir=None if env.get("BRIECH_DATA_DIR") == "memory" else _path(env, "BRIECH_DATA_DIR", defaults.data_dir),
             schema_dir=_path(env, "BRIECH_SCHEMA_DIR", defaults.schema_dir),
             snapshot_dir=_path(env, "BRIECH_SNAPSHOT_DIR", defaults.snapshot_dir),
             client_queue_size=int(env.get("BRIECH_CLIENT_QUEUE_SIZE", defaults.client_queue_size)),
             heartbeat_s=float(env.get("BRIECH_HEARTBEAT_S", defaults.heartbeat_s)),
+            asset_silent_s=float(env.get("BRIECH_ASSET_SILENT_S", defaults.asset_silent_s)),
         )
         if (cfg.tls_cert is None) != (cfg.tls_key is None):
             raise ConfigError("set both BRIECH_TLS_CERT and BRIECH_TLS_KEY, or neither")

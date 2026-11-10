@@ -1,6 +1,9 @@
 # Briech ground services for local development. Run from the repo root as
 #   make -C ops <target>
 #
+#   dev-up       broker, coordinator and fake publisher in the background
+#                (logs and pids in ground-core/var/dev); dev-down stops them
+#   sim-10       ten simulated PX4 drones (SIH, Docker) for QGC; sim-down stops them
 #   setup        Python virtualenv, dev certificates, MQTT logins and tokens
 #   broker       start Mosquitto (TLS on :8883) in Docker
 #   coordinator  run the coordinator in the foreground (wss on :8443)
@@ -21,6 +24,9 @@ MQTT_HOST ?= localhost
 IMAGE     := eclipse-mosquitto:2.0.20
 # How a container reaches the broker port published on this machine.
 DOCKER_HOST_NAME ?= host.docker.internal
+# dev-up: where the background services write their logs and pids (git-ignored).
+RUN       := $(REPO)/ground-core/var/dev
+SIM_COUNT ?= 10
 
 # Settings for the coordinator. Secrets are read from files, never put on the command line.
 COORDINATOR_ENV := \
@@ -32,7 +38,8 @@ COORDINATOR_ENV := \
 	BRIECH_OPERATOR_TOKENS_FILE=$(SECRETS)/operator.tokens \
 	BRIECH_DEVICE_TOKENS_FILE=$(SECRETS)/device.tokens
 
-.PHONY: setup venv certs secrets broker broker-down broker-logs coordinator publisher probe test check-acl
+.PHONY: setup venv certs secrets broker broker-down broker-logs coordinator publisher probe test check-acl \
+        dev-up dev-down sim-10 sim-down
 
 setup: venv certs secrets
 
@@ -58,6 +65,41 @@ broker-down:
 
 broker-logs:
 	docker logs -f briech-broker
+
+# Everything QGC needs on the ground side, in one command. Each service runs in
+# the background; its log is $(RUN)/<name>.log. Running dev-up twice does not
+# start a second copy of a service that is still running.
+dev-up: broker venv
+	@mkdir -p $(RUN)
+	@if [ -f $(RUN)/coordinator.pid ] && kill -0 $$(cat $(RUN)/coordinator.pid) 2>/dev/null; then \
+	  echo "coordinator already running (pid $$(cat $(RUN)/coordinator.pid))"; \
+	else \
+	  cd $(REPO)/ground-core && $(COORDINATOR_ENV) nohup $(PY) -m coordinator > $(RUN)/coordinator.log 2>&1 & \
+	  echo $$! > $(RUN)/coordinator.pid; echo "coordinator started, log $(RUN)/coordinator.log"; \
+	fi
+	@if [ -f $(RUN)/publisher.pid ] && kill -0 $$(cat $(RUN)/publisher.pid) 2>/dev/null; then \
+	  echo "publisher already running (pid $$(cat $(RUN)/publisher.pid))"; \
+	else \
+	  nohup $(PY) $(REPO)/sim/fake_fleet.py --scenario $(REPO)/sim/scenarios/$(SCENARIO) --host $(MQTT_HOST) \
+	    > $(RUN)/publisher.log 2>&1 & \
+	  echo $$! > $(RUN)/publisher.pid; echo "publisher started ($(SCENARIO)), log $(RUN)/publisher.log"; \
+	fi
+	@echo "QGC: wss://localhost:8443/ws/v1/operator (python3 ops/scripts/qgc-fleet-settings.py sets it up)"
+
+# Stops what dev-up started (by the pids it wrote), then the broker.
+dev-down:
+	@for name in publisher coordinator; do \
+	  if [ -f $(RUN)/$$name.pid ]; then kill $$(cat $(RUN)/$$name.pid) 2>/dev/null && echo "$$name stopped"; rm -f $(RUN)/$$name.pid; fi; \
+	done
+	docker compose -f $(REPO)/ops/docker-compose.yml down
+
+# Ten PX4 SIH drones in Docker, system ids 1..10, all on QGC's UDP 14550.
+# SIM_COUNT=3 make -C ops sim-10 starts fewer.
+sim-10:
+	$(REPO)/sim/px4-sitl.sh up $(SIM_COUNT)
+
+sim-down:
+	$(REPO)/sim/px4-sitl.sh down
 
 coordinator: venv
 	cd $(REPO)/ground-core && $(COORDINATOR_ENV) $(PY) -m coordinator

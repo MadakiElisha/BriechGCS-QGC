@@ -125,6 +125,20 @@ set(CUSTOM_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetLinkWorker.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetLink.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetLink.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetModels.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetModels.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetVehicleState.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetVehicleState.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetVehicleReporter.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetVehicleReporter.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetOperatorActions.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetOperatorActions.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetDispatch.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetDispatch.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetDataAge.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetDataAge.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetAudit.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetAudit.h
     CACHE INTERNAL "" FORCE
 )
 

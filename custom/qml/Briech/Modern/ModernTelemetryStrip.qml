@@ -44,11 +44,13 @@ Rectangle {
     }
 
     function distanceToWaypointText() {
-        if (!vehicle || !vehicle.coordinate.isValid || !view.missionTimelineAvailable() || view.missionTimelineComplete()) {
+        // view.livePosition(): plain-number position, so this binding creates no
+        // coordinate wrapper on every position report (see BriechModernView).
+        if (!vehicle || !view.livePositionValid || !view.missionTimelineAvailable() || view.missionTimelineComplete()) {
             return "--"
         }
         const target = view.missionCoordinateAt(view.missionTimelineLiveIndex())
-        return target && target.isValid ? view.formatMissionDistance(vehicle.coordinate.distanceTo(target)) : "--"
+        return target && target.isValid ? view.formatMissionDistance(view.livePosition().distanceTo(target)) : "--"
     }
 
     function headingText() {

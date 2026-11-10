@@ -1,7 +1,12 @@
 # Briech UAS Modern View Handoff
 
 Date: 2026-09-08  
-Workspace: `C:\Users\Godsmiracle\Desktop\BriechGCS-QGC`
+Workspace: the repository root (`<repo>` below).
+
+> Moved here from the repository root (handoff section 12, P1). Personal paths
+> were replaced with `<repo>`; the content is otherwise as written on 2026-09-08,
+> so file names and line numbers in it may be out of date. Current build
+> steps: see `briech-docs/` and `ops/README.md`.
 
 ## Goal
 
@@ -29,7 +34,7 @@ Do not revert these unless explicitly requested.
 Use the Visual Studio developer environment before building:
 
 ```bat
-cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && cmake --build C:/Users/Godsmiracle/Desktop/BriechGCS-QGC/build/Desktop_Qt_6_10_1_MSVC2022_64bit-Debug --target all'
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && cmake --build <repo>/build/Desktop_Qt_6_10_1_MSVC2022_64bit-Debug --target all'
 ```
 
 Last known result: build passed and linked `Debug\BriechUAS.exe`.

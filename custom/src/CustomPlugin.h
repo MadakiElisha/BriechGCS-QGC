@@ -9,6 +9,7 @@
 class CustomOptions;
 class CustomPlugin;
 class FleetLink;
+class FleetModels;
 class CustomSettings;
 class QQmlApplicationEngine;
 
@@ -65,8 +66,9 @@ public:
 
     void cleanup() final;
     QGCOptions *options() final { return _options; }
-    QString brandImageIndoor() const final { return QStringLiteral("/custom/img/dronecode-white.svg"); }
-    QString brandImageOutdoor() const final { return QStringLiteral("/custom/img/dronecode-black.svg"); }
+    // Briech mark (custom/res/Briech/Logos): white for the dark (indoor) palette, black for the light (outdoor) one.
+    QString brandImageIndoor() const final { return QStringLiteral("/Briech/res/QGCLogoWhite.svg"); }
+    QString brandImageOutdoor() const final { return QStringLiteral("/Briech/res/QGCLogoBlack.svg"); }
     bool overrideSettingsGroupVisibility(const QString &name) final;
     /// This allows you to override/hide QGC Application settings
     void adjustSettingMetaData(const QString &settingsGroup, FactMetaData &metaData, bool &visible) final;
@@ -78,6 +80,8 @@ public:
     /// The coordinator link, for the other Fleet classes (reporter, dispatch, models).
     /// Null until the QML engine is created.
     FleetLink *fleetLink() const { return _fleetLink; }
+    /// The coordinator's assets, objects and alerts. Null until the QML engine is created.
+    FleetModels *fleetModels() const { return _fleetModels; }
 
 private slots:
     void _advancedChanged(bool advanced);
@@ -89,6 +93,7 @@ private:
     QQmlApplicationEngine *_qmlEngine = nullptr;
     class CustomOverrideInterceptor *_selector = nullptr;
     FleetLink *_fleetLink = nullptr;
+    FleetModels *_fleetModels = nullptr;
     QVariantList _customSettingsList; // Not to be mixed up with QGCCorePlugin implementation
 };
 

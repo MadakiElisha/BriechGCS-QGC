@@ -198,6 +198,46 @@ async def get_snapshot(request: web.Request) -> web.StreamResponse:
     return web.FileResponse(path, headers={"Content-Type": "image/jpeg", "Cache-Control": "private, max-age=3600"})
 
 
+async def get_zones(request: web.Request) -> web.Response:
+    """The watch zones, for QGC to draw. Read-only: zones live in config/zones.yaml."""
+    _require_operator(request)
+    return web.json_response({"zones": [z.to_json() for z in request.app[COORDINATOR].alerts.zones]})
+
+
+def _require_admin(request: web.Request) -> None:
+    coord = request.app[COORDINATOR]
+    if _match_token(_bearer(request), coord.config.admin_tokens) is None:
+        coord.counters["http_unauthorized"] += 1
+        raise web.HTTPUnauthorized(headers={"WWW-Authenticate": "Bearer"})
+
+
+def _audit_log(request: web.Request):
+    audit = request.app[COORDINATOR].audit
+    if audit is None:
+        raise web.HTTPServiceUnavailable(text="audit log not enabled\n")
+    return audit
+
+
+async def get_audit(request: web.Request) -> web.Response:
+    """Audit entries after ?after=<seq> (default 0), at most ?limit= (default 200, at most 1000)."""
+    _require_admin(request)
+    audit = _audit_log(request)
+    try:
+        after = int(request.query.get("after", "0"))
+        limit = int(request.query.get("limit", "200"))
+    except ValueError:
+        raise web.HTTPBadRequest(text="after and limit must be whole numbers\n")
+    entries = await asyncio.to_thread(audit.entries, after, limit)
+    return web.json_response({"entries": entries})
+
+
+async def verify_audit(request: web.Request) -> web.Response:
+    """Re-checks the hash chain: ok, entries, and the first broken seq."""
+    _require_admin(request)
+    result = await asyncio.to_thread(_audit_log(request).verify)
+    return web.json_response(result, status=200 if result["ok"] else 409)
+
+
 async def close_operator_sockets(app: web.Application) -> None:
     """On shutdown, tell every QGC we are going (1001) so it reconnects at once
     rather than waiting for its silence timeout. aiohttp does not do this itself."""
@@ -214,5 +254,8 @@ def create_app(coordinator: Coordinator) -> web.Application:
         web.get(OPERATOR_PATH, operator_ws),
         web.post("/api/v1/snapshots", upload_snapshot),
         web.get("/api/v1/snapshots/{snapshot_id}", get_snapshot),
+        web.get("/api/v1/zones", get_zones),
+        web.get("/api/v1/audit", get_audit),
+        web.get("/api/v1/audit/verify", verify_audit),
     ])
     return app

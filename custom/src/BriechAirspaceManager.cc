@@ -5,6 +5,7 @@
 #include <QtCore/QDateTime>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonParseError>
+#include <QtCore/QRegularExpression>
 #include <QtCore/QtMath>
 #include <QtCore/QUrlQuery>
 #include <QtNetwork/QNetworkAccessManager>
@@ -13,6 +14,15 @@
 
 namespace {
 constexpr int kMaxErrorBytes = 160;
+
+/// Error text can quote the request URL (QNetworkReply::errorString does);
+/// never let a key or token reach the screen or a log that way.
+QString withoutSecrets(QString text)
+{
+    static const QRegularExpression secret(QStringLiteral("((?:api_?key|apikey|token|key)=)[^&\\s\"']+"),
+                                           QRegularExpression::CaseInsensitiveOption);
+    return text.replace(secret, QStringLiteral("\\1<hidden>"));
+}
 
 QString stringFromJson(const QJsonObject &object, std::initializer_list<const char*> keys, const QString &fallback = {})
 {
@@ -140,8 +150,11 @@ void BriechAirspaceManager::refresh()
         _reply = nullptr;
     }
 
+    // The key goes in a header when the source names one (OpenAIP does); a
+    // query parameter is only the fallback for sources without one, because
+    // URLs end up in logs, proxies and error messages.
     QUrl requestUrl = _sourceUrl;
-    if (!_apiKey.isEmpty()) {
+    if (!_apiKey.isEmpty() && _apiKeyHeader.isEmpty()) {
         QUrlQuery query(requestUrl);
         if (!query.hasQueryItem(QStringLiteral("apiKey"))) {
             query.addQueryItem(QStringLiteral("apiKey"), _apiKey);
@@ -210,6 +223,7 @@ void BriechAirspaceManager::_replyFinished()
         if (responseMessage.isEmpty()) {
             responseMessage = reply->errorString();
         }
+        responseMessage = withoutSecrets(responseMessage);
 
         if (httpStatus == 429) {
             _cooldownUntilMs = QDateTime::currentMSecsSinceEpoch() + _rateLimitCooldownMs;

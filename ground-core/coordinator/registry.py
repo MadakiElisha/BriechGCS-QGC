@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import logging
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -47,6 +48,7 @@ class Registry:
         self._assets = assets
         self._vehicles: dict[int, dict] = {}
         self.source_last_seen: dict[str, str] = {}  # every MQTT source, listed in assets.yaml or not
+        self._silent: set[str] = set()              # assets marked offline only because nothing was heard
 
     @classmethod
     def from_file(cls, path: Path) -> "Registry":
@@ -57,16 +59,41 @@ class Registry:
     def is_known_asset(self, asset_id: str) -> bool:
         return asset_id in self._assets
 
-    def touch(self, source_id: str, ts: str) -> None:
+    def touch(self, source_id: str, ts: str) -> dict | None:
         """Record that something was heard from ``source_id`` at ``ts``.
 
         Last-seen only moves forward: a last will carries the time the device
         connected, and an old retained message arrives when we resubscribe.
+        Returns the asset entry when this brings back an asset that had been
+        marked offline for silence.
         """
         self.source_last_seen[source_id] = _later(self.source_last_seen.get(source_id), ts)
         asset = self._assets.get(source_id)
-        if asset is not None:
-            asset["last_seen_ts"] = _later(asset.get("last_seen_ts"), ts)
+        if asset is None:
+            return None
+        asset["last_seen_ts"] = _later(asset.get("last_seen_ts"), ts)
+        if source_id in self._silent:
+            self._silent.discard(source_id)
+            asset["link"] = "online"
+            return copy.deepcopy(asset)
+        return None
+
+    def check_silent(self, now: datetime, silent_after_s: float) -> list[dict]:
+        """Marks assets offline that have been heard before but not for ``silent_after_s``.
+
+        Returns every asset that changed. An asset already offline (its edge
+        computer said so, or its last will fired) is left alone.
+        """
+        changed = []
+        for asset_id, asset in self._assets.items():
+            seen = asset.get("last_seen_ts")
+            if seen is None or asset.get("link") == "offline":
+                continue
+            if (now - parse_ts(seen)).total_seconds() > silent_after_s:
+                asset["link"] = "offline"
+                self._silent.add(asset_id)
+                changed.append(copy.deepcopy(asset))
+        return changed
 
     def apply_asset_state(self, msg: dict) -> dict | None:
         """Merge an asset.state from a device. Returns the full asset entry, or None if unknown."""
@@ -82,12 +109,15 @@ class Registry:
 
     def apply_edge_status(self, msg: dict) -> dict | None:
         """Update the asset's link from an edge.status. Returns the asset entry when the link changed."""
-        self.touch(msg["src"], msg["ts"])
         asset = self._assets.get(msg["src"])
+        before = asset.get("link") if asset is not None else None
+        self.touch(msg["src"], msg["ts"])   # may bring a silent asset back online
+        self._silent.discard(msg["src"])
         if asset is None:
             return None
         link = "offline" if msg["data"]["state"] == "offline" else "online"
-        if asset.get("link") == link:
+        if before == link:
+            asset["link"] = link
             return None
         asset["link"] = link
         return copy.deepcopy(asset)

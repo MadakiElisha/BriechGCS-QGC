@@ -826,6 +826,8 @@ ApplicationWindow {
             ]
 
             MouseArea {
+                // ComponentBehavior: Bound (top of file) passes modelData only to delegates that declare it.
+                required property var modelData
                 readonly property bool _corner: modelData.x >= 0 && modelData.y >= 0
                 readonly property int  _size:   resizeGrips._grip * (_corner ? 2 : 1)
 

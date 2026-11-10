@@ -20,8 +20,6 @@
         <file alias="map-point-add.svg">res/Images/map-point-add.svg</file>
         <file alias="return.svg">res/Images/return.svg</file>
         <file alias="pause.svg">res/Images/pause.svg</file>
-        <file alias="dronecode-black.svg">res/Images/dronecode-black.svg</file>
-        <file alias="dronecode-white.svg">res/Images/dronecode-white.svg</file>
         <file alias="fleetNav.svg">res/Images/fleetNav.svg</file>
     </qresource>
     <qresource prefix="/Custom/qmlimages">
@@ -46,7 +44,6 @@
     <qresource prefix="/Briech/qml">
         <file alias="Modern/BriechModernView.qml">qml/Briech/Modern/BriechModernView.qml</file>
         <file alias="Modern/BriechDialog.qml">qml/Briech/Modern/BriechDialog.qml</file>
-        <file alias="Modern/BriechRiskDataManager.qml">qml/Briech/Modern/BriechRiskDataManager.qml</file>
         <file alias="Modern/PlanViewModern.qml">qml/Briech/Modern/PlanViewModern.qml</file>
         <file alias="Modern/ModernHeaderTelemetry.qml">qml/Briech/Modern/ModernHeaderTelemetry.qml</file>
         <file alias="Modern/ModernTelemetryStrip.qml">qml/Briech/Modern/ModernTelemetryStrip.qml</file>
@@ -62,6 +59,9 @@
         <file alias="Fleet/FleetMapLayers.qml">qml/Briech/Fleet/FleetMapLayers.qml</file>
         <file alias="Fleet/FleetManagementPage.qml">qml/Briech/Fleet/FleetManagementPage.qml</file>
         <file alias="Fleet/FleetFormat.js">qml/Briech/Fleet/FleetFormat.js</file>
+        <file alias="Fleet/FleetOfflineBanner.qml">qml/Briech/Fleet/FleetOfflineBanner.qml</file>
+        <file alias="Fleet/Fleet3DView.qml">qml/Briech/Fleet/Fleet3DView.qml</file>
+        <file alias="Fleet/FlightGhostScene.qml">qml/Briech/Fleet/FlightGhostScene.qml</file>
     </qresource>
     <qresource prefix="/Briech/res">
         <file alias="QGCLogoFull.svg">res/Briech/Logos/QGCLogoFull.svg</file>
