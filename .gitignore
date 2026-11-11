@@ -175,3 +175,8 @@ ground-core/.venv/
 ground-core/var/
 # QGC ignores every Makefile (generated); ops/Makefile is ours: make -C ops ...
 !ops/Makefile
+
+# Local CMake build folders: never commit build output (handoff section 12, P0).
+/b/
+/b2/
+/b3/

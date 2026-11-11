@@ -69,8 +69,8 @@ movable into `custom/`; **fix** = a known problem.
 |---|---|---|
 | `tools/simulation/*`, `tools/README.md`, `tools/generate-app-icons.ps1` | PX4 SIH and ArduCopter SITL scripts, icon generator | keep; the handoff moves simulation into `sim/` later |
 | `MODERN_VIEW_HANDOFF.md` | Root-level handoff notes containing personal paths | fixed: moved to `briech-docs/MODERN_VIEW_HANDOFF.md`, personal paths replaced with `<repo>` (section 12, P1) |
-| `wps (1).kml` | Sample waypoints at the root | fix: move into `sim/` (section 12, P0, George) |
-| `b/`, `b2/`, `b3/` | Committed CMake build output, with a personal path in `b3/` | fix: stop tracking (section 12, P0, George) |
+| `wps (1).kml` | Sample waypoints at the root | fixed 2026-11-11: moved to `sim/sample-waypoints.kml` (section 12, P0) |
+| `b/`, `b2/`, `b3/` | Committed CMake build output (384 files), with a personal path in `b3/` | fixed 2026-11-11: no longer tracked (`git rm -r --cached`) and ignored in `.gitignore` (section 12, P0). The files are still in the project's history; whether to rewrite history is the lead's call |
 | `.gitignore` | Appended a Briech block: `ops/certs/`, `ops/secrets/`, `ground-core/.venv/`, `ground-core/var/`, and `!ops/Makefile` (the stock `Makefile` rule would hide it) | keep: dev certificates, MQTT passwords and tokens must never be committed (handoff section 6) |
 | `.github/workflows/ground-core.yml` | New workflow (not a stock file, listed so it is not mistaken for one): schema checks and coordinator tests | keep |
 
