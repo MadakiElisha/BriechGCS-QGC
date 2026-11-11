@@ -14,7 +14,10 @@ namespace {
 
 constexpr int kReportIntervalMs = 1000;    // the schema's "every 1 s"
 
-std::optional<double> finite(double value)
+// The value, or empty when it is NaN or infinite. Deliberately not called
+// "finite": glibc declares ::finite(double) and GCC found the call ambiguous
+// (it broke the Linux CI build; MSVC has no such function).
+std::optional<double> finiteOrEmpty(double value)
 {
     return std::isfinite(value) ? std::optional<double>(value) : std::nullopt;
 }
@@ -77,10 +80,10 @@ FleetVehicleSample FleetVehicleReporter::sample(Vehicle *vehicle)
     if (position.isValid()) {
         s.lat = position.latitude();
         s.lon = position.longitude();
-        s.altRelM = finite(vehicle->altitudeRelative()->rawValue().toDouble());
-        s.altAmslM = finite(vehicle->altitudeAMSL()->rawValue().toDouble());
-        s.headingDeg = finite(vehicle->heading()->rawValue().toDouble());
-        s.groundSpeedMs = finite(vehicle->groundSpeed()->rawValue().toDouble());
+        s.altRelM = finiteOrEmpty(vehicle->altitudeRelative()->rawValue().toDouble());
+        s.altAmslM = finiteOrEmpty(vehicle->altitudeAMSL()->rawValue().toDouble());
+        s.headingDeg = finiteOrEmpty(vehicle->heading()->rawValue().toDouble());
+        s.groundSpeedMs = finiteOrEmpty(vehicle->groundSpeed()->rawValue().toDouble());
     }
 
     // Lowest pack, as the Fleet pages show it. A pack reads NaN until it reports.
@@ -93,7 +96,7 @@ FleetVehicleSample FleetVehicleReporter::sample(Vehicle *vehicle)
         }
     }
 
-    s.linkLossPct = finite(vehicle->mavlinkLossPercent());
+    s.linkLossPct = finiteOrEmpty(vehicle->mavlinkLossPercent());
 
     const HealthAndArmingCheckReport *health = vehicle->healthAndArmingCheckReport();
     if (health && health->supported()) {
