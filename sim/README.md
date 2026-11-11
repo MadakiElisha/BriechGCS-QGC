@@ -106,3 +106,9 @@ BriechUAS Release build, broker, coordinator and fake tower running.
 
 QGC with the ten drones (main-thread stall meter, Release): see
 `briech-docs/spikes.md`, S2.
+
+## Sample waypoints
+
+`sample-waypoints.kml` is a set of sample waypoints exported from QGC (KML,
+UTF-16). It was at the repository root as `wps (1).kml` and moved here
+(handoff section 12, P0). Kept as sample data for simulation tests.
