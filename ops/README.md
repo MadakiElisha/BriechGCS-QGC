@@ -38,6 +38,33 @@ docker run --rm --add-host=host.docker.internal:host-gateway \
   mosquitto_pub -h host.docker.internal -p 8883 --cafile /ca.crt -u tower-01 -P "$(cat /pw/tower-01.password)" -t briech/v1/edge/tower-02/detection -m other'
 ```
 
+### Scenario replay on the real stack
+
+```sh
+make -C ops replay-check          # about 30 s; CI runs the same script on every push
+```
+
+`ops/scripts/replay-check.sh` makes certificates and secrets if missing,
+starts the broker if it is not running, and starts a coordinator with an empty
+data folder on port 8444 (so one from `dev-up` on 8443 is left alone). Then
+`sim/replay_check.py` runs the fake tower (`tower-walk.yaml`) and two operator
+clients, and checks, each with a time limit:
+
+- a snapshot first;
+- the tower online;
+- its tracks;
+- exactly one `north-fence` alert;
+- an approval coming back as `alert.update`;
+- a second operator's snapshot with the reported vehicles and the approved alert;
+- `kill -9` of the tower showing it offline;
+- no unexpected drop counters;
+- `GET /api/v1/audit/verify`;
+- every message valid against `schemas/`.
+
+On a failure it prints the coordinator, tower and broker logs. Logs stay in
+`ground-core/var/replay/`. Options after the script name go to
+`replay_check.py` (`--help`).
+
 ### Adding a device
 
 ```sh
@@ -105,6 +132,9 @@ BRIECH_DEVICE_TOKENS_FILE=$R/secrets/device.tokens \
 # publisher (terminal 2) and probe (terminal 3)
 ground-core/.venv/Scripts/python sim/fake_fleet.py --scenario sim/scenarios/tower-walk.yaml
 ground-core/.venv/Scripts/python sim/probe.py
+
+# scenario replay (after the setup lines above; finds the Windows virtualenv itself)
+bash ops/scripts/replay-check.sh
 ```
 
 Point QGC at it. Quit QGC first, because it rewrites the file on exit. The
