@@ -71,7 +71,7 @@ signals:
 | Outgoing while not Connected | `vehicle.state` is dropped (it is stale by the next second anyway). `operator.action` is queued, at most 100, oldest dropped and counted, and sent after the next hello. |
 | Reconnect | Delays 1, 2, 4, 8, 16, 30 s (cap), with ±20 % jitter, reset once a snapshot arrives. HTTP 401 means `Unauthorized`, retried at the 30 s cap. Close code 4400 (bad hello) is a bug and is logged as one. |
 | Silence | `coordinatorSilent` turns true after 10 s with no message at all. The coordinator sends a `heartbeat` every 2 s, so this means the link or the coordinator is gone, not just quiet. |
-| Settings (QSettings) | `Fleet/enabled`, `Fleet/url` (default `wss://localhost:8443/ws/v1/operator`), `Fleet/token`, `Fleet/operatorId`, `Fleet/caFile` (the dev CA, `ops/certs/ca.crt`, added to the socket's TLS config; never disable verification). |
+| Settings (QSettings) | `Fleet/enabled`, `Fleet/url` (default `wss://localhost:8443/ws/v1/operator`), `Fleet/token`, `Fleet/operatorId` (sent as `FleetProtocol::operatorId`: lower case letters, digits and hyphens, at most 59 characters so `qgc-<id>` fits a 63-character source id, and `op-local` when nothing usable is left), `Fleet/caFile` (the dev CA, `ops/certs/ca.crt`, added to the socket's TLS config; never disable verification). |
 | Hold all / Return all | Do not depend on FleetLink. FleetDispatch sends them to vehicles directly, then reports them with `sendMessage("operator.action", ...)`, which queues if offline. |
 
 ## What was decided while building, for Miracle to confirm

@@ -394,8 +394,9 @@ void FleetDispatch::_setStatus(int vehicleId, const QString &text)
 
 void FleetDispatch::_refreshOperatorId()
 {
-    // The id the coordinator saw in hello (FleetLink sanitises it the same way).
-    _actions.setOperatorId(FleetProtocol::sanitizeId(FleetLink::configFromSettings().operatorId));
+    // The id the coordinator saw in hello: setOperatorId applies the same rule
+    // (FleetProtocol::operatorId) as FleetLink and makeHello.
+    _actions.setOperatorId(FleetLink::configFromSettings().operatorId);
 }
 
 Vehicle *FleetDispatch::_vehicle(int id) const

@@ -54,7 +54,10 @@ QJsonObject vehicleJson(const FleetVehicleSample &sample)
         {QStringLiteral("flying"), sample.flying},
     };
 
-    if (usable(sample.lat) && usable(sample.lon)) {
+    // A position outside -90..90 / -180..180 is not a real fix: leave it out, as
+    // with no fix. Sending it would make the coordinator drop the whole report,
+    // every other vehicle included.
+    if (usable(sample.lat) && usable(sample.lon) && std::abs(*sample.lat) <= 90.0 && std::abs(*sample.lon) <= 180.0) {
         QJsonObject pos{{QStringLiteral("lat"), *sample.lat}, {QStringLiteral("lon"), *sample.lon}};
         if (usable(sample.altRelM)) {
             pos.insert(QStringLiteral("alt_rel_m"), *sample.altRelM);

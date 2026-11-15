@@ -160,17 +160,10 @@ void FleetLinkWorker::_open()
 
 void FleetLinkWorker::_onConnected()
 {
-    const QString operatorId = FleetProtocol::sanitizeId(_config.operatorId);
-    const QJsonObject hello = FleetProtocol::makeMessage(
-        QStringLiteral("hello"), QStringLiteral("qgc-") + operatorId,
-        QJsonObject{
-            {QStringLiteral("operator_id"), operatorId},
-            {QStringLiteral("client"), QStringLiteral("qgc")},
-            {QStringLiteral("client_version"), _config.clientVersion.left(64)},
-        });
+    const QJsonObject hello = FleetProtocol::makeHello(_config.operatorId, _config.clientVersion);
     _socket->sendTextMessage(QString::fromUtf8(QJsonDocument(hello).toJson(QJsonDocument::Compact)));
     _sinceLastMessage.start();
-    qCDebug(FleetLinkLog) << "connected, hello sent as" << operatorId;
+    qCDebug(FleetLinkLog) << "connected, hello sent as" << hello.value(QLatin1String("src")).toString();
 }
 
 void FleetLinkWorker::_onTextMessage(const QString &text)

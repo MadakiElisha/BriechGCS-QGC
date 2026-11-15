@@ -49,3 +49,32 @@ endforeach()
 
 add_executable(fleetlink_probe fleetlink_probe.cc)
 target_link_libraries(fleetlink_probe PRIVATE FleetLinkCore)
+
+# Every message QGC sends, checked with the coordinator's own schema validator
+# (check_outgoing.py). Needs a Python with ground-core's requirements, e.g.
+#   -DPython3_EXECUTABLE=ground-core/.venv/Scripts/python.exe   (Windows)
+#   -DPython3_EXECUTABLE=ground-core/.venv/bin/python           (Linux, macOS)
+# CI sets BRIECH_REQUIRE_SCHEMA_CHECK so the check can never be skipped there.
+add_executable(fleet_outgoing_samples fleet_outgoing_samples.cc)
+target_link_libraries(fleet_outgoing_samples PRIVATE FleetLinkCore)
+
+option(BRIECH_REQUIRE_SCHEMA_CHECK "Fail the configure when the outgoing-message schema check cannot run" OFF)
+find_package(Python3 COMPONENTS Interpreter)
+set(_schema_check_ok FALSE)
+if(Python3_Interpreter_FOUND)
+    execute_process(COMMAND ${Python3_EXECUTABLE} -c "import jsonschema, referencing"
+                    RESULT_VARIABLE _schema_deps OUTPUT_QUIET ERROR_QUIET)
+    if(_schema_deps EQUAL 0)
+        set(_schema_check_ok TRUE)
+    endif()
+endif()
+if(_schema_check_ok)
+    add_test(NAME outgoing_messages_match_schemas
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/check_outgoing.py
+                     --emitter $<TARGET_FILE:fleet_outgoing_samples>)
+elseif(BRIECH_REQUIRE_SCHEMA_CHECK)
+    message(FATAL_ERROR "outgoing-message schema check needs Python 3 with jsonschema and referencing "
+                        "(pip install -r ground-core/requirements.txt)")
+else()
+    message(WARNING "Python 3 with jsonschema not found: outgoing_messages_match_schemas is not registered")
+endif()

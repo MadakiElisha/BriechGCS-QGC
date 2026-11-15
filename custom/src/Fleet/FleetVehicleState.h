@@ -17,7 +17,7 @@ struct FleetVehicleSample
     bool armed = false;
     bool flying = false;
     bool commsLost = false;
-    std::optional<double> lat;          ///< position, only with a valid fix
+    std::optional<double> lat;          ///< position, only with a valid fix; left out of the report when out of range
     std::optional<double> lon;
     std::optional<double> altRelM;
     std::optional<double> altAmslM;

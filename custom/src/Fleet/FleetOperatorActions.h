@@ -39,7 +39,9 @@ public:
     static QString outcomeName(Outcome outcome);
     static std::optional<Command> commandFromName(const QString &name);
 
-    void setOperatorId(const QString &operatorId) { _operatorId = operatorId; }
+    /// Stored as FleetProtocol::operatorId makes it, the id hello sends, so a
+    /// record can never carry an id the schema rejects.
+    void setOperatorId(const QString &operatorId);
     QString operatorId() const { return _operatorId; }
     /// How long a vehicle has to answer before the outcome is no_response.
     void setOutcomeTimeoutMs(int ms) { _timeoutMs = ms; }

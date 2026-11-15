@@ -2,7 +2,10 @@
 
 One JSON Schema (draft 2020-12) per message that crosses a boundary. These
 files are the contract: the coordinator, the fake publisher, the edge
-publishers and FleetLink all follow them, and CI checks every example.
+publishers and FleetLink all follow them, and CI checks every example. CI also
+checks what each sender actually builds: the coordinator's tests, the fake
+publisher's tests, and for QGC `outgoing_messages_match_schemas` in
+`custom/test/Fleet` (hello, vehicle.state, operator.action over edge cases).
 
 **Version 1 freezes on Friday 6 November 2026.** After that, adding an
 optional field is fine. Removing or renaming a field, or changing what one
