@@ -27,6 +27,12 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/custom/res/icons/custom_qgroundcontrol.svg")
     set(QGC_APPIMAGE_ICON_SCALABLE_PATH "${CMAKE_SOURCE_DIR}/custom/res/icons/custom_qgroundcontrol.svg" CACHE FILEPATH "AppImage Icon SVG Path" FORCE)
 endif()
 
+# Linux AppImage metadata (AppStream). The stock file lists a screenshot URL
+# that now returns 404, and appimagetool fails the build on that warning.
+if(EXISTS "${CMAKE_SOURCE_DIR}/custom/deploy/linux/com.briechuas.groundcontrol.appdata.xml.in")
+    set(QGC_APPIMAGE_METADATA_PATH "${CMAKE_SOURCE_DIR}/custom/deploy/linux/com.briechuas.groundcontrol.appdata.xml.in" CACHE FILEPATH "AppImage metadata path" FORCE)
+endif()
+
 # Windows Installer Header
 if(EXISTS "${CMAKE_SOURCE_DIR}/custom/deploy/windows/installheader.bmp")
     set(QGC_WINDOWS_INSTALL_HEADER_PATH "${CMAKE_SOURCE_DIR}/custom/deploy/windows/installheader.bmp" CACHE FILEPATH "Windows Install Header Path" FORCE)
