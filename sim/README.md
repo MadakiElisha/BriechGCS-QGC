@@ -8,6 +8,7 @@ real hardware or model exists.
 |---|---|
 | `fake_fleet.py` | A fake tower and edge computer. Publishes `edge.status` (retained, with an offline last will), `asset.state` (retained) and `detection` from a scenario file. Every message is checked against `schemas/` before sending. |
 | `probe.py` | A stand-in QGC client. Connects to `/ws/v1/operator` with the operator token, sends `hello`, prints the `snapshot` and one line per message after it, and flags any message that breaks its schema. `--vehicles N` also reports N fake drones every second. |
+| `replay_check.py` | The scenario replay check on the real stack (see below). Run it with `make -C ops replay-check`; CI runs it on every push. |
 | `scenarios/*.yaml` | Scenario files: the source id, its position, and the objects it sees with start point and velocity. |
 
 Run with the ground-core virtualenv (`make -C ops setup` makes it):
@@ -32,6 +33,22 @@ make -C ops publisher SCENARIO=other.yaml
    ```sh
    kill -9 "$(pgrep -f fake_fleet.py)"
    ```
+
+## Scenario replay on the real stack (level 1, in CI)
+
+`replay_check.py` runs the handoff checks above (and more) with no person
+watching. It starts the fake tower itself, connects two operator clients, and
+fails on the first missing step: a snapshot, the tower online, tracks, exactly
+one zone alert, an approval answered with `alert.update`, the vehicles and the
+approved alert in a second operator's snapshot, the tower offline after
+`kill -9`, no unexpected drop counters, an intact audit chain, and every
+message valid against `schemas/`.
+
+`make -C ops replay-check` (or `bash ops/scripts/replay-check.sh`) brings up
+the broker and a coordinator for it. The `replay` job in
+`.github/workflows/ground-core.yml` runs the same script on every push. Tried
+on 2026-11-15 (Windows 11, Docker Desktop): all checks passed in 30 s, and the
+alert came 19.2 s after the tower started.
 
 ## Simulated PX4 drones (level 2, spike S5)
 

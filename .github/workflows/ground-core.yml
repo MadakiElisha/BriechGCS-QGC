@@ -2,9 +2,9 @@ name: ground-core
 
 on:
   push:
-    paths: [ "ground-core/**", "schemas/**", "sim/**", ".github/workflows/ground-core.yml" ]
+    paths: [ "ground-core/**", "schemas/**", "sim/**", "ops/**", ".github/workflows/ground-core.yml" ]
   pull_request:
-    paths: [ "ground-core/**", "schemas/**", "sim/**", ".github/workflows/ground-core.yml" ]
+    paths: [ "ground-core/**", "schemas/**", "sim/**", "ops/**", ".github/workflows/ground-core.yml" ]
 
 permissions:
   contents: read
@@ -25,3 +25,23 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - name: Schema checks and coordinator unit tests
         run: python -m pytest -q
+
+  # Scenario replay on the real stack (handoff: level 1, every push, broker in a
+  # container): dev certificates and secrets, Mosquitto in Docker, a coordinator,
+  # the fake tower and two operator clients. See ops/scripts/replay-check.sh.
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ground-core/requirements*.txt
+      - run: pip install -r ground-core/requirements.txt
+      - name: Scenario replay (broker, coordinator, fake tower, operators)
+        run: ops/scripts/replay-check.sh
+        env:
+          PYTHON: python
+          REPLAY_STOP_BROKER: "1"

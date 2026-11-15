@@ -10,6 +10,8 @@
 #   publisher    run the fake tower from sim/scenarios/$(SCENARIO)
 #   probe        run the stand-in QGC client
 #   test         schema checks and coordinator unit tests
+#   replay-check scenario replay on the real stack: broker, coordinator, fake tower,
+#                operator clients (ops/scripts/replay-check.sh; CI runs it on every push)
 #   check-acl    the two mosquitto_pub checks: own topic delivered, other topic refused
 #   broker-down  stop the broker; broker-logs to follow its log
 
@@ -39,7 +41,7 @@ COORDINATOR_ENV := \
 	BRIECH_DEVICE_TOKENS_FILE=$(SECRETS)/device.tokens
 
 .PHONY: setup venv certs secrets broker broker-down broker-logs coordinator publisher probe test check-acl \
-        dev-up dev-down sim-10 sim-down
+        dev-up dev-down sim-10 sim-down replay-check
 
 setup: venv certs secrets
 
@@ -112,6 +114,9 @@ probe: venv
 
 test: venv
 	cd $(REPO)/ground-core && $(PY) -m pytest -q
+
+replay-check: venv
+	PYTHON=$(PY) $(REPO)/ops/scripts/replay-check.sh
 
 # Step 1 check. The coordinator login watches; tower-01 publishes on its own
 # topic (arrives) and on tower-02's (silently refused: mosquitto_pub reports
