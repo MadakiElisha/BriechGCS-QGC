@@ -48,6 +48,25 @@ QJsonObject makeMessage(const QString &type, const QString &src, const QJsonObje
 /// and hyphens, at most 63 characters. Anything else becomes a hyphen.
 QString sanitizeId(const QString &id);
 
+/// The operator id used when none is set, or when the one set has no usable characters.
+inline constexpr auto kDefaultOperatorId = "op-local";
+
+/// Longest operator id: "qgc-" + id is the src of every message QGC sends,
+/// and a source id is at most 63 characters.
+constexpr int kMaxOperatorIdLength = 63 - 4;
+
+/// The operator id as QGC sends it (hello, operator.action), from what the user
+/// set: sanitizeId, cut to kMaxOperatorIdLength, or kDefaultOperatorId when
+/// nothing usable is left (an empty id fails the schema and the coordinator
+/// would drop every message).
+QString operatorId(const QString &configured);
+
+/// The src of every message QGC sends: "qgc-" and operatorId(configured).
+QString clientSrc(const QString &configured);
+
+/// The hello QGC sends first on every connection (schemas/hello.schema.json).
+QJsonObject makeHello(const QString &configured, const QString &clientVersion);
+
 } // namespace FleetProtocol
 
 /// Holds incoming messages between hand-overs to the main thread, keeping only

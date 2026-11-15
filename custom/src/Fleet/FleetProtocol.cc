@@ -130,6 +130,28 @@ QString sanitizeId(const QString &id)
     return out.left(63);
 }
 
+QString operatorId(const QString &configured)
+{
+    const QString id = sanitizeId(configured).left(kMaxOperatorIdLength);
+    return id.isEmpty() ? QString::fromLatin1(kDefaultOperatorId) : id;
+}
+
+QString clientSrc(const QString &configured)
+{
+    return QStringLiteral("qgc-") + operatorId(configured);
+}
+
+QJsonObject makeHello(const QString &configured, const QString &clientVersion)
+{
+    const QString id = operatorId(configured);
+    return makeMessage(QStringLiteral("hello"), clientSrc(id),
+                       QJsonObject{
+                           {QStringLiteral("operator_id"), id},
+                           {QStringLiteral("client"), QStringLiteral("qgc")},
+                           {QStringLiteral("client_version"), clientVersion.left(64)},
+                       });
+}
+
 } // namespace FleetProtocol
 
 void FleetBatcher::add(const QJsonObject &message)

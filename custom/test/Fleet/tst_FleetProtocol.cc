@@ -5,6 +5,7 @@
 #include <QtCore/QRegularExpression>
 #include <QtTest/QTest>
 
+#include "FleetOperatorActions.h"
 #include "FleetProtocol.h"
 
 namespace {
@@ -158,6 +159,34 @@ private slots:
         QCOMPARE(FleetProtocol::sanitizeId("Op 001!"), QStringLiteral("op-001-"));
         QCOMPARE(FleetProtocol::sanitizeId("--x"), QStringLiteral("x"));
         QCOMPARE(FleetProtocol::sanitizeId(QString(80, 'a')).size(), 63);
+    }
+
+    void operatorIds()
+    {
+        QCOMPARE(FleetProtocol::operatorId("Op 001!"), QStringLiteral("op-001-"));
+        // "qgc-" + id is the src: 63 characters at most.
+        QCOMPARE(FleetProtocol::operatorId(QString(80, 'a')).size(), FleetProtocol::kMaxOperatorIdLength);
+        QCOMPARE(FleetProtocol::clientSrc(QString(80, 'a')).size(), 63);
+        // Nothing usable: the default, never an empty id the schema rejects.
+        QCOMPARE(FleetProtocol::operatorId(QString()), QStringLiteral("op-local"));
+        QCOMPARE(FleetProtocol::operatorId("***"), QStringLiteral("op-local"));
+        QCOMPARE(FleetProtocol::clientSrc("***"), QStringLiteral("qgc-op-local"));
+        // Hello, the src and operator.action all use this one rule.
+        FleetOperatorActions actions([](const QString &, const QJsonObject &) {});
+        actions.setOperatorId("***");
+        QCOMPARE(actions.operatorId(), QStringLiteral("op-local"));
+        actions.setOperatorId(QString(80, 'a'));
+        QCOMPARE(actions.operatorId(), FleetProtocol::operatorId(QString(80, 'a')));
+    }
+
+    void helloCarriesTheOperatorId()
+    {
+        const QJsonObject hello = FleetProtocol::makeHello("Miracle E", QString(100, '9'));
+        QCOMPARE(hello["type"].toString(), QStringLiteral("hello"));
+        QCOMPARE(hello["src"].toString(), QStringLiteral("qgc-miracle-e"));
+        QCOMPARE(hello["data"]["operator_id"].toString(), QStringLiteral("miracle-e"));
+        QCOMPARE(hello["data"]["client"].toString(), QStringLiteral("qgc"));
+        QCOMPARE(hello["data"]["client_version"].toString().size(), 64);
     }
 };
 

@@ -47,10 +47,19 @@ build\Debug\Debug\BriechUAS.exe
 ## Fleet C++ tests (no QGC needed)
 
 ```sh
-cmake -S custom/test/Fleet -B build/fleet-tests -G Ninja -DCMAKE_PREFIX_PATH=<Qt>/6.10.1/<kit>
+cmake -S custom/test/Fleet -B build/fleet-tests -G Ninja -DCMAKE_PREFIX_PATH=<Qt>/6.10.1/<kit> \
+      -DPython3_EXECUTABLE=ground-core/.venv/bin/python     # Windows: ground-core/.venv/Scripts/python.exe
 cmake --build build/fleet-tests
 ctest --test-dir build/fleet-tests --output-on-failure
 ```
+
+With a Python that has ground-core's requirements (`make -C ops setup` makes the
+virtualenv), this also runs `outgoing_messages_match_schemas`. The
+`fleet_outgoing_samples` program builds hello, vehicle.state and operator.action
+with the app's own code over about 2,000 normal and edge-case inputs, and
+`check_outgoing.py` checks each message with the coordinator's validator. Without
+such a Python the configure step warns and the test is not registered. CI sets
+`-DBRIECH_REQUIRE_SCHEMA_CHECK=ON`, which turns that warning into an error.
 
 ## Ground side (coordinator, broker, simulators)
 

@@ -113,6 +113,25 @@ private slots:
         QCOMPARE(sortedKeys(vehicle), QStringList({"armed", "flying", "mode", "name", "vehicle_id"}));
     }
 
+    void outOfRangePositionIsLeftOut()
+    {
+        // A bad fix would make the coordinator drop the report for every vehicle.
+        for (const auto &[lat, lon] : QList<QPair<double, double>>{{90.5, 3.0}, {-91.0, 3.0}, {6.5, 180.5}, {6.5, -200.0}}) {
+            FleetVehicleSample s = exampleSample();
+            s.lat = lat;
+            s.lon = lon;
+            const QJsonObject vehicle = FleetVehicleState::vehicleJson(s);
+            QVERIFY2(!vehicle.contains("pos"), qPrintable(QStringLiteral("%1, %2").arg(lat).arg(lon)));
+            QCOMPARE(vehicle["battery_pct"].toInt(), 74);     // the rest is still reported
+        }
+        // The limits themselves are real positions.
+        FleetVehicleSample edge = exampleSample();
+        edge.lat = -90.0;
+        edge.lon = 180.0;
+        const QJsonObject edgeVehicle = FleetVehicleState::vehicleJson(edge);
+        QCOMPARE(edgeVehicle["pos"]["lat"].toDouble(), -90.0);
+    }
+
     void valuesFitTheSchema()
     {
         // The two mistakes vehicle.state.invalid.battery-and-heading.json makes.

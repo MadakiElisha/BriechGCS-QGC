@@ -1,4 +1,5 @@
 #include "FleetOperatorActions.h"
+#include "FleetProtocol.h"
 
 #include <QtCore/QDateTime>
 #include <QtCore/QTimer>
@@ -22,6 +23,11 @@ FleetOperatorActions::~FleetOperatorActions()
     for (const Waiting &waiting : std::as_const(_waiting)) {
         delete waiting.timer;
     }
+}
+
+void FleetOperatorActions::setOperatorId(const QString &operatorId)
+{
+    _operatorId = FleetProtocol::operatorId(operatorId);
 }
 
 QString FleetOperatorActions::commandName(Command command)

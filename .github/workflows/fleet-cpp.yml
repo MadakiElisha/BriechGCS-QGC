@@ -2,11 +2,13 @@ name: fleet-cpp
 
 # FleetLink and the other Fleet C++ that does not need QGC, built and tested on
 # their own (custom/test/Fleet). The full QGC build stays in its own workflow.
+# outgoing_messages_match_schemas checks every message QGC sends with the
+# coordinator's own validator (ground-core/coordinator/schemas.py).
 on:
   push:
-    paths: [ "custom/src/Fleet/**", "custom/test/Fleet/**", "schemas/**", ".github/workflows/fleet-cpp.yml" ]
+    paths: [ "custom/src/Fleet/**", "custom/test/Fleet/**", "schemas/**", "ground-core/coordinator/schemas.py", "ground-core/requirements.txt", ".github/workflows/fleet-cpp.yml" ]
   pull_request:
-    paths: [ "custom/src/Fleet/**", "custom/test/Fleet/**", "schemas/**", ".github/workflows/fleet-cpp.yml" ]
+    paths: [ "custom/src/Fleet/**", "custom/test/Fleet/**", "schemas/**", "ground-core/coordinator/schemas.py", "ground-core/requirements.txt", ".github/workflows/fleet-cpp.yml" ]
 
 permissions:
   contents: read
@@ -21,8 +23,16 @@ jobs:
           version: "6.10.1"
           modules: qtwebsockets
           cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ground-core/requirements.txt
+      - run: pip install -r ground-core/requirements.txt
       - run: sudo apt-get install -y ninja-build
-      - run: cmake -S custom/test/Fleet -B build/fleet-tests -G Ninja -DCMAKE_BUILD_TYPE=Debug
+      - run: >-
+          cmake -S custom/test/Fleet -B build/fleet-tests -G Ninja -DCMAKE_BUILD_TYPE=Debug
+          -DPython3_EXECUTABLE="$(which python)" -DBRIECH_REQUIRE_SCHEMA_CHECK=ON
       - run: cmake --build build/fleet-tests
       - run: ctest --test-dir build/fleet-tests --output-on-failure
         env:

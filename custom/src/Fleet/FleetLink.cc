@@ -17,7 +17,6 @@ constexpr auto kTokenKey = "Fleet/token";
 constexpr auto kOperatorIdKey = "Fleet/operatorId";
 constexpr auto kCaFileKey = "Fleet/caFile";
 constexpr auto kDefaultUrl = "wss://localhost:8443/ws/v1/operator";
-constexpr auto kDefaultOperatorId = "op-local";
 constexpr int kRecentMax = 50;
 
 QString timeOfDay()
@@ -46,7 +45,7 @@ FleetLinkConfig FleetLink::configFromSettings()
     FleetLinkConfig config;
     config.url = QUrl(settings.value(QString::fromLatin1(kUrlKey), QString::fromLatin1(kDefaultUrl)).toString());
     config.token = settings.value(QString::fromLatin1(kTokenKey)).toString().trimmed();
-    config.operatorId = settings.value(QString::fromLatin1(kOperatorIdKey), QString::fromLatin1(kDefaultOperatorId)).toString();
+    config.operatorId = settings.value(QString::fromLatin1(kOperatorIdKey), QString::fromLatin1(FleetProtocol::kDefaultOperatorId)).toString();
     config.caFile = settings.value(QString::fromLatin1(kCaFileKey)).toString();
     config.clientVersion = QCoreApplication::applicationVersion();
     return config;
@@ -74,7 +73,7 @@ void FleetLink::startWith(const FleetLinkConfig &config)
         _thread.start();
     }
 
-    _operatorId = FleetProtocol::sanitizeId(config.operatorId);
+    _operatorId = FleetProtocol::operatorId(config.operatorId);
     _silenceTimeoutMs = config.silenceTimeoutMs;
     _running = true;
     _sinceHeard.start();
@@ -122,7 +121,7 @@ void FleetLink::sendMessage(const QString &type, const QJsonObject &data)
         _onDropped(QStringLiteral("not_started"));
         return;
     }
-    const QJsonObject message = FleetProtocol::makeMessage(type, QStringLiteral("qgc-") + _operatorId, data);
+    const QJsonObject message = FleetProtocol::makeMessage(type, FleetProtocol::clientSrc(_operatorId), data);
     const QByteArray json = QJsonDocument(message).toJson(QJsonDocument::Compact);
     const bool keep = type == QLatin1String("operator.action");
     QMetaObject::invokeMethod(_worker, [worker = _worker, json, keep] { worker->send(json, keep); }, Qt::QueuedConnection);
