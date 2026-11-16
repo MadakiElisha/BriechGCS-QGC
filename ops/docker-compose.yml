@@ -14,7 +14,10 @@ services:
       - ./certs/ca.crt:/mosquitto/certs/ca.crt:ro
       - ./certs/server.crt:/mosquitto/certs/server.crt:ro
       - ./certs/server.key:/mosquitto/certs/server.key:ro
-      - ./secrets:/mosquitto/secrets:ro
+      # Only the hashed logins, as one file: never the plain passwords and tokens beside it.
+      # (A folder mount also fails on Linux: ops/secrets is owner-only, so the broker's
+      # own user could not reach the file and the broker would not start.)
+      - ./secrets/mosquitto.passwd:/mosquitto/secrets/mosquitto.passwd:ro
       - broker-data:/mosquitto/data
 
 volumes:
