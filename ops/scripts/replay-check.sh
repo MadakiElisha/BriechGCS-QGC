@@ -22,7 +22,9 @@ ops="$repo/ops"
 run="$repo/ground-core/var/replay"
 port="${REPLAY_HTTP_PORT:-8444}"
 py="${PYTHON:-$repo/ground-core/.venv/bin/python}"
-[[ -x "$py" ]] || py="$repo/ground-core/.venv/Scripts/python.exe"   # Windows virtualenv
+# PYTHON may be a path or a command name on PATH (CI passes "python"), so look it up
+# rather than test it as a file. Only when neither works, try the Windows virtualenv.
+command -v "$py" >/dev/null 2>&1 || py="$repo/ground-core/.venv/Scripts/python.exe"
 
 rm -rf "$run"
 mkdir -p "$run"

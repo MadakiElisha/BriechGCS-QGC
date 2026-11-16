@@ -1,0 +1,26 @@
+# Detector model. Weights are downloaded to edge-ai/var/models/ and checked
+# against sha256; they are never committed.
+#
+# Licence (spike S9 is still open: read the terms yourself before we ship):
+# - Code and released weights: YOLOX by Megvii, Apache-2.0
+#   (https://github.com/Megvii-BaseDetection/YOLOX/blob/main/LICENSE).
+# - Trained on COCO train2017. Annotations are CC BY 4.0; the images are
+#   Flickr photos under their own mixed licences (https://cocodataset.org/#termsofuse).
+#   Whether that matters for a shipped product is an S9 question, not settled here.
+#
+# A stand-in to prove the pipeline: pretrained on everyday photos, not fine-tuned
+# on aerial or tower footage, and not evaluated on our site.
+version: yolox-tiny-0.1.1rc0
+file: yolox_tiny.onnx
+url: https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_tiny.onnx
+sha256: 427cc366d34e27ff7a03e2899b5e3671425c262ea2291f88bb942bc1cc70b0f7
+licence: Apache-2.0 (weights trained on COCO; see the note above)
+input_size: 416
+
+# COCO class index -> our class. Everything else is ignored.
+classes:
+  0: person
+  2: vehicle    # car
+  3: vehicle    # motorcycle
+  5: vehicle    # bus
+  7: vehicle    # truck

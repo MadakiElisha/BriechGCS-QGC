@@ -1,0 +1,6 @@
+# Edge pipeline. The publisher alone needs only paho-mqtt; the rest is for the
+# detector, the geolocator and the config files.
+paho-mqtt==2.1.0
+PyYAML==6.0.3
+numpy>=1.26,<3
+opencv-python-headless>=4.9,<5
