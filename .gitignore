@@ -173,6 +173,9 @@ ops/certs/
 ops/secrets/
 ground-core/.venv/
 ground-core/var/
+# Edge pipeline: virtualenv, downloaded model weights and test video, disk queue
+edge-ai/.venv/
+edge-ai/var/
 # QGC ignores every Makefile (generated); ops/Makefile is ours: make -C ops ...
 !ops/Makefile
 

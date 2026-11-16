@@ -1,0 +1,4 @@
+-r requirements.txt
+# Tests check every message against schemas/ with the coordinator's own validator.
+jsonschema==4.26.0
+pytest==9.2.0

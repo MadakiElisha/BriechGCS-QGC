@@ -12,6 +12,10 @@
 #   test         schema checks and coordinator unit tests
 #   replay-check scenario replay on the real stack: broker, coordinator, fake tower,
 #                operator clients (ops/scripts/replay-check.sh; CI runs it on every push)
+#   edge-setup   virtualenv for the edge pipeline (edge-ai/.venv; needs the ffmpeg command on macOS Intel)
+#   edge-video   run the edge pipeline on the test video as tower-01 (EDGE_ARGS="--loop"); stop the fake
+#                publisher first, it is tower-01 too
+#   edge-test    edge pipeline unit tests
 #   check-acl    the two mosquitto_pub checks: own topic delivered, other topic refused
 #   broker-down  stop the broker; broker-logs to follow its log
 
@@ -41,7 +45,7 @@ COORDINATOR_ENV := \
 	BRIECH_DEVICE_TOKENS_FILE=$(SECRETS)/device.tokens
 
 .PHONY: setup venv certs secrets broker broker-down broker-logs coordinator publisher probe test check-acl \
-        dev-up dev-down sim-10 sim-down replay-check
+        dev-up dev-down sim-10 sim-down replay-check edge-setup edge-video edge-test
 
 setup: venv certs secrets
 
@@ -114,6 +118,23 @@ probe: venv
 
 test: venv
 	cd $(REPO)/ground-core && $(PY) -m pytest -q
+
+# The edge pipeline has its own virtualenv: it needs OpenCV and numpy, the coordinator does not.
+EDGE      := $(REPO)/edge-ai
+EDGE_PY   := $(EDGE)/.venv/bin/python
+
+edge-setup: $(EDGE)/.venv/.installed
+$(EDGE)/.venv/.installed: $(EDGE)/requirements.txt $(EDGE)/requirements-dev.txt
+	python3 -m venv $(EDGE)/.venv
+	$(EDGE)/.venv/bin/pip install -q -r $(EDGE)/requirements-dev.txt
+	touch $@
+
+# Real detections from the test video, to the broker and coordinator that `broker` and `coordinator` start.
+edge-video: edge-setup
+	cd $(EDGE) && $(EDGE_PY) -m pipeline.run --host $(MQTT_HOST) $(EDGE_ARGS)
+
+edge-test: edge-setup
+	cd $(EDGE) && $(EDGE_PY) -m pytest -q
 
 replay-check: venv
 	PYTHON=$(PY) $(REPO)/ops/scripts/replay-check.sh

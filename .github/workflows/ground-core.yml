@@ -2,9 +2,9 @@ name: ground-core
 
 on:
   push:
-    paths: [ "ground-core/**", "schemas/**", "sim/**", "ops/**", ".github/workflows/ground-core.yml" ]
+    paths: [ "ground-core/**", "schemas/**", "sim/**", "ops/**", "edge-ai/**", ".github/workflows/ground-core.yml" ]
   pull_request:
-    paths: [ "ground-core/**", "schemas/**", "sim/**", "ops/**", ".github/workflows/ground-core.yml" ]
+    paths: [ "ground-core/**", "schemas/**", "sim/**", "ops/**", "edge-ai/**", ".github/workflows/ground-core.yml" ]
 
 permissions:
   contents: read
@@ -24,6 +24,24 @@ jobs:
           cache-dependency-path: ground-core/requirements*.txt
       - run: pip install -r requirements-dev.txt
       - name: Schema checks and coordinator unit tests
+        run: python -m pytest -q
+
+  # Edge pipeline: publisher (messages against schemas/, disk queue, late flag), geolocation, tracker.
+  # No model and no video are downloaded here.
+  edge:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: edge-ai
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: edge-ai/requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - name: Edge pipeline unit tests
         run: python -m pytest -q
 
   # Scenario replay on the real stack (handoff: level 1, every push, broker in a
