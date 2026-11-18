@@ -500,7 +500,9 @@ Item {
             planMasterController.sendToVehicle()
             break
         case MissionController.SendToVehiclePreCheckStateNoActiveVehicle:
-            startPX4AndQueueMissionUpload()
+            // The vehicle went away after the operator confirmed: never start a
+            // simulator in its place without asking.
+            showBriechMessage(qsTr("Upload Stopped"), qsTr("The vehicle is no longer connected. Nothing was uploaded."), root.warn)
             break
         case MissionController.SendToVehiclePreCheckStateActiveMission:
             showBriechMessage(qsTr("Upload Blocked"), qsTr("Pause the active mission before uploading a new plan."), root.warn)
@@ -512,6 +514,31 @@ Item {
         }
     }
 
+    /// A plan whose first waypoint is further than this from the vehicle gets a
+    /// warning and a second confirmation before it is uploaded.
+    readonly property real farMissionWarningMeters: 5000
+
+    /// The plan's waypoints (not the home position or standalone items), as copies.
+    function planWaypointCoordinates() {
+        const coordinates = []
+        const items = _missionController.visualItems
+        for (let index = 0; items && index < items.count; index++) {
+            const item = items.get(index)
+            if (item && item.specifiesCoordinate && !item.homePosition && !item.isStandaloneCoordinate
+                    && item.coordinate && item.coordinate.isValid) {
+                coordinates.push(QtPositioning.coordinate(item.coordinate.latitude, item.coordinate.longitude))
+            }
+        }
+        return coordinates
+    }
+
+    function distanceText(meters) {
+        return meters >= 1000 ? (meters / 1000).toFixed(meters >= 10000 ? 0 : 1) + " km" : Math.round(meters) + " m"
+    }
+
+    // UPLOAD always says which vehicle receives the plan (the active one; the
+    // others keep their missions), and checks how far the plan starts from it.
+    // Called on a click, not from a binding: the vehicle's position is read once.
     function uploadMission() {
         if (waitingForPX4Upload) {
             return
@@ -520,12 +547,47 @@ Item {
             showBriechMessage(qsTr("Unable to Upload"), qsTr("Complete all mission items before uploading."), root.warn)
             return
         }
-        if ((simulationController.running || simulationController.busy)
-                && !root.hasPX4SITLVehicle()) {
-            startPX4AndQueueMissionUpload()
+        const vehicle = QGroundControl.multiVehicleManager.activeVehicle
+        if (!vehicle) {
+            confirmBriechAction(qsTr("No Vehicle Connected"),
+                qsTr("No vehicle is connected, so there is nothing to upload to. Start the built-in PX4 simulator here and upload this plan to it?"),
+                function() { root.startPX4AndQueueMissionUpload() }, qsTr("START SIMULATOR"), root.warn)
             return
         }
-        sendMissionToVehicle()
+
+        const name = "BRCH-" + vehicle.id
+        const waypoints = planWaypointCoordinates()
+        const others = QGroundControl.multiVehicleManager.vehicles.count - 1
+        let message = qsTr("Upload this plan (%1 waypoints) to %2. It replaces the mission on %2 only.").arg(waypoints.length).arg(name)
+        if (others > 0) {
+            message += " " + qsTr("The other %1 vehicle(s) keep their missions; to send it to another vehicle, make that one active first.").arg(others)
+        }
+
+        const position = vehicle.coordinate
+        let far = false
+        let distance = -1
+        if (waypoints.length > 0 && position && position.isValid) {
+            distance = QtPositioning.coordinate(position.latitude, position.longitude).distanceTo(waypoints[0])
+            far = distance > farMissionWarningMeters
+            message += "
+" + qsTr("First waypoint: %1 from %2.").arg(distanceText(distance)).arg(name)
+        } else if (waypoints.length > 0) {
+            message += "
+" + qsTr("%1 has no position yet, so the distance to the first waypoint was not checked.").arg(name)
+        }
+
+        const upload = function() {
+            confirmBriechAction(qsTr("Upload to %1").arg(name), message,
+                                function() { root.sendMissionToVehicle() }, qsTr("UPLOAD TO %1").arg(name), far ? root.err : root.gold)
+        }
+        if (far) {
+            confirmBriechAction(qsTr("Plan Starts Far Away"),
+                qsTr("The first waypoint is %1 from %2. A plan this far away is usually for another place (an imported KML, for example), and the vehicle may not have the range to reach it. Check it before uploading.")
+                    .arg(distanceText(distance)).arg(name),
+                function() { Qt.callLater(upload) }, qsTr("REVIEW UPLOAD"), root.err)
+        } else {
+            upload()
+        }
     }
 
     Connections {
@@ -1067,7 +1129,7 @@ Item {
                     color: "transparent"
                     border.color: "#3b82f6"
                     radius: 3
-                    Text { anchors.centerIn: parent; text: root.waitingForPX4Upload ? "WAITING FOR PX4..." : "UPLOAD"; color: "#3b82f6"; font.pixelSize: 10; font.bold: true; font.family: ScreenTools.normalFontFamily; elide: Text.ElideRight }
+                    Text { anchors.centerIn: parent; text: root.waitingForPX4Upload ? "WAITING FOR PX4..." : (QGroundControl.multiVehicleManager.activeVehicle ? "UPLOAD TO BRCH-" + QGroundControl.multiVehicleManager.activeVehicle.id : "UPLOAD"); color: "#3b82f6"; font.pixelSize: 10; font.bold: true; font.family: ScreenTools.normalFontFamily; elide: Text.ElideRight }
                     MouseArea { anchors.fill: parent; enabled: !root.waitingForPX4Upload; onClicked: root.uploadMission() }
                 }
 
