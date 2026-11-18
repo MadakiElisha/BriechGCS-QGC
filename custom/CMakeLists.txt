@@ -155,6 +155,29 @@ set(CUSTOM_LIBRARIES
     CACHE INTERNAL "" FORCE
 )
 
+# Builds without the 3D viewer (QGC_VIEWER3D=OFF, needed when Qt Quick 3D is
+# missing): QGC skips its QGroundControl.Viewer3D QML module, but stock
+# FlyView.qml and our Modern view import it unconditionally, so the main
+# window would fail to load. Supply a stand-in module of the same name whose
+# Viewer3D is never open (qml/Viewer3DStub/Viewer3D.qml), plus the one image
+# the Modern view takes from that module. No stock file is changed.
+if(NOT QGC_VIEWER3D)
+    qt_add_library(BriechViewer3DStubModule STATIC)
+    set(_city_icon ${CMAKE_SOURCE_DIR}/src/Viewer3D/Images/city_3d_map_icon.svg)
+    set_source_files_properties(${_city_icon} PROPERTIES QT_RESOURCE_ALIAS City3DMapIcon.svg)
+    qt_add_qml_module(BriechViewer3DStubModule
+        URI QGroundControl.Viewer3D
+        VERSION 1.0
+        RESOURCE_PREFIX /qml
+        QML_FILES qml/Viewer3DStub/Viewer3D.qml
+        RESOURCES ${_city_icon}
+        IMPORTS QtQuick
+        NO_PLUGIN
+    )
+    set(CUSTOM_LIBRARIES ${CUSTOM_LIBRARIES} BriechViewer3DStubModule CACHE INTERNAL "" FORCE)
+    message(STATUS "QGC: 3D viewer off, using the Briech Viewer3D stand-in module")
+endif()
+
 # Custom include directories
 set(CUSTOM_INCLUDE_DIRECTORIES
     ${CMAKE_CURRENT_SOURCE_DIR}/src

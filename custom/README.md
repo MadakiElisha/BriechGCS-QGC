@@ -40,7 +40,7 @@ Fleet work.
 
 | Path | What it is |
 |---|---|
-| `CMakeLists.txt` | Sources, Qt modules and the optional Quick3D check. Edited by hand. |
+| `CMakeLists.txt` | Sources, Qt modules and the optional Quick3D check; without the 3D viewer it also builds the stand-in `QGroundControl.Viewer3D` module from `qml/Viewer3DStub/`. Edited by hand. |
 | `custom.qrc` | Every QML, JS and image file the app loads. A new file must be listed here, or it is missing at run time. |
 | `cmake/CustomOverrides.cmake` | App name, package id (`com.briechuas.groundcontrol`; do not change it), icons. |
 | `src/CustomPlugin.*` | Entry point. Registers the Briech and Fleet types and singletons with QML, and wires Fleet to QGC's vehicles and MAVLink traffic. |

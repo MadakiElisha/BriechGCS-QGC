@@ -5,7 +5,7 @@ both together.
 
 | Tool | Version | Notes |
 |---|---|---|
-| Qt | 6.10.1 | Modules: see `qt_modules` in `.github/build-config.json`. Fleet needs **qtwebsockets**; the 3D view needs **qtquick3d** (it compiles out without it). |
+| Qt | 6.10.1 | Modules: see `qt_modules` in `.github/build-config.json`. Fleet needs **qtwebsockets**; the 3D view needs **qtquick3d**. Without it, configure with `-DQGC_VIEWER3D=OFF`: the Fleet attitude view then shows the 2D indicator, and `custom/` supplies a stand-in `QGroundControl.Viewer3D` module (see below). |
 | CMake | 3.25 or newer, **3.31 recommended** | CMake 4.5.0-rc1 fails on zstd 1.5.7 ("No CMAKE_ASM_COMPILER could be found"). |
 | Compiler (Windows) | MSVC 2022 (Build Tools are enough) | |
 | Ninja | any recent | |
@@ -43,6 +43,30 @@ Run the app with Qt and GStreamer on `PATH`:
 set PATH=C:\Qt\6.10.1\msvc2022_64\bin;C:\gstreamer\1.0\msvc_x86_64\bin;%PATH%
 build\Debug\Debug\BriechUAS.exe
 ```
+
+## Building without Qt Quick 3D
+
+A Qt without the `qtquick3d` module cannot build QGC's 3D viewer, so configure
+with `-DQGC_VIEWER3D=OFF`. QGC then skips its `QGroundControl.Viewer3D` QML
+module, which stock `FlyView.qml` and our Modern view still import. On its own
+that makes the main window fail to load and the app crash at start-up (seen on
+2026-11-18: `module "QGroundControl.Viewer3D" is not installed`, then
+`Type FlyView unavailable`, then a crash). `custom/CMakeLists.txt` therefore
+builds a stand-in module of the same name (`custom/qml/Viewer3DStub/`) whose
+`Viewer3D` is never open. No stock file is changed. CI builds this variant
+on every push (the `no-quick3d` job in `custom-build.yml`).
+
+To check any build's UI, not only that it starts:
+
+```sh
+custom/test/ui-smoke.sh <path to BriechUAS> "2D fallback"   # or "3D"
+```
+
+It starts the app, waits for the Modern view to report that it loaded and
+which attitude view it uses, and fails on a missing QML module, type or
+component. `--simple-boot-test` exits before any QML loads, so it cannot
+catch these. Windows needs Qt and GStreamer on `PATH`; Linux CI runs it under
+`xvfb-run`.
 
 ## Fleet C++ tests (no QGC needed)
 
