@@ -27,6 +27,7 @@ Rectangle {
     /// HOLD ALL / RETURN ALL pressed; the Modern view confirms, then FleetDispatch sends.
     signal holdAllRequested()
     signal returnAllRequested()
+    signal openAlertRequested(string alertId)
 
     /// Tallest the page may grow; set by the Modern view from the space left
     /// on the map. The vehicle list absorbs any shortfall and scrolls.
@@ -74,6 +75,7 @@ Rectangle {
         FleetAlerts {
             id: alerts
             width: parent.width
+            onOpenAlertRequested: (alertId) => root.openAlertRequested(alertId)
         }
 
         FleetSafetyControls {

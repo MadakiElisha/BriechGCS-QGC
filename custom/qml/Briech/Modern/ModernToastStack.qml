@@ -6,12 +6,16 @@ import Custom.Widgets 1.0
 
 // Stack of operator notifications (BriechModernView.pushToast). Each card: a
 // tone bar, an icon, an upper-case title, a mono detail line, the time it was
-// raised and a close button. Clicking anywhere on a card dismisses it.
+// raised and a close button. Clicking anywhere on a card dismisses it; a card
+// about a Fleet alert (alertId set) also asks to open that alert.
 Item {
     id: root
 
-    /// ListModel with roles: title, message, tone ("ok", "warn", "crit", "info"), time.
+    /// ListModel with roles: title, message, tone ("ok", "warn", "crit", "info"), time, alertId.
     property var model
+
+    /// A card about a Fleet alert was clicked.
+    signal openAlertRequested(string alertId)
 
     implicitHeight: stackColumn.implicitHeight
 
@@ -49,6 +53,7 @@ Item {
                 required property string message
                 required property string tone
                 required property string time
+                required property string alertId
 
                 readonly property color accent: root.toneColor(tone)
 
@@ -136,7 +141,13 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: root.model.remove(card.index)
+                    onClicked: {
+                        const alertId = card.alertId
+                        root.model.remove(card.index)
+                        if (alertId !== "") {
+                            root.openAlertRequested(alertId)
+                        }
+                    }
                 }
             }
         }

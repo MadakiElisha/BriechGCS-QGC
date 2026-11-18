@@ -17,6 +17,9 @@ import QGroundControl.FlyView
 import QGroundControl.Viewer3D
 import Custom.Widgets 1.0
 
+// FleetAlertDetail (the alert panel); the other Fleet files are loaded by URL.
+import "../Fleet"
+
 Item {
     id: root
     anchors.fill: parent
@@ -111,6 +114,8 @@ Item {
         { label: "ANALYZE", key: "analyze", icon: "/qmlimages/Analyze.svg" },
         { label: "VEHICLE", key: "vehicle", icon: "/qmlimages/Gears.svg" }
     ]
+    /// The alert shown in the alert panel (FleetAlertDetail), or empty.
+    property string fleetAlertDetailId: ""
     property var missionCoordinates: []
     // Mission sequence number of each entry in missionCoordinates.
     property var missionSequenceNumbers: []
@@ -1695,13 +1700,14 @@ Item {
         root.refreshEnergyPrediction()
     }
 
-    function pushToast(title, message, tone, durationMs) {
+    function pushToast(title, message, tone, durationMs, alertId) {
         toastModel.append({
             title: title,
             message: message,
             tone: tone || "info",
             time: Qt.formatTime(new Date(), "hh:mm:ss"),
-            expiresAt: Date.now() + (durationMs || 3500)
+            expiresAt: Date.now() + (durationMs || 3500),
+            alertId: alertId || ""      // a Fleet alert: clicking the toast opens it
         })
         toastSweepTimer.start()
     }
@@ -3267,6 +3273,25 @@ Item {
     }
 
     // Content of the FLEET tab; see Fleet/FleetManagementPage.qml.
+    // A new Fleet alert: a toast that opens it. Rows inserted one by one are
+    // new alerts; a snapshot (reconnect) resets the model and announces nothing.
+    Connections {
+        target: FleetAlertModel
+        enabled: FleetSettings.enabled
+        function onRowsInserted(parent, first, last) {
+            for (let row = first; row <= last; ++row) {
+                const alertId = FleetAlertModel.keyAt(row)
+                const alert = FleetAlertModel.get(alertId)
+                if (!alert.alert_id || (alert.status && alert.status !== "open" && alert.status !== "acknowledged")) {
+                    continue
+                }
+                const what = String(alert["class"] || "object").toUpperCase()
+                const where = alert.zone_id ? qsTr(" in %1").arg(alert.zone_id) : ""
+                root.pushToast(qsTr("New alert"), qsTr("%1%2. Click to open.").arg(what).arg(where), "crit", 10000, alertId)
+            }
+        }
+    }
+
     Component {
         id: fleetPageComponent
 
@@ -3282,6 +3307,7 @@ Item {
                 function onOpenVehicleSetupRequested(vehicle) { root.openFleetVehicleSetup(vehicle) }
                 function onApproveAlertRequested(alertId) { root.requestAlertApproval(alertId) }
                 function onRejectAlertRequested(alertId) { root.requestAlertRejection(alertId) }
+                function onOpenAlertRequested(alertId) { root.openFleetAlert(alertId) }
             }
         }
     }
@@ -4427,6 +4453,19 @@ Item {
 
     // FLEET tab "Show on map": hand the vehicle's position to the shared map
     // state, then switch to FLY, which centres on it (syncFlyMapFromSharedState).
+    function openFleetAlert(alertId) {
+        if (alertId) {
+            fleetAlertDetailId = alertId
+        }
+    }
+
+    // The alert panel's SHOW ON MAP: centre the FLY map on the alert position.
+    function showFleetAlertOnMap(lat, lon) {
+        QGroundControl.flightMapPosition = QtPositioning.coordinate(lat, lon)
+        QGroundControl.flightMapZoom = Math.max(QGroundControl.flightMapZoom, 17)
+        activateModernSection("fly")
+    }
+
     function showFleetVehicleOnMap(vehicle) {
         if (!vehicle || !vehicle.coordinate || !vehicle.coordinate.isValid) {
             return
@@ -4490,6 +4529,10 @@ Item {
         }
         if (proposal.problem) {
             message += "\n" + qsTr("It cannot be sent now: %1. Approving records the decision only.").arg(proposal.problem)
+        }
+        // Say plainly whether the camera picture was seen; the audit records the same.
+        if (proposal.photoShown === false) {
+            message += "\n" + qsTr("Photo unavailable: you are deciding without the camera picture.")
         }
         confirmBriechAction(qsTr("Approve %1").arg(alertId), message, function() {
             if (!proposal.stale) {
@@ -5441,6 +5484,8 @@ Item {
                             label: navLabel
                             iconSource: navIcon
                             active: root.activeModernSection === navKey
+                            // Open Fleet alerts waiting for a decision.
+                            badge: navKey === "fleet" && FleetSettings.enabled ? FleetAlertModel.pendingCount : 0
                             onClicked: root.activateModernSection(navKey)
                         }
                     }
@@ -5485,6 +5530,19 @@ Item {
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
+
+            // The alert panel: one alert, its picture, the proposal, APPROVE / REJECT.
+            FleetAlertDetail {
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                z: QGroundControl.zOrderWidgets + 40
+                alertId: FleetSettings.enabled ? root.fleetAlertDetailId : ""
+                onCloseRequested: root.fleetAlertDetailId = ""
+                onApproveRequested: (alertId) => root.requestAlertApproval(alertId)
+                onRejectRequested: (alertId) => root.requestAlertRejection(alertId)
+                onShowOnMapRequested: (lat, lon) => root.showFleetAlertOnMap(lat, lon)
+            }
 
             RowLayout {
                 anchors.fill: parent
@@ -6258,6 +6316,7 @@ Item {
                         width: 340
                         z: QGroundControl.zOrderWidgets + 14
                         model: toastModel
+                        onOpenAlertRequested: (alertId) => root.openFleetAlert(alertId)
                     }
 
                     Rectangle {
@@ -7402,6 +7461,7 @@ Item {
                             function onVehicleFocused(vehicle) { root.focusFleetVehicle(vehicle) }
                             function onHoldAllRequested() { root.requestFleetCommand("hold") }
                             function onReturnAllRequested() { root.requestFleetCommand("return") }
+                            function onOpenAlertRequested(alertId) { root.openFleetAlert(alertId) }
                         }
                     }
 
@@ -9914,10 +9974,13 @@ Item {
     }
 
     component ModernNavButton: Rectangle {
+        id: navButton
         signal clicked()
         property string label: ""
         property string iconSource: ""
         property bool active: false
+        /// A count shown as a red badge after the label (e.g. open Fleet alerts); 0 hides it.
+        property int badge: 0
         property string iconFallback: {
             switch (label) {
             case "FLY": return "F"
@@ -9976,6 +10039,25 @@ Item {
                 font.family: "Barlow Condensed"
                 font.bold: true
                 font.letterSpacing: 1
+            }
+
+            // In the row, so it never covers the label.
+            Rectangle {
+                visible: navButton.badge > 0
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.max(16, badgeText.implicitWidth + 8)
+                height: 16
+                radius: 8
+                color: BriechTheme.errColor
+
+                Text {
+                    id: badgeText
+                    anchors.centerIn: parent
+                    text: navButton.badge > 99 ? "99+" : navButton.badge
+                    color: "white"
+                    font.pixelSize: 10
+                    font.bold: true
+                }
             }
         }
 

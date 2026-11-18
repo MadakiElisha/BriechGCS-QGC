@@ -67,8 +67,15 @@ FleetDispatch::FleetDispatch(FleetLink *link, FleetAlertModel *alerts, FleetData
     : QObject(parent)
     , _actions([this](const QString &type, const QJsonObject &data) {
           // Local record first: it must exist even when the coordinator is down.
+          // A decision's local entry also says which alert picture was on screen.
           if (_audit) {
-              _audit->append(type, data);
+              QJsonObject local = data;
+              if (data.value(QLatin1String("phase")).toString() == QLatin1String("decision")) {
+                  for (auto it = _decisionAuditExtra.constBegin(); it != _decisionAuditExtra.constEnd(); ++it) {
+                      local.insert(it.key(), it.value());
+                  }
+              }
+              _audit->append(type, local);
           }
           if (_link) {
               _link->sendMessage(type, data);
@@ -167,6 +174,11 @@ QVariantMap FleetDispatch::proposalFor(const QString &alertId) const
     info.insert(QStringLiteral("vehicleId"), vehicleId);
     info.insert(QStringLiteral("vehicleName"), FleetVehicleState::displayName(vehicleId));
     info.insert(QStringLiteral("command"), FleetOperatorActions::commandName(*command));
+    // What the operator saw of the alert's picture: the same facts the audit entry records.
+    const QJsonObject photo = _snapshotEvidence(alertId);
+    if (!photo.isEmpty()) {
+        info.insert(QStringLiteral("photoShown"), photo.value(QLatin1String("snapshot_displayed")).toBool());
+    }
     for (const char *field : {"eta_s", "battery_after_pct", "radius_m", "alt_rel_m"}) {
         if (proposal.contains(QLatin1String(field))) {
             info.insert(QString::fromLatin1(field), proposal.value(QLatin1String(field)).toDouble());
@@ -216,8 +228,10 @@ void FleetDispatch::approveAlert(const QString &alertId, bool extraConfirmation)
     const QString problem = info.value(QStringLiteral("problem")).toString();
     const QString actionId = _actions.newActionId(alertId);
 
+    _decisionAuditExtra = _snapshotEvidence(alertId);
     _actions.decision(actionId, alertId, true, vehicleId, command, extraConfirmation,
                       problem.isEmpty() ? QString() : problem + QStringLiteral("; no command sent"));
+    _decisionAuditExtra = {};
     if (!problem.isEmpty()) {
         emit notice(QStringLiteral("Fleet"),
                     QStringLiteral("Approved, but %1: %2. No command sent.").arg(FleetVehicleState::displayName(vehicleId), problem),
@@ -233,8 +247,18 @@ void FleetDispatch::rejectAlert(const QString &alertId)
     _refreshOperatorId();
     const QVariantMap info = proposalFor(alertId);
     const std::optional<Command> command = FleetOperatorActions::commandFromName(info.value(QStringLiteral("command")).toString());
+    _decisionAuditExtra = _snapshotEvidence(alertId);
     _actions.decision(_actions.newActionId(alertId), alertId, false, info.value(QStringLiteral("vehicleId")).toInt(), command, false);
+    _decisionAuditExtra = {};
     emit notice(QStringLiteral("Fleet"), QStringLiteral("%1 rejected. Nothing was sent to any vehicle.").arg(alertId), QStringLiteral("info"));
+}
+
+QJsonObject FleetDispatch::_snapshotEvidence(const QString &alertId) const
+{
+    if (!_snapshots || !_alerts) {
+        return {};
+    }
+    return _snapshots->evidence(_alerts->row(alertId).value(QLatin1String("snapshot_id")).toString());
 }
 
 QString FleetDispatch::_problem(Vehicle *vehicle, Command command, const QJsonObject &alert) const

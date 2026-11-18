@@ -324,6 +324,36 @@ private slots:
         QCOMPARE(value(model, "a-1", "stale").toBool(), false);
     }
 
+    void getAndKeyAtForQml()
+    {
+        qint64 now = kT0;
+        FleetAlertModel model;
+        model.setClock([&now] { return now; });
+        model.setLinkUp(true);
+        model.upsert(alert("a-1", "open"));
+        model.upsert(alert("a-2", "approved"));
+        now = kT0 + 4000;
+
+        QCOMPARE(model.keyAt(0), QStringLiteral("a-1"));
+        QCOMPARE(model.keyAt(1), QStringLiteral("a-2"));
+        QVERIFY(model.keyAt(2).isEmpty());
+        QVERIFY(model.keyAt(-1).isEmpty());
+
+        const QVariantMap row = model.get("a-2");
+        QCOMPARE(row.value("alert_id").toString(), QStringLiteral("a-2"));
+        QCOMPARE(row.value("status").toString(), QStringLiteral("approved"));
+        QCOMPARE(row.value("snapshot_id").toString(), QStringLiteral("snap-8f3a2c"));   // the example's picture
+        QCOMPARE(row.value("ageSeconds").toInt(), 4);
+        QCOMPARE(row.value("stale").toBool(), false);
+        QVERIFY(model.get("a-404").isEmpty());
+
+        // The badge counts only alerts waiting for a decision.
+        QCOMPARE(model.activeCount(), 2);       // open + approved
+        QCOMPARE(model.pendingCount(), 1);      // open only
+        model.upsert(QJsonObject{{"alert_id", "a-1"}, {"status", "expired"}}, true);
+        QCOMPARE(model.pendingCount(), 0);
+    }
+
     void clearRemovesRowsWithoutReset()
     {
         FleetModels models;

@@ -139,6 +139,9 @@ set(CUSTOM_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetDataAge.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetAudit.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetAudit.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetSnapshots.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetSnapshots.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Fleet/FleetSnapshotImageProvider.h
     CACHE INTERNAL "" FORCE
 )
 
