@@ -21,8 +21,10 @@ camera:
   #   itself: how tall people's boxes are against where their feet are,
   #   taking a person as 1.7 m;
   # - a 50 degree lens, assumed;
-  # - the tower's position (6.5240, 3.3790) and camera heading (30 degrees)
-  #   from sim/scenarios/tower-walk.yaml.
+  # - the tower's position (8.8945, 7.2655, near Briech home) and camera
+  #   heading (30 degrees) from sim/scenarios/tower-walk.yaml. Moved from
+  #   near Lagos on 2026-11-18 with the default watch zone; each point keeps
+  #   its metres from the tower.
   #
   # Distances between people in the clip should be right to roughly 20 %;
   # where the scene sits on the map is invented. A real tower gets at least
@@ -36,7 +38,7 @@ camera:
   max_error_m: 30.0
 
   points:
-    - { px: [60, 180],  lat: 6.5242281, lon: 3.3790304 }   # 23.7 m ahead, 9.8 m left
-    - { px: [720, 120], lat: 6.5241802, lon: 3.3792364 }   # 30.4 m ahead, 12.6 m right
-    - { px: [720, 480], lat: 6.5240541, lon: 3.3790850 }   # 9.9 m ahead, 5.1 m right
-    - { px: [120, 480], lat: 6.5240952, lon: 3.3790132 }   # 9.9 m ahead, 4.0 m left
+    - { px: [60, 180],  lat: 8.8947281, lon: 7.2655306 }   # 23.7 m ahead, 9.8 m left
+    - { px: [720, 120], lat: 8.8946802, lon: 7.2657377 }   # 30.4 m ahead, 12.6 m right
+    - { px: [720, 480], lat: 8.8945541, lon: 7.2655855 }   # 9.9 m ahead, 5.1 m right
+    - { px: [120, 480], lat: 8.8945952, lon: 7.2655133 }   # 9.9 m ahead, 4.0 m left

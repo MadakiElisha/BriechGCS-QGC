@@ -6,7 +6,7 @@ status_every_s: 5
 state_every_s: 2
 
 asset:
-  pos: { lat: 6.5240, lon: 3.3790, alt_amsl_m: 45.0 }
+  pos: { lat: 8.8945, lon: 7.2655, alt_amsl_m: 400.0 }
   health: ok
   camera_heading_deg: 30.0
   mains_power: true
@@ -15,7 +15,7 @@ objects:
   - track_id: 17
     class: person
     confidence: 0.91
-    start: { lat: 6.5251, lon: 3.3801 }
+    start: { lat: 8.8956, lon: 7.2666 }
     velocity: { east_ms: 1.2, north_ms: 0.4 }
     error_m: 6.0
     every_s: 0.5
@@ -23,7 +23,7 @@ objects:
   - track_id: 18
     class: vehicle
     confidence: 0.84
-    start: { lat: 6.5232, lon: 3.3775 }
+    start: { lat: 8.8937, lon: 7.2640 }
     velocity: { east_ms: 0.0, north_ms: 5.0 }
     error_m: 9.0
     every_s: 1.0

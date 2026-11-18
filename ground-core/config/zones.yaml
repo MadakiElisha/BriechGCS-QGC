@@ -5,14 +5,16 @@
 # polygon corners are [lat, lon], WGS84 degrees, in order around the edge.
 
 zones:
-  # On the path of sim/scenarios/tower-walk.yaml: track 17 walks in about 20 s
-  # after the publisher starts.
+  # Near Briech home (8.8933, 7.2642), where the simulated drones start, so a
+  # zone alert gets a drone suggested from the test fleet. On the path of
+  # sim/scenarios/tower-walk.yaml: track 17 walks in about 20 s after the
+  # publisher starts.
   - id: north-fence
     name: north-fence
     severity: high
     classes: [person, vehicle]
     polygon:
-      - [6.52500, 3.38030]
-      - [6.52500, 3.38150]
-      - [6.52620, 3.38150]
-      - [6.52620, 3.38030]
+      - [8.89550, 7.26680]
+      - [8.89550, 7.26800]
+      - [8.89670, 7.26800]
+      - [8.89670, 7.26680]

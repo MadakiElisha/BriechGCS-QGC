@@ -24,7 +24,7 @@ The first run downloads the model (20 MB) and the test video (8 MB) into
 and the probe prints its people and vehicles:
 
 ```
-object.update o-tower-01-3684502 person 0.87 6.524135,3.379109 ±4.0m seen_by=tower-01
+object.update o-tower-01-3684502 person 0.87 8.894635,7.265610 ±4.0m seen_by=tower-01
 ```
 
 `python -m pipeline.run --help` (from `edge-ai/`, with `.venv/bin/python`)

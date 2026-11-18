@@ -9,4 +9,4 @@ assets:
   - id: tower-01
     kind: tower
     name: Tower 01 (pilot)
-    pos: { lat: 6.5240, lon: 3.3790, alt_amsl_m: 45.0 }
+    pos: { lat: 8.8945, lon: 7.2655, alt_amsl_m: 400.0 }   # about 200 m from Briech home (8.8933, 7.2642)
