@@ -14,7 +14,7 @@ status_every_s: 5
 state_every_s: 2
 
 asset:
-  pos: { lat: 6.5262, lon: 3.3795, alt_amsl_m: 44.0 }
+  pos: { lat: 8.8967, lon: 7.2660, alt_amsl_m: 399.0 }
   health: ok
   camera_heading_deg: 120.0
   mains_power: true
@@ -23,7 +23,7 @@ objects:
   - track_id: 5
     class: person
     confidence: 0.82
-    start: { lat: 6.52512, lon: 3.38012 }     # about 3 m from tower-01's sighting
+    start: { lat: 8.89562, lon: 7.26662 }     # about 3 m from tower-01's sighting
     velocity: { east_ms: 1.2, north_ms: 0.4 }
     error_m: 8.0
     every_s: 0.5

@@ -65,7 +65,7 @@ def fake_vehicles(count: int, seq: int) -> dict:
     for i in range(1, count + 1):
         vehicles.append({
             "vehicle_id": i, "name": f"SIM-{i:02d}",
-            "pos": {"lat": 6.5240 + 0.001 * i, "lon": 3.3790, "alt_rel_m": 60.0},
+            "pos": {"lat": 8.8945 + 0.001 * i, "lon": 7.2655, "alt_rel_m": 60.0},   # near Briech home
             "heading_deg": (seq * 5 + i * 30) % 360, "groundspeed_ms": 8.0, "battery_pct": max(0, 95 - seq // 60),
             "mode": "Hold", "armed": True, "flying": True, "link_quality_pct": 100, "can_take_task": True,
         })
