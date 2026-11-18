@@ -10,6 +10,8 @@
 #include "FleetLink.h"
 #include "FleetModels.h"
 #include "FleetSettings.h"
+#include "FleetSnapshotImageProvider.h"
+#include "FleetSnapshots.h"
 #include "FleetVehicleReporter.h"
 #include "MAVLinkProtocol.h"
 #include "MultiVehicleManager.h"
@@ -324,6 +326,22 @@ QQmlApplicationEngine* CustomPlugin::createQmlApplicationEngine(QObject* parent)
     qmlRegisterSingletonInstance("Custom.Widgets", 1, 0, "FleetAudit", audit);
     auto *dispatch = new FleetDispatch(_fleetLink, _fleetModels->alerts(), dataAge, this);
     dispatch->setAudit(audit);
+    // Alert pictures, fetched from the coordinator with the link's own address,
+    // token and CA (re-read each time the link connects, so a changed setting
+    // is picked up). Approve and reject record which picture was on screen.
+    auto *snapshots = new FleetSnapshots(this);
+    const auto refreshSnapshotSource = [snapshots] {
+        const FleetLinkConfig config = FleetLink::configFromSettings();
+        snapshots->setSource(config.url, config.token, config.caFile);
+    };
+    refreshSnapshotSource();
+    connect(_fleetLink, &FleetLink::stateChanged, snapshots, [link = _fleetLink, refreshSnapshotSource] {
+        if (link->state() == FleetLink::Connected) {
+            refreshSnapshotSource();
+        }
+    });
+    dispatch->setSnapshots(snapshots);
+    qmlRegisterSingletonInstance("Custom.Widgets", 1, 0, "FleetSnapshots", snapshots);
     qmlRegisterSingletonInstance("Custom.Widgets", 1, 0, "FleetDispatch", dispatch);
     // The link, and its worker thread, run only while Fleet is enabled; so does
     // the data-age tracking, so with Fleet off QGC does no extra work.
@@ -340,6 +358,8 @@ QQmlApplicationEngine* CustomPlugin::createQmlApplicationEngine(QObject* parent)
 
     _qmlEngine = QGCCorePlugin::createQmlApplicationEngine(parent);
     _qmlEngine->addImportPath("qrc:/qml/Custom/Widgets");
+    // image://fleetsnapshot/<snapshot_id>: alert pictures (the engine owns the provider).
+    _qmlEngine->addImageProvider(QStringLiteral("fleetsnapshot"), new FleetSnapshotImageProvider(snapshots));
     // TODO: Investigate _qmlEngine->setExtraSelectors({"custom"})
 
     _selector = new CustomOverrideInterceptor();

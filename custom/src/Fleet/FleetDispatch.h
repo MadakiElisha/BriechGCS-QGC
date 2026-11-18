@@ -5,10 +5,12 @@
 #include <QtCore/QVariantMap>
 
 #include "FleetOperatorActions.h"
+#include "FleetSnapshots.h"
 
 class FleetAlertModel;
 class FleetAudit;
 class FleetDataAge;
+class FleetSnapshots;
 class FleetLink;
 class Vehicle;
 
@@ -58,6 +60,12 @@ public:
     /// whether or not the coordinator is reachable. May be null.
     void setAudit(FleetAudit *audit) { _audit = audit; }
 
+    /// The alert pictures. A decision's local audit entry then also records
+    /// which picture was on screen (FleetSnapshots::evidence: the snapshot id
+    /// and the SHA-256 of the bytes shown, or that none was shown). The
+    /// operator.action sent to the coordinator is unchanged. May be null.
+    void setSnapshots(FleetSnapshots *snapshots) { _snapshots = snapshots; }
+
     /// For tests and tools: the record builder underneath.
     FleetOperatorActions *actions() { return &_actions; }
 
@@ -78,6 +86,7 @@ private:
     void _onOutcome(int vehicleId, const QString &command, const QString &outcome, const QString &detail);
     void _setStatus(int vehicleId, const QString &text);
     void _refreshOperatorId();
+    QJsonObject _snapshotEvidence(const QString &alertId) const;
     Vehicle *_vehicle(int id) const;
 
     FleetOperatorActions _actions;
@@ -85,5 +94,8 @@ private:
     FleetAlertModel *_alerts = nullptr;
     QPointer<FleetDataAge> _ages;
     QPointer<FleetAudit> _audit;
+    QPointer<FleetSnapshots> _snapshots;
+    /// Added to the local audit entry of the decision being recorded, then cleared.
+    QJsonObject _decisionAuditExtra;
     QVariantMap _status;
 };

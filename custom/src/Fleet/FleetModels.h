@@ -10,6 +10,7 @@
 #include <QtCore/QPointer>
 #include <QtCore/QStringList>
 #include <QtCore/QTimer>
+#include <QtCore/QVariantMap>
 
 class FleetLink;
 
@@ -64,6 +65,11 @@ public:
 
     /// The stored row for key, or an empty object. For C++ callers and tests.
     QJsonObject row(const QString &key) const;
+    /// The same row for QML (the alert detail panel), plus ageSeconds and
+    /// stale as the list shows them; an empty map when there is no such row.
+    Q_INVOKABLE QVariantMap get(const QString &key) const;
+    /// The key of the row at index row (e.g. for rowsInserted), or empty.
+    Q_INVOKABLE QString keyAt(int row) const;
     int rowOf(const QString &key) const { return _index.value(key, -1); }
     int roleFor(const QByteArray &name) const { return roleNames().key(name, -1); }
     void setClock(Clock clock);
@@ -147,15 +153,21 @@ class FleetAlertModel : public FleetKeyedModel
 
     /// Alerts not yet closed: status open, acknowledged or approved.
     Q_PROPERTY(int activeCount READ activeCount NOTIFY activeCountChanged)
+    /// Alerts waiting for an operator decision: no status, open or acknowledged
+    /// (the FLEET tab badge). Approved ones are active but no longer waiting.
+    Q_PROPERTY(int pendingCount READ pendingCount NOTIFY pendingCountChanged)
 
 public:
     explicit FleetAlertModel(QObject *parent = nullptr);
 
     int activeCount() const { return _activeCount; }
+    int pendingCount() const { return _pendingCount; }
     static bool isActiveStatus(const QString &status);
+    static bool isPendingStatus(const QString &status);
 
 signals:
     void activeCountChanged();
+    void pendingCountChanged();
 
 protected:
     bool accepts(const QJsonObject &row, bool merge, QString *why) const override;
@@ -168,6 +180,7 @@ private:
     void _recount();
 
     int _activeCount = 0;
+    int _pendingCount = 0;
 };
 
 /// Feeds the three models from FleetLink and keeps their ages current with

@@ -12,7 +12,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Network WebSockets Test)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Network WebSockets Test)
 
 set(FLEET_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Fleet)
 get_filename_component(BRIECH_REPO_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../.. ABSOLUTE)
@@ -34,13 +34,15 @@ add_library(FleetLinkCore STATIC
     ${FLEET_SRC}/FleetDataAge.h
     ${FLEET_SRC}/FleetAudit.cc
     ${FLEET_SRC}/FleetAudit.h
+    ${FLEET_SRC}/FleetSnapshots.cc
+    ${FLEET_SRC}/FleetSnapshots.h
 )
 target_include_directories(FleetLinkCore PUBLIC ${FLEET_SRC})
-target_link_libraries(FleetLinkCore PUBLIC Qt6::Core Qt6::Network Qt6::WebSockets)
+target_link_libraries(FleetLinkCore PUBLIC Qt6::Core Qt6::Gui Qt6::Network Qt6::WebSockets)
 
 enable_testing()
 
-foreach(test tst_FleetProtocol tst_FleetLink tst_FleetModels tst_FleetVehicleState tst_FleetOperatorActions tst_FleetDataAge tst_FleetAudit)
+foreach(test tst_FleetProtocol tst_FleetLink tst_FleetModels tst_FleetVehicleState tst_FleetOperatorActions tst_FleetDataAge tst_FleetAudit tst_FleetSnapshots)
     add_executable(${test} ${test}.cc)
     target_link_libraries(${test} PRIVATE FleetLinkCore Qt6::Test)
     target_compile_definitions(${test} PRIVATE BRIECH_REPO_DIR="${BRIECH_REPO_DIR}")

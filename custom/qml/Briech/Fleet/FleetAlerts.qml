@@ -17,6 +17,9 @@ Rectangle {
     /// Alert rows (FleetAlertModel roles).
     property var model: FleetAlertModel
 
+    /// A line was clicked: show that alert in the alert panel.
+    signal openAlertRequested(string alertId)
+
     readonly property bool connected: FleetLink.state === FleetLink.Connected
     readonly property int activeCount: model ? model.activeCount : 0
     readonly property int shownMax: 3
@@ -81,10 +84,11 @@ Rectangle {
         Repeater {
             model: activeAlerts
 
-            delegate: Row {
+            delegate: Item {
                 id: alertLine
 
                 required property int index
+                required property string alert_id
                 required property var severity
                 required property var className
                 required property var confidence
@@ -92,38 +96,49 @@ Rectangle {
                 required property bool stale
 
                 visible: index < root.shownMax
+                width: alertColumn.width
                 height: visible ? 16 : 0
-                spacing: 6
                 opacity: stale ? 0.55 : 1
 
-                Text {
-                    width: 46
-                    text: FleetFormat.wordText(alertLine.severity)
-                    color: FleetFormat.severityTone(alertLine.severity, BriechTheme)
-                    font.pixelSize: 9
-                    font.bold: true
-                    font.family: "Share Tech Mono"
+                // Click a line to open the alert (picture, proposal, APPROVE / REJECT).
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.openAlertRequested(alertLine.alert_id)
                 }
-                Text {
-                    width: 90
-                    text: FleetFormat.wordText(alertLine.className)
-                    color: BriechTheme.textColor
-                    elide: Text.ElideRight
-                    font.pixelSize: 9
-                    font.family: "Share Tech Mono"
-                }
-                Text {
-                    width: 32
-                    text: FleetFormat.confidenceText(alertLine.confidence)
-                    color: BriechTheme.mutedColor
-                    font.pixelSize: 9
-                    font.family: "Share Tech Mono"
-                }
-                Text {
-                    text: FleetFormat.ageText(alertLine.ageSeconds) + (alertLine.stale ? " STALE" : "")
-                    color: alertLine.stale ? BriechTheme.warnColor : BriechTheme.mutedColor
-                    font.pixelSize: 9
-                    font.family: "Share Tech Mono"
+
+                Row {
+                    spacing: 6
+
+                    Text {
+                        width: 46
+                        text: FleetFormat.wordText(alertLine.severity)
+                        color: FleetFormat.severityTone(alertLine.severity, BriechTheme)
+                        font.pixelSize: 9
+                        font.bold: true
+                        font.family: "Share Tech Mono"
+                    }
+                    Text {
+                        width: 90
+                        text: FleetFormat.wordText(alertLine.className)
+                        color: BriechTheme.textColor
+                        elide: Text.ElideRight
+                        font.pixelSize: 9
+                        font.family: "Share Tech Mono"
+                    }
+                    Text {
+                        width: 32
+                        text: FleetFormat.confidenceText(alertLine.confidence)
+                        color: BriechTheme.mutedColor
+                        font.pixelSize: 9
+                        font.family: "Share Tech Mono"
+                    }
+                    Text {
+                        text: FleetFormat.ageText(alertLine.ageSeconds) + (alertLine.stale ? " STALE" : "")
+                        color: alertLine.stale ? BriechTheme.warnColor : BriechTheme.mutedColor
+                        font.pixelSize: 9
+                        font.family: "Share Tech Mono"
+                    }
                 }
             }
         }

@@ -216,6 +216,24 @@ QJsonObject FleetKeyedModel::row(const QString &key) const
     return at < 0 ? QJsonObject() : _rows.at(at).data;
 }
 
+QVariantMap FleetKeyedModel::get(const QString &key) const
+{
+    const int at = _index.value(key, -1);
+    if (at < 0) {
+        return {};
+    }
+    const Row &stored = _rows.at(at);
+    QVariantMap map = stored.data.toVariantMap();
+    map.insert(QStringLiteral("ageSeconds"), _ageSeconds(stored));
+    map.insert(QStringLiteral("stale"), _stale(stored));
+    return map;
+}
+
+QString FleetKeyedModel::keyAt(int row) const
+{
+    return row >= 0 && row < _rows.size() ? _rows.at(row).data.value(_keyField).toString() : QString();
+}
+
 void FleetKeyedModel::setClock(Clock clock)
 {
     _clock = std::move(clock);
@@ -421,17 +439,31 @@ QList<int> FleetAlertModel::extraRolesFor(const QStringList &fields) const
     return {};
 }
 
+bool FleetAlertModel::isPendingStatus(const QString &status)
+{
+    return status.isEmpty() || status == QLatin1String("open") || status == QLatin1String("acknowledged");
+}
+
 void FleetAlertModel::_recount()
 {
     int active = 0;
+    int pending = 0;
     for (const Row &r : rows()) {
-        if (isActiveStatus(r.data.value(QLatin1String("status")).toString())) {
+        const QString status = r.data.value(QLatin1String("status")).toString();
+        if (isActiveStatus(status)) {
             ++active;
+        }
+        if (isPendingStatus(status)) {
+            ++pending;
         }
     }
     if (active != _activeCount) {
         _activeCount = active;
         emit activeCountChanged();
+    }
+    if (pending != _pendingCount) {
+        _pendingCount = pending;
+        emit pendingCountChanged();
     }
 }
 

@@ -31,6 +31,8 @@ Rectangle {
     signal openVehicleSetupRequested(var vehicle)
     /// APPROVE / REJECT on an alert with a proposal; the Modern view confirms first.
     signal approveAlertRequested(string alertId)
+    /// The operator clicked an alert row: show it in the alert panel.
+    signal openAlertRequested(string alertId)
     signal rejectAlertRequested(string alertId)
 
     /// Roster source. Each row needs an "object" role holding the vehicle.
@@ -553,12 +555,34 @@ Rectangle {
         required property var status
         required property bool active
         required property var proposal
+        required property var snapshot_id
+        required property var expires_ts
 
-        /// The coordinator proposed a vehicle and nobody has decided yet.
-        readonly property bool decidable: !!proposal && (status === "open" || status === "acknowledged")
+        readonly property bool isOpen: status === "open" || status === "acknowledged" || !FleetFormat.has(status)
+        readonly property bool hasPhoto: FleetFormat.has(snapshot_id)
+        /// Seconds until an open alert lapses; ageSeconds ticks every second, so this does too.
+        readonly property int secondsLeft: {
+            const ignored = ageSeconds
+            const ends = Date.parse(expires_ts || "")
+            return isNaN(ends) ? -1 : Math.max(0, Math.round((ends - Date.now()) / 1000))
+        }
 
-        // Closed alerts stay listed, dimmed.
+        // One scannable line. The whole row opens the alert panel, where the
+        // picture, the proposal and APPROVE / REJECT are.
         opacity: stale || !active ? 0.55 : 1
+        height: 36
+        color: rowArea.containsMouse ? Qt.rgba(1, 1, 1, 0.04) : "transparent"
+
+        Component.onCompleted: if (hasPhoto) FleetSnapshots.request(snapshot_id)
+        onSnapshot_idChanged: if (hasPhoto) FleetSnapshots.request(snapshot_id)
+
+        Rectangle {
+            width: 3
+            height: parent.height - 8
+            anchors.verticalCenter: parent.verticalCenter
+            color: FleetFormat.severityTone(alertRow.severity, BriechTheme)
+            opacity: alertRow.isOpen ? 1 : 0.4
+        }
 
         RowLayout {
             anchors.fill: parent
@@ -566,36 +590,82 @@ Rectangle {
             anchors.rightMargin: 12
             spacing: 8
 
+            SnapshotThumb {
+                snapshotId: alertRow.hasPhoto ? alertRow.snapshot_id : ""
+            }
             RowCell {
                 cellWidth: 48
                 text: FleetFormat.wordText(alertRow.severity)
                 color: FleetFormat.severityTone(alertRow.severity, BriechTheme)
-                font.pixelSize: 10
+                font.pixelSize: 12
                 font.bold: true
             }
-            RowCell { cellWidth: 56; text: FleetFormat.wordText(alertRow.className); font.pixelSize: 10 }
-            RowCell { cellWidth: 36; text: FleetFormat.confidenceText(alertRow.confidence); font.pixelSize: 10 }
+            RowCell { cellWidth: 64; text: FleetFormat.wordText(alertRow.className); font.pixelSize: 12 }
+            RowCell { cellWidth: 40; text: FleetFormat.confidenceText(alertRow.confidence); font.pixelSize: 12 }
             RowCell {
                 Layout.fillWidth: true
+                Layout.minimumWidth: 0
                 text: FleetFormat.has(alertRow.reason) ? alertRow.reason : "--"
                 color: BriechTheme.mutedColor
-                font.pixelSize: 10
+                font.pixelSize: 12
             }
-            RowCell { cellWidth: 84; text: FleetFormat.wordText(alertRow.status); font.pixelSize: 10 }
+            RowCell {
+                cellWidth: 104
+                text: alertRow.isOpen && alertRow.secondsLeft >= 0
+                      ? "OPEN " + Math.floor(alertRow.secondsLeft / 60) + ":" + String(alertRow.secondsLeft % 60).padStart(2, "0")
+                      : FleetFormat.wordText(alertRow.status)
+                color: alertRow.isOpen ? (alertRow.secondsLeft <= 30 ? BriechTheme.errColor : BriechTheme.warnColor) : BriechTheme.mutedColor
+                font.pixelSize: 12
+                font.bold: alertRow.isOpen
+            }
             AgeCell { ageSeconds: alertRow.ageSeconds; stale: alertRow.stale }
-            // Only ask: the Modern view shows the proposal and confirms before anything is sent.
-            SmallButton {
-                visible: alertRow.decidable
-                text: "APPROVE"
-                tone: BriechTheme.okColor
-                onClicked: root.approveAlertRequested(alertRow.alert_id)
-            }
-            SmallButton {
-                visible: alertRow.decidable
-                text: "REJECT"
-                tone: BriechTheme.mutedColor
-                onClicked: root.rejectAlertRequested(alertRow.alert_id)
-            }
+            RowCell { cellWidth: 12; text: "›"; color: BriechTheme.mutedColor; font.pixelSize: 16 }
+        }
+
+        MouseArea {
+            id: rowArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.openAlertRequested(alertRow.alert_id)
+        }
+    }
+
+    // An alert's camera picture as a small preview (FleetSnapshots), or a
+    // short word for what stands in for it. The alert panel shows it large.
+    component SnapshotThumb: Rectangle {
+        id: thumb
+
+        property string snapshotId
+
+        // Re-read whenever any picture changes state (FleetSnapshots.revision).
+        readonly property int revision: FleetSnapshots.revision
+        readonly property string photoState: revision >= 0 && snapshotId !== "" ? FleetSnapshots.state(snapshotId) : "none"
+
+        Layout.preferredWidth: 44
+        Layout.preferredHeight: 30
+        color: "#05070a"
+        border.color: photoState === "unavailable" ? BriechTheme.warnColor : Qt.rgba(1, 1, 1, 0.10)
+        border.width: 1
+
+        Image {
+            anchors.fill: parent
+            anchors.margins: 1
+            visible: thumb.photoState === "ready"
+            source: visible ? "image://fleetsnapshot/" + thumb.snapshotId + "?r=" + thumb.revision : ""
+            sourceSize.width: 88
+            sourceSize.height: 60
+            fillMode: Image.PreserveAspectCrop
+            cache: false
+        }
+
+        Text {
+            anchors.centerIn: parent
+            visible: thumb.photoState !== "ready"
+            text: thumb.photoState === "loading" ? "…" : thumb.photoState === "unavailable" ? "NO IMG" : "--"
+            color: thumb.photoState === "unavailable" ? BriechTheme.warnColor : BriechTheme.mutedColor
+            font.pixelSize: 9
+            font.family: "Share Tech Mono"
         }
     }
 

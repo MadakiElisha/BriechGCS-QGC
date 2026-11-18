@@ -54,6 +54,7 @@
         <file alias="Fleet/FleetLayer.qml">qml/Briech/Fleet/FleetLayer.qml</file>
         <file alias="Fleet/FleetPanel.qml">qml/Briech/Fleet/FleetPanel.qml</file>
         <file alias="Fleet/FleetAlerts.qml">qml/Briech/Fleet/FleetAlerts.qml</file>
+        <file alias="Fleet/FleetAlertDetail.qml">qml/Briech/Fleet/FleetAlertDetail.qml</file>
         <file alias="Fleet/FleetSafetyControls.qml">qml/Briech/Fleet/FleetSafetyControls.qml</file>
         <file alias="Fleet/FleetConnectionStatus.qml">qml/Briech/Fleet/FleetConnectionStatus.qml</file>
         <file alias="Fleet/FleetMapLayers.qml">qml/Briech/Fleet/FleetMapLayers.qml</file>
