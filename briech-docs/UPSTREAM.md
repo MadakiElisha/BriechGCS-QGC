@@ -61,7 +61,7 @@ movable into `custom/`; **fix** = a known problem.
 | `android/gradle/wrapper/gradle-wrapper.properties` | Gradle version | Android build | review |
 | `android/.gradle/...` | Gradle cache files committed | By accident | **fix**: remove from git, add to `.gitignore` |
 | `custom-example/` | Deleted | Replaced by `custom/` | keep. `.github/actions/custom-build` still copies `custom-example`; the Custom Build workflow no longer calls it (next row) |
-| `.github/workflows/custom-build.yml` | Triggers on `custom/**` and branch `main` (were `custom-example/**` and `master`); drops the "Enable custom build" step that copied `custom-example` to `custom`; the boot test runs `BriechUAS-x86_64.AppImage` (was `Custom-QGroundControl-…`, the AppImage is named after `QGC_APP_NAME`) | The plugin is committed in `custom/` and the default branch is `main`, so the stock workflow never ran, and would have failed at the copy step if it had (handoff section 12, P1) | keep |
+| `.github/workflows/custom-build.yml` | Triggers on `custom/**` and branch `main` (were `custom-example/**` and `master`); drops the "Enable custom build" step that copied `custom-example` to `custom`; the boot test runs `BriechUAS-x86_64.AppImage` (was `Custom-QGroundControl-…`, the AppImage is named after `QGC_APP_NAME`). Since 2026-11-18 the job is a matrix of `full` and `no-quick3d` (Qt without `qtquick3d`, `-DQGC_VIEWER3D=OFF`), and both run `custom/test/ui-smoke.sh`, which starts the real UI (the boot test exits before any QML loads) | The plugin is committed in `custom/` and the default branch is `main`, so the stock workflow never ran, and would have failed at the copy step if it had (handoff section 12, P1) | keep |
 
 ## Tools and repository root
 

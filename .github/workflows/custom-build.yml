@@ -25,9 +25,16 @@ permissions:
 
 jobs:
   build:
-    name: Custom Plugin Build
+    # full: the normal build. no-quick3d: Qt installed without Qt Quick 3D and the
+    # 3D viewer off, as on a machine that lacks Quick 3D (handoff, definition of
+    # done: "With Quick3D missing, the 2D indicator appears instead").
+    name: Custom Plugin Build${{ matrix.variant == 'no-quick3d' && ' (no Quick 3D)' || '' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [full, no-quick3d]
 
     defaults:
       run:
@@ -66,18 +73,30 @@ jobs:
           cpm-modules: ${{ runner.temp }}/build/cpm_modules
           save-cache: false
 
+      - name: Qt modules without Quick 3D
+        id: qtmods
+        if: matrix.variant == 'no-quick3d'
+        run: |
+          modules=""
+          for m in ${{ steps.config.outputs.qt_modules }}; do
+            [[ "$m" == qtquick3d ]] || modules="$modules $m"
+          done
+          echo "modules=${modules# }" >> "$GITHUB_OUTPUT"
+          echo "Qt modules: ${modules# }"
+
       - name: Install Qt for Linux
         uses: ./.github/actions/qt-install
         with:
           version: ${{ steps.config.outputs.qt_version }}
           host: linux
           arch: linux_gcc_64
-          modules: ${{ steps.config.outputs.qt_modules }}
+          modules: ${{ matrix.variant == 'no-quick3d' && steps.qtmods.outputs.modules || steps.config.outputs.qt_modules }}
 
       - name: Configure
         working-directory: ${{ runner.temp }}/build
         run: ${{ env.QT_ROOT_DIR }}/bin/qt-cmake -S ${{ github.workspace }} -B . -G Ninja
               -DCMAKE_BUILD_TYPE=Release
+              ${{ matrix.variant == 'no-quick3d' && '-DQGC_VIEWER3D=OFF' || '' }}
 
       - name: Build
         working-directory: ${{ runner.temp }}/build
@@ -90,3 +109,11 @@ jobs:
       - name: Verify Custom AppImage
         working-directory: ${{ runner.temp }}/build
         run: xvfb-run -a ./BriechUAS-x86_64.AppImage --simple-boot-test
+
+      # --simple-boot-test exits before any QML loads. This starts the real UI
+      # and fails on a missing QML module or type, and checks which attitude
+      # view the build reports.
+      - name: UI smoke test (Modern view loads)
+        working-directory: ${{ runner.temp }}/build
+        run: xvfb-run -a ${{ github.workspace }}/custom/test/ui-smoke.sh ./BriechUAS-x86_64.AppImage
+              "${{ matrix.variant == 'no-quick3d' && '2D fallback' || '3D' }}"

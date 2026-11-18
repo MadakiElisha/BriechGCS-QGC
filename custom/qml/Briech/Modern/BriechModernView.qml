@@ -12,7 +12,8 @@ import QGroundControl.Controls
 import QGroundControl.FlightMap
 import QGroundControl.FlyView
 // Retained for the legacy, dormant full-screen Viewer3D component below.
-// The Briech payload simulation does not instantiate it.
+// The Briech payload simulation does not instantiate it. In builds without
+// Qt Quick 3D this resolves to the stand-in in custom/qml/Viewer3DStub/.
 import QGroundControl.Viewer3D
 import Custom.Widgets 1.0
 
@@ -738,7 +739,9 @@ Item {
     }
 
     function viewer3DReady() {
-        return QGroundControl.settingsManager.viewer3DSettings.enabled.rawValue
+        // Not ready in a build without Qt Quick 3D, whatever the setting says
+        // (FleetSettings.quick3DAvailable is false there; see custom/CMakeLists.txt).
+        return FleetSettings.quick3DAvailable && QGroundControl.settingsManager.viewer3DSettings.enabled.rawValue
     }
 
     function hasNavigationTarget() {
@@ -1203,7 +1206,7 @@ Item {
             { label: "MAP TYPE", value: selectedMapKind.toUpperCase(), tone: root.gold },
             { label: "VEHICLE", value: activeVehicle ? ("BRCH-" + activeVehicle.id) : "NONE", tone: activeVehicle ? root.ok : root.dim },
             { label: "VIDEO", value: hasVideoSignal() ? "LIVE" : "IDLE", tone: hasVideoSignal() ? root.ok : root.dim },
-            { label: "3D", value: viewer3DReady() ? "READY" : "OFF", tone: viewer3DReady() ? root.ok : root.dim },
+            { label: "3D", value: !FleetSettings.quick3DAvailable ? "2D ONLY" : (viewer3DReady() ? "READY" : "OFF"), tone: viewer3DReady() ? root.ok : root.dim },
             { label: "AIRSPACE", value: airspaceStatusText(), tone: airspaceStateColor() },
             { label: "LOGS", value: logStatusText(), tone: logStateTone() },
             { label: "WATERMARK", value: modernWatermarkEnabled ? "ON" : "OFF", tone: modernWatermarkEnabled ? root.gold : root.dim }
@@ -5189,6 +5192,8 @@ Item {
     }
 
     Component.onCompleted: {
+        // One line the UI smoke test (custom/test/ui-smoke.sh) waits for.
+        console.info("Briech Modern view loaded; attitude view: " + (FleetSettings.quick3DAvailable ? "3D" : "2D fallback"))
         refreshTelemetrySamples()
         refreshSafetyAssessment()
         activeModernSection = "fly"
