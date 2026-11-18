@@ -8,6 +8,7 @@ real hardware or model exists.
 |---|---|
 | `fake_fleet.py` | A fake tower and edge computer. Publishes `edge.status` (retained, with an offline last will), `asset.state` (retained) and `detection` from a scenario file. Every message is checked against `schemas/` before sending. |
 | `probe.py` | A stand-in QGC client. Connects to `/ws/v1/operator` with the operator token, sends `hello`, prints the `snapshot` and one line per message after it, and flags any message that breaks its schema. `--vehicles N` also reports N fake drones every second. |
+| `sim_check.py` | Waits until simulated drones are heard on UDP 14550 (as QGC hears them) with a position and ready to arm; one line per drone. The nightly CI job runs it after `make -C ops sim-10`. |
 | `replay_check.py` | The scenario replay check on the real stack (see below). Run it with `make -C ops replay-check`; CI runs it on every push. |
 | `scenarios/*.yaml` | Scenario files: the source id, its position, and the objects it sees with start point and velocity. |
 
@@ -123,6 +124,23 @@ BriechUAS Release build, broker, coordinator and fake tower running.
 
 QGC with the ten drones (main-thread stall meter, Release): see
 `briech-docs/spikes.md`, S2.
+
+### Ten drones in CI (nightly)
+
+`.github/workflows/sim-nightly.yml` runs every night at 01:30 UTC, on demand
+(Actions, "Run workflow"), and on pull requests that change the simulation
+scripts:
+
+```sh
+make -C ops sim-10                          # ten SIH drones, ids 1..10
+python sim/sim_check.py --ids 1-10          # all heard on 14550, with a position, ready to arm
+python sim/fly_mission.py --vehicles 1,2,3,4,5,6,7,8,9,10   # fly and land all ten
+make -C ops sim-down
+```
+
+Run `sim_check.py` by hand the same way. QGC must not be running on the same
+machine, because it holds UDP 14550; with QGC open, listen on the onboard
+stream instead (`--port 14540`).
 
 ## Sample waypoints
 

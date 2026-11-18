@@ -63,3 +63,17 @@ jobs:
         env:
           PYTHON: python
           REPLAY_STOP_BROKER: "1"
+
+  # The one-command start-up, exactly as a developer runs it (handoff, definition
+  # of done): make -C ops setup and dev-up, then a stand-in QGC must see the
+  # snapshot, the tower online and its tracks. See ops/scripts/dev-up-check.sh.
+  dev-up:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: make -C ops setup && make -C ops dev-up, checked with the probe
+        run: ops/scripts/dev-up-check.sh

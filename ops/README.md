@@ -38,6 +38,18 @@ docker run --rm --add-host=host.docker.internal:host-gateway \
   mosquitto_pub -h host.docker.internal -p 8883 --cafile /ca.crt -u tower-01 -P "$(cat /pw/tower-01.password)" -t briech/v1/edge/tower-02/detection -m other'
 ```
 
+### The one-command start-up, checked
+
+```sh
+ops/scripts/dev-up-check.sh       # Linux or macOS: needs make, Docker, Python 3
+```
+
+It runs exactly what a developer runs: `make -C ops setup` and
+`make -C ops dev-up`. Then a stand-in QGC (`sim/probe.py`) must, within 25 s,
+get a snapshot, see `tower-01` online and receive the fake tower's tracks,
+with every message valid. `make -C ops dev-down` always runs at the end. The
+`dev-up` job in `ground-core.yml` runs it on every push.
+
 ### Scenario replay on the real stack
 
 ```sh
