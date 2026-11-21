@@ -1129,7 +1129,8 @@ Item {
                     color: "transparent"
                     border.color: "#3b82f6"
                     radius: 3
-                    Text { anchors.centerIn: parent; text: root.waitingForPX4Upload ? "WAITING FOR PX4..." : (QGroundControl.multiVehicleManager.activeVehicle ? "UPLOAD TO BRCH-" + QGroundControl.multiVehicleManager.activeVehicle.id : "UPLOAD"); color: "#3b82f6"; font.pixelSize: 10; font.bold: true; font.family: ScreenTools.normalFontFamily; elide: Text.ElideRight }
+                    // Margins and a slightly smaller font when needed, so "UPLOAD TO BRCH-12" never touches the border.
+                    Text { anchors.fill: parent; anchors.margins: 6; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; fontSizeMode: Text.HorizontalFit; minimumPixelSize: 8; text: root.waitingForPX4Upload ? "WAITING FOR PX4..." : (QGroundControl.multiVehicleManager.activeVehicle ? "UPLOAD TO BRCH-" + QGroundControl.multiVehicleManager.activeVehicle.id : "UPLOAD"); color: "#3b82f6"; font.pixelSize: 10; font.bold: true; font.family: ScreenTools.normalFontFamily; elide: Text.ElideRight }
                     MouseArea { anchors.fill: parent; enabled: !root.waitingForPX4Upload; onClicked: root.uploadMission() }
                 }
 

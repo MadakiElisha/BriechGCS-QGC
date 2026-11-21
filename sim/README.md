@@ -10,7 +10,7 @@ real hardware or model exists.
 | `probe.py` | A stand-in QGC client. Connects to `/ws/v1/operator` with the operator token, sends `hello`, prints the `snapshot` and one line per message after it, and flags any message that breaks its schema. `--vehicles N` also reports N fake drones every second. |
 | `sim_check.py` | Waits until simulated drones are heard on UDP 14550 (as QGC hears them) with a position and ready to arm; one line per drone. The nightly CI job runs it after `make -C ops sim-10`. |
 | `replay_check.py` | The scenario replay check on the real stack (see below). Run it with `make -C ops replay-check`; CI runs it on every push. |
-| `scenarios/*.yaml` | Scenario files: the source id, its position, and the objects it sees with start point and velocity. |
+| `scenarios/*.yaml` | Scenario files: the source id, its position, and the objects it sees with start point and velocity. `tower-walk.yaml` (the default): two walkers, one alert. `two-towers.yaml`: the same person seen by a second tower. `twenty-sightings.yaml`: 20 objects around Briech home (people, vehicles, bicycles, animals), 8 of which cross into `north-fence`, one every 10 to 40 s, for 8 alerts with drone proposals. |
 
 Run with the ground-core virtualenv (`make -C ops setup` makes it):
 
@@ -21,6 +21,9 @@ make -C ops publisher                                # terminal 2
 make -C ops probe                                    # terminal 3
 make -C ops probe PROBE_ARGS="--vehicles 3"          # also report fake drones
 make -C ops publisher SCENARIO=other.yaml
+make -C ops publisher SCENARIO=twenty-sightings.yaml   # 20 tracks, 8 alerts in about 3 min
+# Windows (no make), from the repo root:
+#   ground-core/.venv/Scripts/python sim/fake_fleet.py --scenario sim/scenarios/twenty-sightings.yaml --duration 300
 ```
 
 ## Handoff check 2

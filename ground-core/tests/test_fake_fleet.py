@@ -30,3 +30,12 @@ def test_topics_match_what_the_bus_accepts():
     assert topic_type(fake_fleet.topic("edge", src, "detection")) == ("detection", src)
     assert topic_type(fake_fleet.topic("edge", src, "status")) == ("edge.status", src)
     assert topic_type(fake_fleet.topic("asset", src, "state")) == ("asset.state", src)
+
+
+def test_detection_with_a_snapshot_is_valid(validator):
+    """--snapshot puts the uploaded picture's id in every detection."""
+    obj = SCENARIO["objects"][0]
+    msg = fake_fleet.detection(SCENARIO["source"], 1, obj, 0.0, "snap-0123abcd4567")
+    assert msg["data"]["snapshot_id"] == "snap-0123abcd4567"
+    assert validator.check(msg) is None, validator.check(msg)
+    assert "snapshot_id" not in fake_fleet.detection(SCENARIO["source"], 2, obj, 0.0)["data"]

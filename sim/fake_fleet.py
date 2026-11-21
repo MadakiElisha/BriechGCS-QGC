@@ -11,6 +11,12 @@ Publishes, as the scenario's source id (which is also the MQTT login):
 * asset.state (retained) on briech/v1/asset/<id>/state;
 * detection on briech/v1/edge/<id>/detection for each scripted object.
 
+--snapshot <jpeg> uploads one picture to the coordinator (POST
+/api/v1/snapshots with the device token, as edge-ai/pipeline/publisher.py does)
+and puts its snapshot_id in every detection, so the alerts carry a camera
+picture in QGC. One picture for all objects: it is a fake. A failed upload
+never holds a detection back; they are sent without a picture.
+
 Every message is checked against schemas/ before it is sent; an invalid one
 stops the script, because the fake publisher is held to the same contract as
 a real device. Run it with the ground-core virtualenv's Python.
@@ -76,7 +82,7 @@ def object_position(obj: dict, t: float) -> tuple[float, float]:
     return round(lat, 7), round(lon, 7)
 
 
-def detection(source: str, seq: int, obj: dict, t: float) -> dict:
+def detection(source: str, seq: int, obj: dict, t: float, snapshot_id: str | None = None) -> dict:
     lat, lon = object_position(obj, t)
     data = {
         "class": obj.get("class", "person"),
@@ -86,6 +92,8 @@ def detection(source: str, seq: int, obj: dict, t: float) -> dict:
         # A box that drifts across the frame, so it looks alive in a viewer.
         "bbox": {"x": round(0.1 + 0.8 * ((t / 60.0) % 1.0), 3), "y": 0.5, "w": 0.05, "h": 0.14},
     }
+    if snapshot_id:
+        data["snapshot_id"] = snapshot_id
     return envelope("detection", f"d-{source}-{seq:06d}", source, data)
 
 
@@ -105,6 +113,7 @@ class Publisher:
         self._first_connect_done = threading.Event()
         self.refused: str | None = None
         self.sent = 0
+        self.snapshot_id: str | None = None     # set by main() after --snapshot uploads
 
         client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
                              client_id=f"fake-{self.source}", protocol=mqtt.MQTTv311)
@@ -175,7 +184,8 @@ class Publisher:
                     t = now - obj.get("start_s", 0.0)
                     stop_s = obj.get("stop_s")
                     if now >= next_det[tid] and t >= 0 and (stop_s is None or now < stop_s):
-                        self.publish(topic("edge", self.source, "detection"), detection(self.source, next(seq), obj, t))
+                        self.publish(topic("edge", self.source, "detection"),
+                                     detection(self.source, next(seq), obj, t, self.snapshot_id))
                         next_det[tid] = now + obj.get("every_s", 0.5)
             stop.wait(0.05)
 
@@ -188,6 +198,27 @@ class Publisher:
         print(f"stopped after {self.sent} messages", flush=True)
 
 
+def upload_snapshot(path: Path, url: str, source: str, token_file: Path, ca: str) -> str | None:
+    """POST one JPEG as the device; its snapshot_id, or None (printed why) when that fails."""
+    import urllib.error
+    import urllib.request
+
+    try:
+        tokens = dict(line.split("=", 1) for line in token_file.read_text().splitlines() if "=" in line)
+        token = tokens[source].strip()
+        request = urllib.request.Request(url, data=path.read_bytes(), method="POST",
+                                         headers={"Authorization": f"Bearer {token}", "Content-Type": "image/jpeg"})
+        context = ssl.create_default_context(cafile=ca) if url.startswith("https") else None
+        with urllib.request.urlopen(request, context=context, timeout=10) as response:
+            snapshot_id = json.loads(response.read(4096))["snapshot_id"]
+    except (OSError, KeyError, ValueError, urllib.error.URLError) as exc:
+        # The id only and the reason: never the token or the full URL.
+        print(f"snapshot not uploaded ({type(exc).__name__}: {exc}); detections go without a picture", flush=True)
+        return None
+    print(f"snapshot uploaded: {snapshot_id}", flush=True)
+    return snapshot_id
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--scenario", type=Path, default=REPO / "sim" / "scenarios" / "tower-walk.yaml")
@@ -197,6 +228,9 @@ def main() -> None:
     ap.add_argument("--no-tls", action="store_true", help="plain MQTT, for a test broker only")
     ap.add_argument("--password-file", help="MQTT password file (default ops/secrets/mqtt/<source>.password)")
     ap.add_argument("--duration", type=float, default=0, help="seconds to run; 0 runs until stopped")
+    ap.add_argument("--snapshot", type=Path, help="a JPEG to upload once and attach to every detection")
+    ap.add_argument("--snapshot-url", help="default https://<host>:8443/api/v1/snapshots")
+    ap.add_argument("--device-token-file", type=Path, default=REPO / "ops" / "secrets" / "device.tokens")
     args = ap.parse_args()
 
     scenario = load_scenario(args.scenario)
@@ -204,6 +238,9 @@ def main() -> None:
         args.password_file = str(REPO / "ops" / "secrets" / "mqtt" / f"{scenario['source']}.password")
     validator = MessageValidator(REPO / "schemas")
     pub = Publisher(args, scenario, validator)
+    if args.snapshot:
+        pub.snapshot_id = upload_snapshot(args.snapshot, args.snapshot_url or f"https://{args.host}:8443/api/v1/snapshots",
+                                          scenario["source"], args.device_token_file, args.ca)
     pub.connect(args.host, args.port)
     pub.run(args.duration)
 
