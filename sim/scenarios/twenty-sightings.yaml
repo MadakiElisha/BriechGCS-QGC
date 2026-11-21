@@ -1,0 +1,262 @@
+# 20 sightings around Briech home: 8 cross into north-fence (alerts), 12 stay south (tracks only).
+source: tower-01
+model_version: fake-0.1.0
+status_every_s: 5
+state_every_s: 2
+asset:
+  pos:
+    lat: 8.8945
+    lon: 7.2655
+    alt_amsl_m: 400.0
+  health: ok
+  camera_heading_deg: 30.0
+  mains_power: true
+objects:
+- track_id: 101
+  class: person
+  confidence: 0.84
+  start:
+    lat: 8.895856
+    lon: 7.26633
+  velocity:
+    east_ms: 1.15
+    north_ms: 0.01
+  error_m: 5.8
+  every_s: 1.0
+  start_s: 0
+  stop_s: 140
+- track_id: 102
+  class: person
+  confidence: 0.79
+  start:
+    lat: 8.896105
+    lon: 7.266207
+  velocity:
+    east_ms: 1.4
+    north_ms: -0.17
+  error_m: 4.5
+  every_s: 1.0
+  start_s: 20
+  stop_s: 160
+- track_id: 103
+  class: vehicle
+  confidence: 0.85
+  start:
+    lat: 8.896329
+    lon: 7.266225
+  velocity:
+    east_ms: 3.45
+    north_ms: 0.05
+  error_m: 8.7
+  every_s: 0.5
+  start_s: 40
+  stop_s: 180
+- track_id: 104
+  class: person
+  confidence: 0.88
+  start:
+    lat: 8.896028
+    lon: 7.266395
+  velocity:
+    east_ms: 1.13
+    north_ms: 0.14
+  error_m: 5.4
+  every_s: 1.0
+  start_s: 60
+  stop_s: 200
+- track_id: 105
+  class: person
+  confidence: 0.8
+  start:
+    lat: 8.895832
+    lon: 7.266262
+  velocity:
+    east_ms: 1.67
+    north_ms: -0.13
+  error_m: 6.9
+  every_s: 1.0
+  start_s: 80
+  stop_s: 220
+- track_id: 106
+  class: vehicle
+  confidence: 0.89
+  start:
+    lat: 8.896011
+    lon: 7.26631
+  velocity:
+    east_ms: 3.13
+    north_ms: -0.18
+  error_m: 5.0
+  every_s: 0.5
+  start_s: 100
+  stop_s: 240
+- track_id: 107
+  class: person
+  confidence: 0.9
+  start:
+    lat: 8.896049
+    lon: 7.266263
+  velocity:
+    east_ms: 1.51
+    north_ms: -0.02
+  error_m: 5.5
+  every_s: 1.0
+  start_s: 120
+  stop_s: 260
+- track_id: 108
+  class: vehicle
+  confidence: 0.92
+  start:
+    lat: 8.896239
+    lon: 7.266249
+  velocity:
+    east_ms: 4.15
+    north_ms: 0.01
+  error_m: 8.4
+  every_s: 0.5
+  start_s: 140
+  stop_s: 280
+- track_id: 201
+  class: vehicle
+  confidence: 0.71
+  start:
+    lat: 8.894151
+    lon: 7.264355
+  velocity:
+    east_ms: 3.69
+    north_ms: -0.11
+  error_m: 8.0
+  every_s: 0.5
+  start_s: 51
+- track_id: 202
+  class: vehicle
+  confidence: 0.72
+  start:
+    lat: 8.893992
+    lon: 7.266089
+  velocity:
+    east_ms: 4.94
+    north_ms: -0.02
+  error_m: 9.8
+  every_s: 0.5
+  start_s: 19
+- track_id: 203
+  class: person
+  confidence: 0.8
+  start:
+    lat: 8.894191
+    lon: 7.265844
+  velocity:
+    east_ms: 1.24
+    north_ms: -0.27
+  error_m: 6.8
+  every_s: 1.0
+  start_s: 60
+- track_id: 204
+  class: person
+  confidence: 0.73
+  start:
+    lat: 8.893118
+    lon: 7.264434
+  velocity:
+    east_ms: -0.8
+    north_ms: -0.09
+  error_m: 9.9
+  every_s: 1.0
+  start_s: 25
+- track_id: 205
+  class: animal
+  confidence: 0.7
+  start:
+    lat: 8.894033
+    lon: 7.264361
+  velocity:
+    east_ms: 0.58
+    north_ms: -0.08
+  error_m: 5.1
+  every_s: 1.0
+  start_s: 27
+- track_id: 206
+  class: person
+  confidence: 0.88
+  start:
+    lat: 8.893262
+    lon: 7.265031
+  velocity:
+    east_ms: 1.21
+    north_ms: -0.11
+  error_m: 5.8
+  every_s: 1.0
+  start_s: 5
+- track_id: 207
+  class: bicycle
+  confidence: 0.62
+  start:
+    lat: 8.893202
+    lon: 7.264667
+  velocity:
+    east_ms: 3.66
+    north_ms: -0.05
+  error_m: 6.3
+  every_s: 1.0
+  start_s: 9
+- track_id: 208
+  class: bicycle
+  confidence: 0.71
+  start:
+    lat: 8.89338
+    lon: 7.265333
+  velocity:
+    east_ms: -3.38
+    north_ms: -0.15
+  error_m: 8.9
+  every_s: 1.0
+  start_s: 43
+- track_id: 209
+  class: person
+  confidence: 0.83
+  start:
+    lat: 8.893494
+    lon: 7.265942
+  velocity:
+    east_ms: 0.96
+    north_ms: -0.12
+  error_m: 7.9
+  every_s: 1.0
+  start_s: 25
+- track_id: 210
+  class: vehicle
+  confidence: 0.57
+  start:
+    lat: 8.892988
+    lon: 7.264618
+  velocity:
+    east_ms: -2.88
+    north_ms: -0.18
+  error_m: 4.8
+  every_s: 0.5
+  start_s: 36
+- track_id: 211
+  class: bicycle
+  confidence: 0.61
+  start:
+    lat: 8.893032
+    lon: 7.264927
+  velocity:
+    east_ms: -2.14
+    north_ms: -0.06
+  error_m: 7.0
+  every_s: 1.0
+  start_s: 40
+- track_id: 212
+  class: animal
+  confidence: 0.65
+  start:
+    lat: 8.893352
+    lon: 7.264928
+  velocity:
+    east_ms: -0.38
+    north_ms: -0.15
+  error_m: 11.8
+  every_s: 1.0
+  start_s: 30

@@ -140,3 +140,21 @@ def test_restart_keeps_tracks_and_alerts(config, validator, registry, tmp_path):
 
 def registry_path():
     return GROUND_CORE_DIR / "config" / "assets.yaml"
+
+
+def test_twenty_sightings_gives_twenty_tracks_and_eight_alerts(config, validator, registry):
+    """sim/scenarios/twenty-sightings.yaml: 8 people and vehicles cross into
+    north-fence (one alert each), 12 objects stay south of the tower (none)."""
+    clock = Clock()
+    coord, client = make(config, validator, registry, clock)
+    scenario = fake_fleet.load_scenario(SCENARIOS / "twenty-sightings.yaml")
+    assert len(scenario["objects"]) == 20
+    replay(coord, clock, [scenario], seconds=200)
+
+    news = [m for m in client.sent if m["type"] == "alert.new"]
+    assert len(news) == 8, [m["data"]["object_id"] for m in news]
+    assert all(m["data"]["zone_id"] == "north-fence" for m in news)
+    assert {m["data"]["object_id"] for m in news} == {f"o-tower-01-{t}" for t in range(101, 109)}
+    seen = {m["data"]["object_id"] for m in client.sent if m["type"] == "object.update"}
+    assert len(seen) == 20
+    assert all(validator.check(m) is None for m in client.sent)
