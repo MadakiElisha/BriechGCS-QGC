@@ -25,7 +25,7 @@ jobs:
           egress-policy: audit
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           sparse-checkout: |
             .github/actions/download-all-artifacts
@@ -34,7 +34,7 @@ jobs:
 
       - name: Get PR number
         id: pr
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const run = context.payload.workflow_run;
@@ -54,7 +54,7 @@ jobs:
       - name: Collect build status
         if: steps.pr.outputs.result != 'null'
         id: builds
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const headSha = context.payload.workflow_run.head_sha;
@@ -128,7 +128,7 @@ jobs:
       - name: Restore baseline sizes
         if: steps.pr.outputs.result != 'null'
         id: baseline-sizes
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         continue-on-error: true
         with:
           path: baseline-sizes.json
@@ -137,7 +137,7 @@ jobs:
       - name: Restore baseline coverage
         if: steps.pr.outputs.result != 'null'
         id: baseline-coverage
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         continue-on-error: true
         with:
           path: baseline-coverage.xml
@@ -336,7 +336,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           sparse-checkout: |
             .github/actions/download-all-artifacts
@@ -358,21 +358,21 @@ jobs:
 
       - name: Cache artifact sizes
         if: hashFiles('baseline-sizes.json') != ''
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: baseline-sizes.json
           key: artifact-sizes-baseline-${{ github.run_id }}
 
       - name: Cache artifact sizes as latest
         if: hashFiles('baseline-sizes.json') != ''
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: baseline-sizes.json
           key: artifact-sizes-baseline-latest
 
       - name: Save coverage baseline
         if: hashFiles('artifacts/coverage-report/coverage.xml') != ''
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: artifacts/coverage-report/coverage.xml
           key: coverage-baseline-latest
