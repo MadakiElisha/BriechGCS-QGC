@@ -1,0 +1,52 @@
+# The coordinator on the ground server (the Raspberry Pi 5), started on boot
+# and restarted after a crash. The broker needs no unit: Docker starts it
+# again on boot (restart: unless-stopped in ops/docker-compose.yml).
+#
+# Install, with the repo at /opt/briech owned by the user "briech":
+#   sudo install -m 644 ops/systemd/briech-coordinator.service /etc/systemd/system/
+#   sudo install -d -m 750 -o root -g briech /etc/briech
+#   sudo install -m 640 -o root -g briech ops/systemd/coordinator.env.example /etc/briech/coordinator.env
+#   sudo systemctl daemon-reload && sudo systemctl enable --now briech-coordinator
+# Logs: journalctl -u briech-coordinator -f (journald rotates them).
+
+[Unit]
+Description=Briech fleet coordinator
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+User=briech
+Group=briech
+WorkingDirectory=/opt/briech/ground-core
+EnvironmentFile=/etc/briech/coordinator.env
+ExecStart=/opt/briech/ground-core/.venv/bin/python -m coordinator
+Restart=on-failure
+RestartSec=5
+# SIGTERM stops it cleanly (coordinator/__main__.py); give it time to close the audit log.
+TimeoutStopSec=20
+# Hardening: a plain network service on port 8443 needs none of these.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+UMask=0077
+# The audit log, the database and the alert pictures: the only place it writes.
+ReadWritePaths=/opt/briech/ground-core/var
+
+[Install]
+WantedBy=multi-user.target

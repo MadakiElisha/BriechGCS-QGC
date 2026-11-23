@@ -69,6 +69,7 @@ one or more simulated drones flying.
 |---|---|---|---|---|---|---|
 | 2026-11-18 | `d9be59cd5` (Release, Windows 11) | Miracle, with Claude reading logs | Pass (CI green on the PRs in this build) | **Partly**: B1, B2, B3, B4, B9 seen; B5 to B8 not seen | Not run | Details below. Found and fixed: the PLAN upload problems (#41). |
 | 2026-11-19 | `43f5607cd` (Release, Windows 11) | Miracle, with Claude reading logs | Pass (all CI green on `main`) | Not re-run | **Pass**: C1 to C4 | Details below. Also verified #41 (upload confirmations) and #43 (dialogs: Briech look in Modern, stock in Legacy). |
+| 2026-11-23 | `e34303ff0` (`main`, Release, Windows 11) | Miracle, with Claude reading logs and screenshots | Pass (all CI green on `main`) | **Pass**: B5 to B9 | **Pass**: C1 (banner seen) and C4 | Details below. Section B is now complete across the three runs. One start-up crash in two launches (known, see the release notes). |
 
 ### 2026-11-18, section B (Fleet off)
 
@@ -103,6 +104,32 @@ one or more simulated drones flying.
 - **C4:** the coordinator restarted at 13:12:06. The app reconnected **by
   itself** at 13:12:14, with no restart.
 
+### 2026-11-23, sections B and C
+
+Two simulated drones (PX4 SIH, `px4-1` and `px4-2`), the default config
+(zone and tower at Briech home), the app built from `main` at `e34303ff0`.
+
+- **Start-up:** the first launch closed about 10 s in, while the drones
+  connected (`QGC: unhandled SEH`, just after `QAudioSink::start: QIODevice is
+  not readable`). The second launch ran for the whole session. This is the
+  known occasional start-up crash in `RELEASE-NOTES.md`.
+- **B5:** with Fleet off, PAUSE in flight, then RTL: the drone held, then
+  returned and landed, with no freeze (Miracle, at the screen).
+- **B6:** with Fleet off (the app's log has no `Briech.FleetLink` line for the
+  first 586 s), a 4-waypoint PLAN mission was uploaded to BRCH-2 and flown:
+  WP 4/4, COMPLETE, 280 m covered, landed and disarmed.
+- **B7:** ANALYZE and VEHICLE opened and worked (Miracle, at the screen).
+- **B8:** with no next waypoint, the top bar showed `DIST WP --` and
+  `TIME --`, not numbers.
+- **B9:** ENABLE at 586 s; connected, `hello` sent, at 588 s.
+- **C1:** the coordinator was stopped at 09:15:46. Within 13 s the panel
+  showed "COORDINATOR OFFLINE · CONNECTING" with "Flying, HOLD ALL and RETURN
+  ALL still work", and FLEET · OFFLINE on the map button. The link retried
+  after 1.0, 1.6 and 3.9 s. Both drones kept 0 s data age and a 99 % link.
+- **C4:** the coordinator was started again at 09:16:13; the app reconnected
+  by itself (attempt 4) and the coordinator logged `operator op-001 connected`.
+
 ### Still to run
 
-Section B items B5 to B8 on the next run.
+Nothing in sections B and C. Box 1 of the definition of done (a second
+person's PC, following only `BUILD.md`) is still to be recorded.

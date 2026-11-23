@@ -36,6 +36,11 @@ flight" below.
 - **Briech look for every dialog** in the Modern UI. The Legacy UI is
   unchanged.
 - **Fleet off means stock QGC.** No Fleet UI and no coordinator traffic.
+- **Ready for the field hardware** (not yet run on it): the edge pipeline
+  reads a live camera (USB, Jetson CSI, RTSP); systemd units run the
+  coordinator and each tower's pipeline on boot and restart them; a script
+  makes the WireGuard VPN the towers use, so the broker is never open to the
+  internet. See `ops/README.md`, "Field deployment".
 
 ### How it is proven
 
@@ -53,9 +58,6 @@ flight" below.
 
 ### Known limitations
 
-- **REGRESSION.md items B5 to B8** (PAUSE then RTL timing, flying a PLAN
-  mission with Fleet off, ANALYZE and VEHICLE, `--` for missing values) and
-  the offline banner are not yet recorded.
 - **Box 1** is recorded on one PC plus Linux CI. A second person's PC,
   following only BUILD.md, is still to be recorded.
 - **After this PC sleeps**, Docker stops and QGC's UDP link can go deaf
@@ -70,6 +72,10 @@ flight" below.
 - The picture's SHA-256 is in the local audit only. Sending it to the
   coordinator needs an optional schema field, which is proposed but not
   agreed.
+- **Not yet run on a Raspberry Pi or a Jetson.** The units pass
+  `systemd-analyze verify`, the VPN configs parse, and the live camera path
+  was run end to end from an RTSP stream on Windows. TensorRT for the
+  detector is still to do, on the Jetson itself.
 - **Geolocation accuracy** of real detections is not measured (spike S4).
   The edge test video's position is invented.
 

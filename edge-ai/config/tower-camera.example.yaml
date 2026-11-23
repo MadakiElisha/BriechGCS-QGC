@@ -1,0 +1,37 @@
+# A real tower camera: copy to config/<tower-id>.yaml and fill in every field
+# from the site. Run with:
+#
+#   .venv/bin/python -m pipeline.run --camera csi:0 --config config/tower-01.yaml --host ground.lan \
+#     --snapshot-url https://ground.lan:8443/api/v1/snapshots
+#
+# This file is a template, not a camera: it has no control points, so the
+# pipeline refuses it until they are measured (spike S4).
+
+# The tower's asset id: its MQTT login, its topics, and its entry in
+# ground-core/config/assets.yaml.
+source: tower-01
+
+camera:
+  kind: tower
+
+  # The picture size and rate asked of the camera. The control points below
+  # are pixels in a picture of exactly this size; a camera giving any other
+  # size is refused. The IMX477 on a Jetson: 1920x1080 at 30 is a safe mode.
+  capture:
+    width: 1920
+    height: 1080
+    fps: 30
+
+  # How well the control points are known, in metres, one sigma: the floor of
+  # every error_m this camera reports. A survey-grade GPS: about 0.05; a phone:
+  # 3 to 5.
+  control_error_m: 0.5
+  # A position vaguer than this is not sent; the detection goes without geo.
+  max_error_m: 30.0
+
+  # At least four (better six or more) marks on the ground, spread over the
+  # picture, all below the horizon: where each one is in a frame from this
+  # camera (px, from the top-left corner) and where it is on the map
+  # (lat, lon, WGS84 degrees), measured at the site. For example:
+  #   - { px: [412, 868], lat: 8.8946123, lon: 7.2656012 }
+  points: []

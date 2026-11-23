@@ -86,6 +86,8 @@ docker restart briech-broker
 
 Existing passwords are kept. A lost device is cut off alone: delete its file in
 `ops/secrets/mqtt/`, re-run `make -C ops secrets`, and restart the broker.
+A device in the field also needs its VPN key: re-run `make -C ops wireguard`
+with the new id (existing keys are kept) and reload the server's `wg0.conf`.
 
 ### Certificates
 
@@ -110,6 +112,59 @@ Known dev-only warning: Mosquitto says the password and ACL files are world
 readable. On Docker Desktop the mounts cannot be given to the container's
 user; on the field server use a systemd unit and `chmod 0600` owned by the
 `mosquitto` user.
+
+## Field deployment: the ground server and the towers
+
+The same services, run for real: the broker and the coordinator on an
+always-on ground server (planned: a Raspberry Pi 5), the edge pipeline on a
+computer beside each tower camera (planned: a Jetson Orin Nano), QGC on the
+operator's PC. Drones still talk MAVLink straight to QGC.
+
+| File | What |
+|---|---|
+| `systemd/briech-coordinator.service` | The coordinator, on boot, restarted after a crash, logs in journald; settings from `/etc/briech/coordinator.env` (`systemd/coordinator.env.example`) |
+| `systemd/briech-edge@.service` | One tower's pipeline, `briech-edge@tower-01`; settings from `/etc/briech/edge-tower-01.env` (`systemd/edge.env.example`) |
+| `scripts/make-wireguard.sh` | The field VPN: one key pair per device, a config for the server and one per device |
+
+The broker needs no unit: Docker starts it again on boot.
+
+**On the ground server**, with the repo at `/opt/briech`, owned by a user
+`briech`:
+
+```sh
+ops/scripts/make-certs.sh ground.lan          # the name every device uses for the server
+make -C ops secrets DEVICES="tower-01"
+make -C ops venv broker
+make -C ops wireguard ENDPOINT=<public address or name> DEVICES="tower-01"
+sudo install -m 600 ops/secrets/wireguard/wg0.conf /etc/wireguard/wg0.conf
+sudo systemctl enable --now wg-quick@wg0
+# then install briech-coordinator.service as its header says
+make -C ops replay-check                      # all 11 checks, before trusting the server
+```
+
+Forward only UDP 51820 to the server on the site's router. The broker (8883)
+and the coordinator (8443) are never forwarded: devices in the field reach
+them through the VPN as `10.77.0.1`, operators' PCs on the ground network
+directly.
+
+**On each tower's Jetson**, with the repo at `/opt/briech`:
+
+1. From the server, copy (never through chat or email) `ops/certs/ca.crt`,
+   `ops/secrets/mqtt/tower-01.password`, the `tower-01=` line of
+   `ops/secrets/device.tokens` (as that device's own `device.tokens`), and
+   `ops/secrets/wireguard/tower-01.conf` (to `/etc/wireguard/wg0.conf`, mode
+   600). Never `ops/certs/ca.key` or another device's files.
+2. `sudo systemctl enable --now wg-quick@wg0`, and add `10.77.0.1 ground.lan`
+   to `/etc/hosts`.
+3. Make `edge-ai/config/tower-01.yaml` from `config/tower-camera.example.yaml`
+   (see `edge-ai/README.md`), then install `briech-edge@.service` as its
+   header says.
+
+Checked so far: both units pass `systemd-analyze verify` (Debian 12), with
+an exposure score of 3.2 for the coordinator and 5.5 for the edge (it keeps
+camera and GPU access); `make-wireguard.sh` was run in a container, and every
+config it wrote parses with `wg-quick strip`. Nothing here has run on a Pi
+or a Jetson yet.
 
 ## Windows
 
