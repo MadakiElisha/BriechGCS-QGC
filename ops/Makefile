@@ -17,6 +17,8 @@
 #                publisher first, it is tower-01 too
 #   edge-test    edge pipeline unit tests
 #   check-acl    the two mosquitto_pub checks: own topic delivered, other topic refused
+#   wireguard    the field VPN: make -C ops wireguard ENDPOINT=<server address> DEVICES="tower-01 ..."
+#                (ops/scripts/make-wireguard.sh; needs the wg command)
 #   broker-down  stop the broker; broker-logs to follow its log
 
 REPO      := $(abspath ..)
@@ -45,7 +47,7 @@ COORDINATOR_ENV := \
 	BRIECH_DEVICE_TOKENS_FILE=$(SECRETS)/device.tokens
 
 .PHONY: setup venv certs secrets broker broker-down broker-logs coordinator publisher probe test check-acl \
-        dev-up dev-down sim-10 sim-down replay-check edge-setup edge-video edge-test
+        dev-up dev-down sim-10 sim-down replay-check edge-setup edge-video edge-test wireguard
 
 setup: venv certs secrets
 
@@ -135,6 +137,10 @@ edge-video: edge-setup
 
 edge-test: edge-setup
 	cd $(EDGE) && $(EDGE_PY) -m pytest -q
+
+wireguard:
+	@test -n "$(ENDPOINT)" || { echo "give ENDPOINT=<the server's address as the devices see it>" >&2; exit 2; }
+	$(REPO)/ops/scripts/make-wireguard.sh $(ENDPOINT) $(DEVICES)
 
 replay-check: venv
 	PYTHON=$(PY) $(REPO)/ops/scripts/replay-check.sh

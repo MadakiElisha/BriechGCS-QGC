@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""Run the edge pipeline on a video file: detector -> tracker -> geolocator -> EdgePublisher.
+"""Run the edge pipeline on a video file or a live camera: detector -> tracker -> geolocator -> EdgePublisher.
 
     cd edge-ai && .venv/bin/python -m pipeline.run                  # the test video, as tower-01
     .venv/bin/python -m pipeline.run --video clip.mp4 --config config/my-tower.yaml --loop
+    .venv/bin/python -m pipeline.run --camera csi:0 --config config/tower-01.yaml --host ground.lan
+
+A live camera (see pipeline/camera.py) is read newest frame first. When it
+stops giving pictures the pipeline exits with status 1, so its service
+restarts it.
 
 The video is played at its own frame rate, like a live camera: when the
 detector is slower than the video, frames are skipped, not queued. Each
@@ -33,6 +38,7 @@ REPO = EDGE_DIR.parent
 sys.path.insert(0, str(EDGE_DIR))
 
 from geo.homography import GroundHomography  # noqa: E402
+from pipeline.camera import Camera, CameraError, Capture, describe  # noqa: E402
 from pipeline.detector import ModelConfig, YoloxDetector, fetch  # noqa: E402
 from pipeline.publisher import EdgePublisher  # noqa: E402
 from pipeline.tracker import IouTracker  # noqa: E402
@@ -87,7 +93,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--config", type=Path, default=EDGE_DIR / "config" / "test-video.yaml",
                     help="camera config: source id, video, control points")
-    ap.add_argument("--video", type=Path, help="video file (default: the one the config names)")
+    feed = ap.add_mutually_exclusive_group()
+    feed.add_argument("--video", type=Path, help="video file (default: the one the config names)")
+    feed.add_argument("--camera", help="a live camera instead of a video: 0 (USB), csi:0 (Jetson CSI), "
+                                       "rtsp://... or gst:<pipeline>; the config must give camera.capture")
     ap.add_argument("--model", type=Path, default=EDGE_DIR / "models" / "yolox-tiny.yaml")
     ap.add_argument("--host", default="localhost")
     ap.add_argument("--port", type=int, default=8883)
@@ -103,17 +112,30 @@ def main() -> None:
     ap.add_argument("--loop", action="store_true", help="start the video again when it ends")
     ap.add_argument("--duration", type=float, default=0, help="seconds to run; 0 runs to the end of the video")
     args = ap.parse_args()
+    if args.camera is not None and args.loop:
+        ap.error("--loop is for a video file, not a live camera")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     config = yaml.safe_load(args.config.read_text())
     source = config["source"]
     camera = config["camera"]
-    locator = GroundHomography([(p["px"][0], p["px"][1], p["lat"], p["lon"]) for p in camera["points"]],
-                               control_error_m=camera["control_error_m"],
-                               max_error_m=camera.get("max_error_m", 30.0))
+    try:
+        locator = GroundHomography([(p["px"][0], p["px"][1], p["lat"], p["lon"]) for p in camera["points"] or []],
+                                   control_error_m=camera["control_error_m"],
+                                   max_error_m=camera.get("max_error_m", 30.0))
+    except ValueError as e:
+        raise SystemExit(f"{args.config.name}: {e}") from None
 
+    live = args.camera is not None
+    try:
+        capture = Capture.from_config(camera.get("capture"))
+    except CameraError as e:
+        raise SystemExit(f"{args.config.name}: {e}") from None
+    if live and not capture.sized:
+        raise SystemExit(f"{args.config.name}: a live camera needs camera.capture.width and height, "
+                         "the picture size the control points were measured on")
     video = args.video
-    if video is None:
+    if not live and video is None:
         v = config["video"]
         video = fetch(v["url"], EDGE_DIR / "var" / "video" / v["file"], v["sha256"])
     model = ModelConfig.load(args.model, EDGE_DIR / "var" / "models")
@@ -127,7 +149,13 @@ def main() -> None:
     if args.snapshot_url and token is None:
         log.warning("no device token for %s in %s: detections go without pictures", source, args.device_token_file)
     check = schema_check()
-    log.info("source %s, model %s, video %s, schema check %s", source, model.version, video.name,
+    feed = describe(args.camera) if live else f"video {video.name}"
+    # Open the camera before connecting, so a missing camera stops here, not with the publisher running.
+    try:
+        cap = Camera(args.camera, capture) if live else Video(video)
+    except CameraError as e:
+        raise SystemExit(str(e)) from None
+    log.info("source %s, model %s, %s (%s), schema check %s", source, model.version, feed, cap.backend,
              "on" if check else "off")
     publisher = EdgePublisher(
         source, args.host, args.port, password=password_file.read_text().strip(),
@@ -147,10 +175,10 @@ def main() -> None:
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
 
-    cap = Video(video)
     video_fps = cap.fps
+    failed = False
     started = time.monotonic()
-    frame_no = 0                    # frames gone by, read or skipped; not reset by --loop, so it is the tracker's clock
+    frame_no = 0                    # frames gone by, read or skipped; not reset by --loop, so it is a video's clock
     frames_done = skipped = 0
     last_sent: dict[int, float] = {}
     pictured: set[int] = set()
@@ -160,16 +188,26 @@ def main() -> None:
         now = time.monotonic()
         if args.duration and now - started >= args.duration:
             break
-        # Keep to the video's clock: wait when early, drop frames when late.
-        due = started + frame_no / video_fps
-        if now < due:
-            time.sleep(due - now)
-        while time.monotonic() - due > 1.0 / video_fps and cap.skip():
-            frame_no += 1
-            skipped += 1
+        if not live:
+            # Keep to the video's clock: wait when early, drop frames when late.
             due = started + frame_no / video_fps
-        frame = cap.read()
+            if now < due:
+                time.sleep(due - now)
+            while time.monotonic() - due > 1.0 / video_fps and cap.skip():
+                frame_no += 1
+                skipped += 1
+                due = started + frame_no / video_fps
+        try:
+            frame = cap.read()
+        except CameraError as e:
+            log.error("%s", e)
+            failed = True
+            break
         if frame is None:
+            if live:
+                log.error("%s stopped giving pictures", feed)
+                failed = True
+                break
             if not args.loop:
                 break
             cap.rewind()
@@ -180,7 +218,9 @@ def main() -> None:
         made_s = time.time()
         height, width = frame.shape[:2]
 
-        for track in tracker.update(detector.detect(frame), frame_no / video_fps):
+        # The tracker's clock: the video's own time, or the wall clock for a live camera.
+        seen_s = time.monotonic() - started if live else frame_no / video_fps
+        for track in tracker.update(detector.detect(frame), seen_s):
             now = time.monotonic()
             if now - last_sent.get(track.track_id, -1e9) < args.every:
                 continue
@@ -205,12 +245,14 @@ def main() -> None:
             fps = (frames_done - report_frames) / (now - report_at + 5.0)
             # Under half the camera's rate, tracks start to break: say so in edge.status.
             publisher.set_health(fps=fps, degraded="slow" if fps < video_fps / 2 else None)
-            log.info("%.1f frames/s (video %.1f), %d skipped, queue %d, %s", fps, video_fps, skipped,
+            log.info("%.1f frames/s (feed %.1f), %d skipped, queue %d, %s", fps, video_fps, skipped,
                      publisher.queue_len, dict(publisher.stats))
             report_at, report_frames = now + 5.0, frames_done
 
     cap.close()
     publisher.stop()
+    if failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

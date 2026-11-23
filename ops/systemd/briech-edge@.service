@@ -1,0 +1,47 @@
+# One tower's edge pipeline on its Jetson, started on boot and restarted when
+# it fails, for example when the camera stops giving pictures (the pipeline
+# then exits with status 1). The instance name is the tower id:
+#   briech-edge@tower-01 runs edge-ai/config/tower-01.yaml with /etc/briech/edge-tower-01.env
+#
+# Install, with the repo at /opt/briech owned by the user "briech":
+#   sudo install -m 644 ops/systemd/briech-edge@.service /etc/systemd/system/
+#   sudo install -d -m 750 -o root -g briech /etc/briech
+#   sudo install -m 640 -o root -g briech ops/systemd/edge.env.example /etc/briech/edge-tower-01.env
+#   sudo systemctl daemon-reload && sudo systemctl enable --now briech-edge@tower-01
+# Logs: journalctl -u briech-edge@tower-01 -f (journald rotates them).
+
+[Unit]
+Description=Briech edge pipeline (%i)
+Wants=network-online.target
+After=network-online.target nvargus-daemon.service
+# Keep trying for as long as the camera or the network is away.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=briech
+Group=briech
+# The camera devices.
+SupplementaryGroups=video
+WorkingDirectory=/opt/briech/edge-ai
+EnvironmentFile=/etc/briech/edge-%i.env
+ExecStart=/opt/briech/edge-ai/.venv/bin/python -m pipeline.run --config /opt/briech/edge-ai/config/%i.yaml $EDGE_ARGS
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+# Not strict, no private /tmp and no private /dev: the CSI camera goes through
+# nvargus-daemon's socket, and the detector needs the GPU devices.
+ProtectSystem=full
+ProtectHome=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+UMask=0077
+ReadWritePaths=/opt/briech/edge-ai/var
+
+[Install]
+WantedBy=multi-user.target

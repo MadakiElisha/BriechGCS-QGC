@@ -39,8 +39,33 @@ lists the options: another video, another camera config, another broker.
 | Tracker: box overlap with a constant-speed guess, an id only after 3 frames | `pipeline/tracker.py` |
 | Tower geolocation: homography from control points, with `error_m` | `geo/homography.py` |
 | Video reader: OpenCV, or the `ffmpeg` command when OpenCV cannot decode the file | `pipeline/video.py` |
-| The loop that joins them, played at the video's own speed | `pipeline/run.py` |
+| Live camera: USB (`--camera 0`), Jetson CSI such as the IMX477 (`--camera csi:0`), RTSP, or any GStreamer pipeline; newest frame only; refuses pictures of another size than the control points were measured on | `pipeline/camera.py` |
+| The loop that joins them: a video at its own speed, a camera as it comes; exits with status 1 when a camera stops, so its service restarts it | `pipeline/run.py` |
 | The test video as tower-01's camera | `config/test-video.yaml` |
+| The template for a real tower's camera (no control points until they are measured) | `config/tower-camera.example.yaml` |
+| The service that runs it on a Jetson: on boot, restarted after a failure, logs in journald | `ops/systemd/briech-edge@.service` |
+
+## Run it on a live camera
+
+Copy `config/tower-camera.example.yaml` to `config/<tower-id>.yaml` and fill
+it in at the site: `capture` (the picture size the camera is set to) and at
+least four surveyed control points in pictures of that size. Then:
+
+```sh
+.venv/bin/python -m pipeline.run --camera csi:0 --config config/tower-01.yaml --host ground.lan   --snapshot-url https://ground.lan:8443/api/v1/snapshots
+```
+
+On a Jetson, the CSI camera needs an OpenCV with GStreamer: JetPack's own
+(`sudo apt install python3-opencv`), not the pip wheel. Make the virtualenv
+with `python3 -m venv --system-site-packages .venv` and install
+`requirements.txt` without `opencv-python-headless`. Install the service as
+`ops/systemd/briech-edge@.service` says.
+
+On Windows, give `127.0.0.1` rather than `localhost` for `--host` and
+`--snapshot-url`. Windows tries `localhost` over IPv6 first and waits about
+two seconds per connection before falling back, and each picture upload holds
+up the detections queued behind it (seen on 2026-11-23: the queue grew to
+300; with `127.0.0.1` it stayed under 5).
 
 ## Using EdgePublisher from another detector
 
@@ -103,7 +128,7 @@ would be over `max_error_m` (30 m).
   written in `models/yolox-tiny.yaml`, and spike S9 still has to settle it.
 - **No drone camera.** That needs the vehicle's position and attitude; only
   the tower case (homography) is built.
-- **No TensorRT, no systemd unit, no log rotation.** On a laptop CPU the
+- **No TensorRT.** On a laptop CPU the
   pipeline did 4 to 9 frames a second on the 10 frames a second video,
   depending on what else the machine was running; the rest are skipped.
 - **The tracker has no appearance model.** People who cross can swap ids, and
